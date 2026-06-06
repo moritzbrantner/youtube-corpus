@@ -1,0 +1,12 @@
+/target/
+/.env
+/use-case-output/
+/.sqlx/
+*.mp4
+*.mkv
+*.webm
+*.mov
+*.wav
+*.vtt
+*.srt
+*.json.tmp
