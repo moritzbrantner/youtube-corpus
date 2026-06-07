@@ -1,6 +1,7 @@
 use anyhow::Context;
 use clap::Parser;
-use youtube_corpus::cli::{Cli, Command};
+use std::time::Duration;
+use youtube_corpus::cli::{Cli, Command, SubscriptionsCommand};
 use youtube_corpus::config::AppConfig;
 
 #[tokio::main]
@@ -27,6 +28,49 @@ async fn main() -> anyhow::Result<()> {
                 .context("ingest failed")?;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
+        Command::Subscribe(args) => {
+            let request = args.try_into_request(&config)?;
+            let subscription = youtube_corpus::subscriptions::add_subscription(request)
+                .await
+                .context("subscribe failed")?;
+            println!("{}", serde_json::to_string_pretty(&subscription)?);
+        }
+        Command::Subscriptions(args) => match args.command {
+            SubscriptionsCommand::Add(args) => {
+                let request = args.try_into_request(&config)?;
+                let subscription = youtube_corpus::subscriptions::add_subscription(request)
+                    .await
+                    .context("subscription add failed")?;
+                println!("{}", serde_json::to_string_pretty(&subscription)?);
+            }
+            SubscriptionsCommand::List(args) => {
+                let subscriptions = youtube_corpus::subscriptions::list_subscriptions(
+                    &config.database_url,
+                    args.include_disabled,
+                    args.migrate,
+                )
+                .await
+                .context("subscription list failed")?;
+                println!("{}", serde_json::to_string_pretty(&subscriptions)?);
+            }
+            SubscriptionsCommand::Check(args) => {
+                let watch = args.watch;
+                let interval_seconds = args.interval_seconds;
+                let mut request = args.try_into_request(&config)?;
+                loop {
+                    let report =
+                        youtube_corpus::subscriptions::check_subscriptions(request.clone())
+                            .await
+                            .context("subscription check failed")?;
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                    if !watch {
+                        break;
+                    }
+                    request.migrate = false;
+                    tokio::time::sleep(Duration::from_secs(interval_seconds)).await;
+                }
+            }
+        },
         Command::Benchmark(args) => {
             let request = args.try_into_request(&config)?;
             let report = youtube_corpus::benchmark::run_distinguo_benchmark(request)

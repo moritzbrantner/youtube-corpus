@@ -7,6 +7,9 @@ use crate::benchmark::{BenchmarkRequest, DISTINGUO_SEARCH_QUERIES};
 use crate::config::{AppConfig, CaptionConfig, CorpusSource, SearchMode, SourceKind};
 use crate::ingest::IngestRequest;
 use crate::search::SearchRequest;
+use crate::subscriptions::{
+    AddSubscriptionRequest, CheckSubscriptionsRequest, SubscriptionSourceKind,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -25,6 +28,8 @@ pub struct Cli {
 pub enum Command {
     Migrate,
     Ingest(IngestArgs),
+    Subscribe(SubscribeArgs),
+    Subscriptions(SubscriptionsArgs),
     Benchmark(BenchmarkArgs),
     Search(SearchArgs),
 }
@@ -107,6 +112,140 @@ impl IngestArgs {
             title_excludes: self.title_excludes,
             duration_min: self.duration_min,
             duration_max: self.duration_max,
+            migrate: self.migrate,
+        })
+    }
+}
+
+#[derive(Debug, Parser)]
+#[command(group(
+    ArgGroup::new("source")
+        .args(["playlist_url", "channel_url"])
+        .required(true)
+))]
+pub struct SubscribeArgs {
+    #[arg(long)]
+    pub playlist_url: Option<String>,
+    #[arg(long)]
+    pub channel_url: Option<String>,
+    #[arg(long)]
+    pub name: Option<String>,
+    #[arg(long, default_value = "use-case-output/youtube-corpus")]
+    pub work_dir: PathBuf,
+    #[arg(long)]
+    pub caption_language: Vec<String>,
+    #[arg(long)]
+    pub no_captions: bool,
+    #[arg(long)]
+    pub no_auto_captions: bool,
+    #[arg(long)]
+    pub no_asr: bool,
+    #[arg(long)]
+    pub transcriber_command: Option<PathBuf>,
+    #[arg(long = "transcriber-arg")]
+    pub transcriber_args: Vec<String>,
+    #[arg(long)]
+    pub max_items: Option<u64>,
+    #[arg(long)]
+    pub title_contains: Option<String>,
+    #[arg(long = "title-excludes")]
+    pub title_excludes: Vec<String>,
+    #[arg(long)]
+    pub duration_min: Option<f64>,
+    #[arg(long)]
+    pub duration_max: Option<f64>,
+    #[arg(long)]
+    pub disabled: bool,
+    #[arg(long)]
+    pub migrate: bool,
+}
+
+impl SubscribeArgs {
+    pub fn try_into_request(self, config: &AppConfig) -> anyhow::Result<AddSubscriptionRequest> {
+        let (source_kind, source_url) = if let Some(url) = self.channel_url {
+            (SubscriptionSourceKind::Channel, url)
+        } else if let Some(url) = self.playlist_url {
+            (SubscriptionSourceKind::Playlist, url)
+        } else {
+            anyhow::bail!("one subscription source is required");
+        };
+        let languages = if self.caption_language.is_empty() {
+            vec!["en".to_string()]
+        } else {
+            self.caption_language
+        };
+        Ok(AddSubscriptionRequest {
+            database_url: config.database_url.clone(),
+            source_kind,
+            source_url,
+            name: self.name,
+            enabled: !self.disabled,
+            work_dir: self.work_dir,
+            caption: CaptionConfig {
+                enabled: !self.no_captions,
+                include_auto_captions: !self.no_auto_captions,
+                languages,
+            },
+            asr_enabled: !self.no_asr,
+            transcriber_command: self.transcriber_command,
+            transcriber_args: self.transcriber_args,
+            max_items: self.max_items,
+            title_contains: self.title_contains,
+            title_excludes: self.title_excludes,
+            duration_min: self.duration_min,
+            duration_max: self.duration_max,
+            migrate: self.migrate,
+        })
+    }
+}
+
+#[derive(Debug, Parser)]
+pub struct SubscriptionsArgs {
+    #[command(subcommand)]
+    pub command: SubscriptionsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum SubscriptionsCommand {
+    Add(SubscribeArgs),
+    List(ListSubscriptionsArgs),
+    Check(CheckSubscriptionsArgs),
+}
+
+#[derive(Debug, Parser)]
+pub struct ListSubscriptionsArgs {
+    #[arg(long)]
+    pub include_disabled: bool,
+    #[arg(long)]
+    pub migrate: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct CheckSubscriptionsArgs {
+    #[arg(long)]
+    pub id: Option<Uuid>,
+    #[arg(long)]
+    pub include_disabled: bool,
+    #[arg(long)]
+    pub watch: bool,
+    #[arg(long, default_value_t = 3600)]
+    pub interval_seconds: u64,
+    #[arg(long)]
+    pub migrate: bool,
+}
+
+impl CheckSubscriptionsArgs {
+    pub fn try_into_request(
+        &self,
+        config: &AppConfig,
+    ) -> anyhow::Result<CheckSubscriptionsRequest> {
+        if self.interval_seconds == 0 {
+            anyhow::bail!("--interval-seconds must be positive");
+        }
+        Ok(CheckSubscriptionsRequest {
+            database_url: config.database_url.clone(),
+            id: self.id,
+            include_disabled: self.include_disabled,
             migrate: self.migrate,
         })
     }

@@ -1,5 +1,5 @@
 use clap::Parser;
-use youtube_corpus::cli::{Cli, Command};
+use youtube_corpus::cli::{Cli, Command, SubscriptionsCommand};
 
 #[test]
 fn parses_ingest_url_command() {
@@ -42,6 +42,56 @@ fn parses_search_command() {
             assert_eq!(args.top_k, 3);
         }
         other => panic!("expected search command, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_subscribe_channel_command() {
+    let cli = Cli::parse_from([
+        "youtube-corpus",
+        "--database-url",
+        "postgres://postgres:postgres@localhost/youtube_corpus",
+        "subscribe",
+        "--channel-url",
+        "https://www.youtube.com/@Distinguo/videos",
+        "--name",
+        "Distinguo",
+        "--no-asr",
+    ]);
+    match cli.command {
+        Command::Subscribe(args) => {
+            assert_eq!(
+                args.channel_url.as_deref(),
+                Some("https://www.youtube.com/@Distinguo/videos")
+            );
+            assert_eq!(args.name.as_deref(), Some("Distinguo"));
+            assert!(args.no_asr);
+        }
+        other => panic!("expected subscribe command, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_subscriptions_check_watch_command() {
+    let cli = Cli::parse_from([
+        "youtube-corpus",
+        "--database-url",
+        "postgres://postgres:postgres@localhost/youtube_corpus",
+        "subscriptions",
+        "check",
+        "--watch",
+        "--interval-seconds",
+        "30",
+    ]);
+    match cli.command {
+        Command::Subscriptions(args) => match args.command {
+            SubscriptionsCommand::Check(args) => {
+                assert!(args.watch);
+                assert_eq!(args.interval_seconds, 30);
+            }
+            other => panic!("expected subscriptions check command, got {other:?}"),
+        },
+        other => panic!("expected subscriptions command, got {other:?}"),
     }
 }
 

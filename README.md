@@ -27,6 +27,31 @@ For playlists:
 cargo run -- ingest --playlist-url "https://www.youtube.com/playlist?list=..." --max-items 10
 ```
 
+## Subscriptions
+
+Store channels or playlists and check them later for new videos:
+
+```bash
+cargo run -- subscribe \
+  --channel-url "https://www.youtube.com/@Distinguo/videos" \
+  --name "Distinguo" \
+  --max-items 20 \
+  --no-asr \
+  --migrate
+
+cargo run -- subscriptions add --playlist-url "https://www.youtube.com/playlist?list=..."
+cargo run -- subscriptions list
+cargo run -- subscriptions check
+```
+
+`subscriptions check` discovers videos with `yt-dlp`, remembers which videos
+were already seen for each subscription, and ingests only newly discovered
+items. To run continuously instead of from cron or systemd:
+
+```bash
+cargo run -- subscriptions check --watch --interval-seconds 3600
+```
+
 First example corpus and benchmark:
 
 ```bash

@@ -57,8 +57,28 @@ pub async fn ingest_corpus(request: IngestRequest) -> anyhow::Result<IngestRepor
     }
 
     tokio::fs::create_dir_all(&request.work_dir).await?;
+    let items = resolve_items(&request).await?;
+    ingest_resolved_items(&pool, request, items).await
+}
+
+pub async fn ingest_video_items(
+    request: IngestRequest,
+    items: Vec<VideoItem>,
+) -> anyhow::Result<IngestReport> {
+    let pool = crate::db::connect(&request.database_url).await?;
+    if request.migrate {
+        crate::db::migrate(&pool).await?;
+    }
+    tokio::fs::create_dir_all(&request.work_dir).await?;
+    ingest_resolved_items(&pool, request, items).await
+}
+
+async fn ingest_resolved_items(
+    pool: &PgPool,
+    request: IngestRequest,
+    mut items: Vec<VideoItem>,
+) -> anyhow::Result<IngestReport> {
     let run_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, request.source.source_url().as_bytes());
-    let mut items = resolve_items(&request).await?;
     let videos_seen = items.len() as u64;
     items.retain(|item| {
         crate::youtube::filter_item(
@@ -117,7 +137,7 @@ pub async fn ingest_corpus(request: IngestRequest) -> anyhow::Result<IngestRepor
     .bind(report.videos_indexed as i64)
     .bind(report.segments_indexed as i64)
     .bind(serde_json::to_value(&report)?)
-    .execute(&pool)
+    .execute(pool)
     .await?;
     Ok(report)
 }

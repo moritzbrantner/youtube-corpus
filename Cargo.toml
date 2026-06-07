@@ -21,7 +21,7 @@ sqlx = { version = "0.8", default-features = false, features = [
   "macros",
 ] }
 thiserror = "2.0"
-tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "process", "fs"] }
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "process", "fs", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.11", features = ["v5", "serde"] }
