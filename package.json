@@ -1,0 +1,36 @@
+{
+  "name": "youtube-corpus-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml"
+  },
+  "dependencies": {
+    "@moritzbrantner/ui": "^0.10.0",
+    "@tanstack/react-query": "^5.100.6",
+    "@tauri-apps/api": "^2.10.1",
+    "lucide-react": "^1.7.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.2.3",
+    "@tauri-apps/cli": "^2.10.1",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "oxfmt": "^0.51.0",
+    "tailwindcss": "^4.2.3",
+    "typescript": "~5.8.3",
+    "vite": "^7.3.2"
+  }
+}

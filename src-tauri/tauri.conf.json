@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "YouTube Corpus",
+  "version": "0.1.0",
+  "identifier": "com.moenarch.youtubecorpus",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "YouTube Corpus",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 980,
+        "minHeight": 680
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:1421"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all"
+  }
+}

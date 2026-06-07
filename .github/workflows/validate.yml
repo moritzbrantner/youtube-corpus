@@ -1,0 +1,79 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  fast-validation:
+    permissions:
+      contents: read
+      packages: read
+    uses: moritzbrantner/reusable-workflows/.github/workflows/fast-validation.yml@workflow-standard-v1
+    with:
+      node_version: ""
+      bun_version: ""
+      install_command: ""
+      cache_bun: false
+      cache_cargo: true
+      cargo_cache_dependency_path: Cargo.lock
+      pre_command: |
+        set -euo pipefail
+        rustup toolchain install stable --profile minimal --component rustfmt
+        rustup default stable
+
+        auth_header="$(printf 'x-access-token:%s' "$GH_PACKAGES_TOKEN" | base64 -w 0)"
+        mkdir -p ../rust-packages
+        cd ../rust-packages
+        git init --initial-branch=main .
+        git config --global --add safe.directory "$PWD"
+        git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY_OWNER/rust-packages"
+        if ! git -c "http.${GITHUB_SERVER_URL}/.extraheader=AUTHORIZATION: basic ${auth_header}" fetch --depth=1 origin main; then
+          echo "::error::Could not fetch $GITHUB_REPOSITORY_OWNER/rust-packages from main. Check that RUST_PACKAGES_TOKEN has read access to that repository."
+          exit 1
+        fi
+        git checkout --force -B main FETCH_HEAD
+      format_command: cargo fmt --check
+      typecheck_command: cargo check
+      unit_test_command: cargo test
+    secrets:
+      GH_PACKAGES_TOKEN: ${{ secrets.RUST_PACKAGES_TOKEN }}
+
+  integration-validation:
+    permissions:
+      contents: read
+      packages: read
+    uses: moritzbrantner/reusable-workflows/.github/workflows/integration-validation.yml@workflow-standard-v1
+    with:
+      node_version: ""
+      bun_version: ""
+      install_command: ""
+      cache_bun: false
+      cache_cargo: true
+      cargo_cache_dependency_path: Cargo.lock
+      pre_command: |
+        set -euo pipefail
+        rustup toolchain install stable --profile minimal
+        rustup default stable
+
+        auth_header="$(printf 'x-access-token:%s' "$GH_PACKAGES_TOKEN" | base64 -w 0)"
+        mkdir -p ../rust-packages
+        cd ../rust-packages
+        git init --initial-branch=main .
+        git config --global --add safe.directory "$PWD"
+        git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY_OWNER/rust-packages"
+        if ! git -c "http.${GITHUB_SERVER_URL}/.extraheader=AUTHORIZATION: basic ${auth_header}" fetch --depth=1 origin main; then
+          echo "::error::Could not fetch $GITHUB_REPOSITORY_OWNER/rust-packages from main. Check that RUST_PACKAGES_TOKEN has read access to that repository."
+          exit 1
+        fi
+        git checkout --force -B main FETCH_HEAD
+      integration_command: |
+        set -euo pipefail
+        docker compose up -d postgres
+        timeout 90 bash -c 'until docker compose exec -T postgres pg_isready -U postgres -d youtube_corpus; do sleep 2; done'
+        DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus cargo test -- --ignored
+      post_command: docker compose down -v
+    secrets:
+      GH_PACKAGES_TOKEN: ${{ secrets.RUST_PACKAGES_TOKEN }}
