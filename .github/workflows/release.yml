@@ -1,0 +1,218 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        default: "0.1.0"
+      rust_packages_ref:
+        required: true
+        description: "Commit SHA or tag in moritzbrantner/rust-packages"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Resolve Release Inputs
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag_name: ${{ steps.resolve.outputs.tag_name }}
+      rust_packages_ref: ${{ steps.resolve.outputs.rust_packages_ref }}
+    steps:
+      - name: Resolve inputs
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            version="${{ inputs.version }}"
+            rust_packages_ref="${{ inputs.rust_packages_ref }}"
+          else
+            version="${GITHUB_REF_NAME#v}"
+            rust_packages_ref="${{ vars.RUST_PACKAGES_RELEASE_REF }}"
+          fi
+
+          if [[ -z "$version" ]]; then
+            echo "Release version is required." >&2
+            exit 1
+          fi
+
+          if [[ -z "$rust_packages_ref" ]]; then
+            echo "RUST_PACKAGES_RELEASE_REF repository variable is required for tag builds." >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag_name=v$version" >> "$GITHUB_OUTPUT"
+          echo "rust_packages_ref=$rust_packages_ref" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: youtube-corpus
+        shell: bash
+    steps:
+      - name: Check out youtube-corpus
+        uses: actions/checkout@v4
+        with:
+          path: youtube-corpus
+
+      - name: Check out rust-packages
+        uses: actions/checkout@v4
+        with:
+          repository: moritzbrantner/rust-packages
+          ref: ${{ needs.prepare.outputs.rust_packages_ref }}
+          path: rust-packages
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Verify native target
+        run: |
+          set -euo pipefail
+          host="$(rustc -vV | awk '/^host:/ { print $2 }')"
+          if [[ "$host" != "${{ matrix.target }}" ]]; then
+            echo "Expected native host ${{ matrix.target }}, got $host." >&2
+            exit 1
+          fi
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build embedded web UI
+        run: bun run build
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Check Rust
+        run: cargo check --locked
+
+      - name: Lint Rust
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test Rust
+        run: cargo test --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Smoke test binary
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            binary="target/release/youtube-corpus.exe"
+          else
+            binary="target/release/youtube-corpus"
+          fi
+
+          "$binary" --version
+          "$binary" --help
+          "$binary" api-schema
+          "$binary" diagnostics
+
+      - name: Package release artifact
+        id: package
+        run: |
+          set -euo pipefail
+          scripts/package-release.sh "${{ needs.prepare.outputs.version }}" "${{ matrix.target }}"
+
+          archive="target/release-artifacts/youtube-corpus-v${{ needs.prepare.outputs.version }}-${{ matrix.target }}"
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            archive="${archive}.zip"
+          else
+            archive="${archive}.tar.gz"
+          fi
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: youtube-corpus-${{ matrix.target }}
+          path: ${{ github.workspace }}/youtube-corpus/${{ steps.package.outputs.archive }}
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-artifacts
+          sha256sum youtube-corpus-v${{ needs.prepare.outputs.version }}-* > SHA256SUMS
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag_name }}
+          name: youtube-corpus ${{ needs.prepare.outputs.tag_name }}
+          files: release-artifacts/*
+          body: |
+            # youtube-corpus ${{ needs.prepare.outputs.tag_name }}
+
+            Initial release of `youtube-corpus`, a local-first Rust CLI and browser UI for building a searchable YouTube transcript corpus in Postgres.
+
+            ## Requirements
+
+            - Postgres with pgvector
+            - `yt-dlp`
+            - `ffmpeg` and `ffprobe`
+            - Optional: `whisper` CLI for ASR fallback
+
+            ## Install
+
+            Download the archive for your platform, unpack it, and place `youtube-corpus` on your PATH.
+
+            ## Quick start
+
+            ```bash
+            docker compose up -d postgres
+            youtube-corpus --database-url postgres://postgres:postgres@localhost:5432/youtube_corpus --migrate
+            ```
+
+            ## Notes
+
+            The release binaries include the browser UI. Source builds require `youtube-corpus` and `rust-packages` checked out as sibling directories.

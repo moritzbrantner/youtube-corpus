@@ -2,11 +2,25 @@
 
 ## Setup
 
+Source builds currently expect `youtube-corpus` and `rust-packages` to be
+checked out as sibling repositories:
+
+```bash
+mkdir youtube-corpus-release-src
+cd youtube-corpus-release-src
+git clone https://github.com/moritzbrantner/rust-packages.git
+git clone https://github.com/moritzbrantner/youtube-corpus.git
+cd youtube-corpus
+```
+
 ```bash
 bun install --frozen-lockfile
 docker compose up -d postgres
 cp .env.example .env
 ```
+
+Binary release users do not need to clone `rust-packages`; release archives
+include the CLI binary and embedded browser UI.
 
 The default local database URL is:
 
@@ -82,18 +96,18 @@ skip when tools or environment variables are missing.
 
 ## Dependency Updates
 
-The `moritzbrantner` runtime, jobs, and text crates are pinned to a git revision
-in `Cargo.toml`.
-To update them:
+The `moritzbrantner` runtime, jobs, text, and video crates are local path
+dependencies from the sibling `rust-packages` checkout. To update them:
 
-1. Choose a new commit from `https://github.com/moritzbrantner/rust-packages.git`.
-2. Update the pinned `rev` values in `Cargo.toml`.
-3. Run `bun run build`.
-4. Run `cargo update` for the affected `moritzbrantner-*` packages.
-5. Run `cargo check` and `cargo test`.
+1. Update the sibling `rust-packages` checkout to the intended commit.
+2. Run `bun run build`.
+3. Run `cargo update` for the affected `moritzbrantner-*` packages when lockfile
+   metadata changes.
+4. Run `cargo check` and `cargo test`.
 
-If the dependency repository requires authentication, configure GitHub auth for
-Cargo before running the update.
+For release builds, the GitHub workflow checks out `youtube-corpus` and
+`rust-packages` as siblings and pins `rust-packages` through the workflow input
+or `RUST_PACKAGES_RELEASE_REF` repository variable.
 
 ## Validation
 
@@ -108,9 +122,9 @@ Expanded validation:
 ```bash
 bun run build
 cargo fmt --check
-cargo check
-cargo clippy --all-targets -- -D warnings
-cargo test
+cargo check --locked
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
 bun run verify:postgres
 ```
 

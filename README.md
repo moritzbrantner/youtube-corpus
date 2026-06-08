@@ -16,9 +16,23 @@ search plus `pgvector` for semantic search.
 - `yt-dlp`, for YouTube discovery, metadata, captions, and media downloads
 - Optional `whisper` command, for local ASR fallback
 
-The `moritzbrantner` text crates are pinned as git dependencies from
-`https://github.com/moritzbrantner/rust-packages.git`. If that repository is
-private in your environment, configure GitHub auth before running Cargo.
+Binary release users do not need to clone `rust-packages`; the downloadable
+archives include the CLI binary and embedded browser UI.
+
+Source builds currently use local path dependencies from the sibling
+`moritzbrantner/rust-packages` repository. Check out both repositories into the
+same parent directory:
+
+```bash
+mkdir youtube-corpus-release-src
+cd youtube-corpus-release-src
+git clone https://github.com/moritzbrantner/rust-packages.git
+git clone https://github.com/moritzbrantner/youtube-corpus.git
+cd youtube-corpus
+bun install --frozen-lockfile
+bun run build
+cargo build --release
+```
 
 ## Quick Start
 
@@ -247,9 +261,9 @@ Expanded validation:
 ```bash
 bun run build
 cargo fmt --check
-cargo check
-cargo clippy --all-targets -- -D warnings
-cargo test
+cargo check --locked
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
 bun run verify:postgres
 ```
 
