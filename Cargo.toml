@@ -7,8 +7,12 @@ publish = false
 
 [dependencies]
 anyhow = "1.0"
+axum = "0.8.9"
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
+mime_guess = "2.0.5"
+open = "5.3.5"
+rust-embed = "8.11.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sqlx = { version = "0.8", default-features = false, features = [
@@ -22,14 +26,17 @@ sqlx = { version = "0.8", default-features = false, features = [
 ] }
 thiserror = "2.0"
 tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "process", "fs", "time"] }
+tower-http = "0.6.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2.5.8"
 uuid = { version = "1.11", features = ["v5", "serde"] }
 
-text-core = { package = "moritzbrantner-text-core", path = "../rust-packages/crates/text/text-core" }
-text-embeddings = { package = "moritzbrantner-text-embeddings", path = "../rust-packages/crates/text/text-embeddings" }
-text-lexical = { package = "moritzbrantner-text-lexical", path = "../rust-packages/crates/text/text-lexical" }
-text-transcripts = { package = "moritzbrantner-text-transcripts", path = "../rust-packages/crates/text/text-transcripts" }
+text-core = { package = "moritzbrantner-text-core", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
+text-embeddings = { package = "moritzbrantner-text-embeddings", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
+text-lexical = { package = "moritzbrantner-text-lexical", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
+text-transcripts = { package = "moritzbrantner-text-transcripts", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
 
 [dev-dependencies]
 tempfile = "3.23"
+tower = { version = "0.5.3", features = ["util"] }

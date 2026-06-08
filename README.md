@@ -1,16 +1,70 @@
 # youtube-corpus
 
-`youtube-corpus` builds a searchable Postgres corpus from YouTube videos,
-playlists, channels, or local media files. It stores transcript rows in
-Postgres and uses Postgres full-text search plus `pgvector` for semantic search.
+`youtube-corpus` is a Rust CLI for building and searching a local YouTube
+transcript corpus in Postgres. Running the program with no subcommand starts a
+local browser UI backed by the same Rust library and HTTP API. It is not a
+Tauri desktop app.
 
-## Setup
+The corpus stores transcript rows in Postgres and uses Postgres full-text
+search plus `pgvector` for semantic search.
+
+## Prerequisites
+
+- Rust stable
+- Bun
+- Docker, for the local Postgres service
+- `yt-dlp`, for YouTube discovery, metadata, captions, and media downloads
+- Optional `whisper` command, for local ASR fallback
+
+The `moritzbrantner` text crates are pinned as git dependencies from
+`https://github.com/moritzbrantner/rust-packages.git`. If that repository is
+private in your environment, configure GitHub auth before running Cargo.
+
+## Quick Start
 
 ```bash
 cp .env.example .env
 docker compose up -d postgres
-cargo run -- migrate
+bun install --frozen-lockfile
+bun run build
+cargo run -- --migrate
 ```
+
+The last command starts the local web UI at `http://127.0.0.1:1420` and opens it
+in your browser.
+
+## Web UI
+
+Start the local web UI with defaults:
+
+```bash
+cargo run
+```
+
+Use another port without opening a browser:
+
+```bash
+cargo run -- --port 1421 --no-open
+```
+
+Use the explicit serve command:
+
+```bash
+cargo run -- serve --host 0.0.0.0 --port 1420
+```
+
+The web server reads `DATABASE_URL` from the process environment, or from
+`--database-url`. The browser UI cannot override the database URL per request.
+
+For frontend development, run the Rust API and Vite separately:
+
+```bash
+cargo run -- --no-open
+bun run dev:frontend
+```
+
+Vite runs on `http://127.0.0.1:5173` and proxies `/api` to the Rust server on
+`http://127.0.0.1:1420`.
 
 ## Ingest
 
@@ -26,6 +80,32 @@ For playlists:
 ```bash
 cargo run -- ingest --playlist-url "https://www.youtube.com/playlist?list=..." --max-items 10
 ```
+
+For local media:
+
+```bash
+cargo run -- ingest --input ./lecture.mp4 --transcriber-command whisper
+```
+
+Pass extra `yt-dlp` arguments with repeated `--yt-dlp-arg` flags. Each flag is
+passed as one argv entry to every `yt-dlp` call used by ingest, caption download,
+metadata download, media download, benchmark ingest, and saved subscription
+checks.
+
+```bash
+cargo run -- ingest --url "$URL" --caption-language de --transcriber-command whisper
+cargo run -- ingest --url "$URL" --yt-dlp-arg=--cookies-from-browser --yt-dlp-arg=firefox
+cargo run -- ingest --url "$URL" --no-asr
+```
+
+By default the tool requests manual and auto captions in English and also tries
+to run a `whisper` command from `PATH`. If no ASR command is available, ASR is
+reported as skipped while captions are still indexed.
+
+For YouTube sources, ingest downloads normalized video metadata with `yt-dlp`
+into each item's `metadata/` work-dir folder. The corpus stores common filter
+fields such as channel/uploader ids, thumbnails, counts, categories, tags, live
+status, availability, and age limit alongside the full normalized metadata JSON.
 
 ## Subscriptions
 
@@ -53,55 +133,13 @@ items. To run continuously instead of from cron or systemd:
 cargo run -- subscriptions check --watch --interval-seconds 3600
 ```
 
-Use `status` to see both the channels/playlists being monitored and the videos
-already known to the corpus. Each video reports whether media was downloaded,
-whether caption files were downloaded, and whether transcript segments were
-parsed and indexed:
+Use `status` to see both monitored sources and videos already known to the
+corpus:
 
 ```bash
 cargo run -- status
 cargo run -- videos --parsed
 cargo run -- videos --downloaded --limit 25
-```
-
-First example corpus and benchmark:
-
-```bash
-cargo run -- ingest \
-  --channel-url "https://www.youtube.com/@Distinguo/videos" \
-  --max-items 3 \
-  --no-asr \
-  --migrate
-
-cargo run -- benchmark --max-items 3 --migrate
-```
-
-The benchmark preset uses Distinguo long-form videos from
-`https://www.youtube.com/@Distinguo/videos`, indexes captions by default, skips
-ASR unless `--with-asr` is passed, stores files under
-`use-case-output/youtube-corpus-benchmarks/distinguo`, and returns a JSON report
-with ingest and search timings.
-
-By default the tool requests manual and auto captions in English and also tries
-to run a `whisper` command from `PATH`. If no ASR command is available, ASR is
-reported as skipped while captions are still indexed.
-
-For YouTube sources, ingest also downloads normalized video metadata with
-`yt-dlp` into each item's `metadata/` work-dir folder. The corpus stores common
-filter fields such as channel/uploader ids, thumbnails, view/like/comment
-counts, categories, tags, live status, availability, and age limit alongside the
-full normalized metadata JSON.
-
-Pass extra `yt-dlp` arguments with repeated `--yt-dlp-arg` flags. Each flag is
-passed as one argv entry to every `yt-dlp` call used by ingest, caption download,
-metadata download, media download, benchmark ingest, and saved subscription
-checks.
-
-```bash
-cargo run -- ingest --url "$URL" --caption-language de --transcriber-command whisper
-cargo run -- ingest --url "$URL" --yt-dlp-arg=--cookies-from-browser --yt-dlp-arg=firefox
-cargo run -- ingest --url "$URL" --no-asr
-cargo run -- ingest --input ./lecture.mp4 --transcriber-command whisper
 ```
 
 ## Search
@@ -115,11 +153,43 @@ cargo run -- search --query "semantic topic" --mode semantic
 Search results include the video id, stream id, transcript source, timestamps,
 source URL, title, snippet text, and scores.
 
-## Verification
+## Benchmark
 
 ```bash
+cargo run -- ingest \
+  --channel-url "https://www.youtube.com/@Distinguo/videos" \
+  --max-items 3 \
+  --no-asr \
+  --migrate
+
+cargo run -- benchmark --max-items 3 --migrate
+```
+
+The benchmark preset uses Distinguo long-form videos, indexes captions by
+default, skips ASR unless `--with-asr` is passed, stores files under
+`use-case-output/youtube-corpus-benchmarks/distinguo`, and returns a JSON report
+with ingest and search timings.
+
+## Verification
+
+Canonical validation:
+
+```bash
+bun install --frozen-lockfile
+bun run validate
+```
+
+Expanded validation:
+
+```bash
+bun run build
 cargo fmt --check
 cargo check
 cargo test
+docker compose up -d postgres
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus cargo test -- --ignored
+docker compose down -v
 ```
+
+See [docs/architecture.md](docs/architecture.md) and
+[docs/development.md](docs/development.md) for implementation details.

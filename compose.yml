@@ -1,20 +1,4 @@
 services:
-  app:
-    image: oven/bun:1
-    working_dir: /app
-    command: sh -c "bun install --frozen-lockfile && bun run dev:frontend -- --host 0.0.0.0"
-    environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/youtube_corpus
-    ports:
-      - "1420:1420"
-    volumes:
-      - .:/app
-      - node-modules:/app/node_modules
-      - bun-cache:/root/.bun/install/cache
-    depends_on:
-      postgres:
-        condition: service_healthy
-
   postgres:
     image: pgvector/pgvector:pg16
     environment:
@@ -32,6 +16,4 @@ services:
       retries: 20
 
 volumes:
-  bun-cache:
-  node-modules:
   postgres-data:

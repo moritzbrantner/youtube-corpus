@@ -1,5 +1,3 @@
-import { invoke } from "@tauri-apps/api/core";
-
 export type SearchMode = "hybrid" | "fts" | "semantic";
 export type SourceKind = "caption_manual" | "caption_auto" | "asr";
 export type AddSourceKind = "video" | "channel" | "playlist";
@@ -27,7 +25,6 @@ export interface SearchReport {
 }
 
 export interface SearchTranscriptsInput {
-  databaseUrl?: string;
   query: string;
   mode: SearchMode;
   topK: number;
@@ -50,7 +47,6 @@ export interface SearchTranscriptsInput {
 }
 
 export interface TranscriptContextInput {
-  databaseUrl?: string;
   segmentId: string;
   before?: number;
   after?: number;
@@ -115,7 +111,6 @@ export interface DownloadedFile {
 }
 
 export interface DownloadedFilesInput {
-  databaseUrl?: string;
   downloadedOnly?: boolean;
   parsedOnly?: boolean;
   limit?: number;
@@ -126,9 +121,7 @@ export interface DatabaseStatus {
   databaseUrl: string | null;
 }
 
-export interface CorpusStatusInput {
-  databaseUrl?: string;
-}
+export interface CorpusStatusInput {}
 
 export interface CorpusStats {
   videos: number;
@@ -189,7 +182,6 @@ export interface Subscription {
 }
 
 export interface AddSourceInput {
-  databaseUrl?: string;
   sourceKind: AddSourceKind;
   sourceUrl: string;
   name?: string | null;
@@ -218,33 +210,72 @@ export interface AddSourceReport {
   ingest: IngestReport | null;
 }
 
-function tauriInvoke<T>(command: string, args?: Record<string, unknown>) {
-  if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
-    throw new Error("Tauri backend is unavailable. Start the desktop app with `bun dev`.");
+interface ApiErrorEnvelope {
+  error?: {
+    message?: string;
+  };
+}
+
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, init);
+  const contentType = response.headers.get("content-type") ?? "";
+  const hasJson = contentType.includes("application/json");
+  const data = hasJson ? await response.json() : await response.text();
+
+  if (!response.ok) {
+    const message =
+      hasJson && typeof data === "object" && data !== null
+        ? ((data as ApiErrorEnvelope).error?.message ?? response.statusText)
+        : String(data || response.statusText);
+    throw new Error(message);
   }
-  return invoke<T>(command, args);
+
+  return data as T;
+}
+
+function jsonPost<T>(path: string, body: unknown) {
+  return apiFetch<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+function queryString(input: DownloadedFilesInput) {
+  const params = new URLSearchParams();
+  if (input.downloadedOnly !== undefined) {
+    params.set("downloadedOnly", String(input.downloadedOnly));
+  }
+  if (input.parsedOnly !== undefined) {
+    params.set("parsedOnly", String(input.parsedOnly));
+  }
+  if (input.limit !== undefined) {
+    params.set("limit", String(input.limit));
+  }
+  const value = params.toString();
+  return value ? `?${value}` : "";
 }
 
 export function getDatabaseStatus() {
-  return tauriInvoke<DatabaseStatus>("database_status");
+  return apiFetch<DatabaseStatus>("/api/database-status");
 }
 
-export function getCorpusStatus(input: CorpusStatusInput) {
-  return tauriInvoke<CorpusStatus>("corpus_status", { input });
+export function getCorpusStatus(_input: CorpusStatusInput = {}) {
+  return apiFetch<CorpusStatus>("/api/corpus-status");
 }
 
 export function searchTranscripts(input: SearchTranscriptsInput) {
-  return tauriInvoke<SearchReport>("search_transcripts", { input });
+  return jsonPost<SearchReport>("/api/search", input);
 }
 
 export function getTranscriptContext(input: TranscriptContextInput) {
-  return tauriInvoke<TranscriptContextReport>("transcript_context", { input });
+  return jsonPost<TranscriptContextReport>("/api/transcript-context", input);
 }
 
 export function getDownloadedFiles(input: DownloadedFilesInput) {
-  return tauriInvoke<DownloadedFile[]>("downloaded_files", { input });
+  return apiFetch<DownloadedFile[]>(`/api/downloaded-files${queryString(input)}`);
 }
 
 export function addSource(input: AddSourceInput) {
-  return tauriInvoke<AddSourceReport>("add_source", { input });
+  return jsonPost<AddSourceReport>("/api/sources", input);
 }

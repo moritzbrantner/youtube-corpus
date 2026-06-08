@@ -76,7 +76,7 @@ import {
   getDownloadedFiles,
   getTranscriptContext,
   searchTranscripts,
-} from "./app/tauri";
+} from "./app/api";
 
 const defaultQuery = "first uploaded youtube video";
 const themeStorageKey = "youtube-corpus-theme-mode";
@@ -375,7 +375,6 @@ export default function App() {
   const queryClient = useQueryClient();
   const [activePage, setActivePage] = React.useState<PageId>(getInitialPage);
   const [themeMode, setThemeMode] = React.useState<ThemeMode>(getInitialThemeMode);
-  const [databaseUrl, setDatabaseUrl] = React.useState("");
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [addSourceKind, setAddSourceKind] = React.useState<AddSourceKind>("video");
   const [sourceUrl, setSourceUrl] = React.useState("");
@@ -420,7 +419,6 @@ export default function App() {
   const [lastReport, setLastReport] = React.useState<SearchReport | null>(null);
   const [selectedResult, setSelectedResult] = React.useState<SearchResult | null>(null);
   const [contextOpen, setContextOpen] = React.useState(false);
-  const hasUserEditedDatabaseUrl = React.useRef(false);
 
   React.useLayoutEffect(() => {
     applyThemeMode(themeMode);
@@ -445,17 +443,10 @@ export default function App() {
   }, [addSourceKind]);
 
   const corpusStatus = useQuery({
-    queryKey: ["corpus-status", databaseUrl.trim()],
-    queryFn: () => getCorpusStatus({ databaseUrl: databaseUrl.trim() || undefined }),
+    queryKey: ["corpus-status"],
+    queryFn: () => getCorpusStatus(),
     refetchOnWindowFocus: false,
   });
-
-  React.useEffect(() => {
-    const envDatabaseUrl = corpusStatus.data?.databaseUrl;
-    if (!hasUserEditedDatabaseUrl.current && envDatabaseUrl && databaseUrl.trim() === "") {
-      setDatabaseUrl(envDatabaseUrl);
-    }
-  }, [corpusStatus.data?.databaseUrl, databaseUrl]);
 
   const searchMutation = useMutation({
     mutationFn: searchTranscripts,
@@ -475,10 +466,9 @@ export default function App() {
   });
 
   const transcriptContext = useQuery({
-    queryKey: ["transcript-context", selectedResult?.segmentId, databaseUrl.trim()],
+    queryKey: ["transcript-context", selectedResult?.segmentId],
     queryFn: () =>
       getTranscriptContext({
-        databaseUrl: databaseUrl.trim() || undefined,
         segmentId: selectedResult!.segmentId,
         before: 4,
         after: 6,
@@ -505,10 +495,9 @@ export default function App() {
         ? { label: "Needs migration", variant: "secondary" as const }
         : { label: "Not connected", variant: "destructive" as const };
   const downloadedFiles = useQuery({
-    queryKey: ["downloaded-files", databaseUrl.trim()],
+    queryKey: ["downloaded-files"],
     queryFn: () =>
       getDownloadedFiles({
-        databaseUrl: databaseUrl.trim() || undefined,
         downloadedOnly: true,
         limit: 100,
       }),
@@ -545,7 +534,6 @@ export default function App() {
     setLastSearchSourceKind(nextSourceKind);
     setLastSearchFilterLabels(buildSearchFilterLabels(nextSourceKind));
     searchMutation.mutate({
-      databaseUrl: databaseUrl.trim() || undefined,
       query: trimmedQuery,
       mode,
       topK,
@@ -580,7 +568,6 @@ export default function App() {
 
     const parsedMaxItems = optionalNumber(maxItems);
     addSourceMutation.mutate({
-      databaseUrl: databaseUrl.trim() || undefined,
       sourceKind: addSourceKind,
       sourceUrl: sourceUrl.trim(),
       name: sourceName.trim() || null,
@@ -645,11 +632,6 @@ export default function App() {
   function openContext(result: SearchResult) {
     setSelectedResult(result);
     setContextOpen(true);
-  }
-
-  function updateDatabaseUrl(value: string) {
-    hasUserEditedDatabaseUrl.current = true;
-    setDatabaseUrl(value);
   }
 
   function renderAddReport(report: AddSourceReport | null) {
@@ -1036,11 +1018,11 @@ export default function App() {
         <SearchState
           variant="error"
           title="Database URL required"
-          description="Add a Postgres connection in Connection settings."
+          description="Set DATABASE_URL before starting the local web UI."
           actions={
             <Button type="button" variant="outline" onClick={() => setSettingsOpen(true)}>
               <Settings className="size-4" aria-hidden="true" />
-              Connection settings
+              Connection status
             </Button>
           }
         />
@@ -1056,7 +1038,7 @@ export default function App() {
           actions={
             <Button type="button" variant="outline" onClick={() => setSettingsOpen(true)}>
               <Settings className="size-4" aria-hidden="true" />
-              Connection settings
+              Connection status
             </Button>
           }
         />
@@ -1245,7 +1227,7 @@ export default function App() {
           actions={
             <Button type="button" variant="outline" onClick={() => setSettingsOpen(true)}>
               <Settings className="size-4" aria-hidden="true" />
-              Connection settings
+              Connection status
             </Button>
           }
         />
@@ -1378,7 +1360,7 @@ export default function App() {
                 : [{ id: "database", title: "Connection needs attention", unread: true }],
             }}
             accountMenu={{
-              user: { name: "Local Corpus", email: "desktop app", initials: "YC" },
+              user: { name: "Local Corpus", email: "local web UI", initials: "YC" },
               items: [{ id: "postgres", label: "Postgres corpus" }],
             }}
             themeModeSwitch={themeModeSwitchProps}
@@ -1417,20 +1399,20 @@ export default function App() {
         <SheetContent side="right" className="w-full sm:max-w-md">
           <SheetHeader>
             <SheetTitle>Connection</SheetTitle>
-            <SheetDescription>Configure the local Postgres corpus connection.</SheetDescription>
+            <SheetDescription>
+              The local web server reads the Postgres connection from DATABASE_URL.
+            </SheetDescription>
           </SheetHeader>
           <div className="mt-6 grid gap-5">
-            <label className="grid gap-2">
+            <div className="grid gap-2">
               <span className="text-sm font-medium">Database URL</span>
-              <div className="flex min-w-0 items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 py-2">
                 <Database className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <Input
-                  value={databaseUrl}
-                  onChange={(event) => updateDatabaseUrl(event.target.value)}
-                  spellCheck={false}
-                />
+                <span className="min-w-0 truncate text-sm">
+                  {corpusStatus.data?.databaseUrl ?? "Not configured"}
+                </span>
               </div>
-            </label>
+            </div>
 
             <div className="grid gap-3 rounded-md border border-border p-4 text-sm">
               <div className="flex items-center justify-between gap-3">
@@ -1470,7 +1452,7 @@ export default function App() {
             <SurfaceHeader>
               <SurfaceTitle>Search controls</SurfaceTitle>
               <SurfaceDescription>
-                Configure the query sent to the Tauri backend.
+                Configure the query sent to the local HTTP API.
               </SurfaceDescription>
             </SurfaceHeader>
             <SurfaceContent>

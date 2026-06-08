@@ -3,6 +3,7 @@ use clap::Parser;
 use std::time::Duration;
 use youtube_corpus::cli::{Cli, Command, SubscriptionsCommand};
 use youtube_corpus::config::AppConfig;
+use youtube_corpus::web::WebServerConfig;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -14,8 +15,42 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
-    let config = AppConfig::from_env_and_cli(cli.database_url.clone())?;
+    let database_url = cli.database_url.clone();
+    let host = cli.host;
+    let port = cli.port;
+    let open_browser = !cli.no_open;
+    let migrate = cli.migrate;
+
     match cli.command {
+        None => {
+            youtube_corpus::web::serve(WebServerConfig {
+                database_url,
+                host,
+                port,
+                open_browser,
+                migrate,
+            })
+            .await?;
+        }
+        Some(Command::Serve(args)) => {
+            youtube_corpus::web::serve(WebServerConfig {
+                database_url,
+                host,
+                port,
+                open_browser,
+                migrate: migrate || args.migrate,
+            })
+            .await?;
+        }
+        Some(command) => run_command(command, database_url).await?,
+    }
+    Ok(())
+}
+
+async fn run_command(command: Command, database_url: Option<String>) -> anyhow::Result<()> {
+    let config = AppConfig::from_env_and_cli(database_url)?;
+    match command {
+        Command::Serve(_) => unreachable!("serve is handled before command dispatch"),
         Command::Migrate => {
             let pool = youtube_corpus::db::connect(&config.database_url).await?;
             youtube_corpus::db::migrate(&pool).await?;

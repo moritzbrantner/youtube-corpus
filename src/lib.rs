@@ -8,6 +8,7 @@ pub mod ingest;
 pub mod search;
 pub mod status;
 pub mod subscriptions;
+pub mod web;
 pub mod youtube;
 
 pub use config::{AppConfig, CaptionConfig, CorpusSource, SearchMode, SourceKind, YtDlpConfig};

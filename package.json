@@ -6,28 +6,23 @@
   "scripts": {
     "db:up": "docker compose up -d --wait postgres",
     "db:migrate": "DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/youtube_corpus} cargo run -- migrate",
-    "dev": "bun run db:up && bun run db:migrate && DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/youtube_corpus} tauri dev",
+    "dev": "bun run build && DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/youtube_corpus} cargo run",
     "dev:frontend": "vite",
     "build": "tsc && vite build",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "tauri:dev": "bun run dev",
-    "tauri:build": "tauri build",
-    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml"
+    "validate": "bun run format:check && bun run build && cargo fmt --check && cargo check && cargo test"
   },
   "dependencies": {
     "@moritzbrantner/ui": "^0.10.0",
     "@tanstack/react-query": "^5.100.6",
-    "@tauri-apps/api": "^2.10.1",
     "lucide-react": "^1.7.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.3",
-    "@tauri-apps/cli": "^2.10.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",

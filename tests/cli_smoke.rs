@@ -2,6 +2,44 @@ use clap::Parser;
 use youtube_corpus::cli::{Cli, Command, SubscriptionsCommand};
 
 #[test]
+fn parses_default_web_ui_command() {
+    let cli = Cli::parse_from(["youtube-corpus"]);
+    assert!(cli.command.is_none());
+    assert_eq!(cli.host.to_string(), "127.0.0.1");
+    assert_eq!(cli.port, 1420);
+    assert!(!cli.no_open);
+    assert!(!cli.migrate);
+}
+
+#[test]
+fn parses_default_web_ui_flags() {
+    let cli = Cli::parse_from(["youtube-corpus", "--port", "1421", "--no-open", "--migrate"]);
+    assert!(cli.command.is_none());
+    assert_eq!(cli.port, 1421);
+    assert!(cli.no_open);
+    assert!(cli.migrate);
+}
+
+#[test]
+fn parses_explicit_serve_command() {
+    let cli = Cli::parse_from([
+        "youtube-corpus",
+        "serve",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "1420",
+        "--migrate",
+    ]);
+    assert_eq!(cli.host.to_string(), "0.0.0.0");
+    assert_eq!(cli.port, 1420);
+    match cli.command {
+        Some(Command::Serve(args)) => assert!(args.migrate),
+        other => panic!("expected serve command, got {other:?}"),
+    }
+}
+
+#[test]
 fn parses_ingest_url_command() {
     let cli = Cli::parse_from([
         "youtube-corpus",
@@ -16,7 +54,7 @@ fn parses_ingest_url_command() {
         "--no-asr",
     ]);
     match cli.command {
-        Command::Ingest(args) => {
+        Some(Command::Ingest(args)) => {
             assert_eq!(
                 args.url.as_deref(),
                 Some("https://www.youtube.com/watch?v=jNQXAC9IVRw")
@@ -44,7 +82,7 @@ fn parses_search_command() {
         "3",
     ]);
     match cli.command {
-        Command::Search(args) => {
+        Some(Command::Search(args)) => {
             assert_eq!(args.query, "rust transcript");
             assert_eq!(args.top_k, 3);
         }
@@ -66,7 +104,7 @@ fn parses_subscribe_channel_command() {
         "--no-asr",
     ]);
     match cli.command {
-        Command::Subscribe(args) => {
+        Some(Command::Subscribe(args)) => {
             assert_eq!(
                 args.channel_url.as_deref(),
                 Some("https://www.youtube.com/@Distinguo/videos")
@@ -91,7 +129,7 @@ fn parses_subscriptions_check_watch_command() {
         "30",
     ]);
     match cli.command {
-        Command::Subscriptions(args) => match args.command {
+        Some(Command::Subscriptions(args)) => match args.command {
             SubscriptionsCommand::Check(args) => {
                 assert!(args.watch);
                 assert_eq!(args.interval_seconds, 30);
@@ -115,7 +153,7 @@ fn parses_videos_command() {
         "25",
     ]);
     match cli.command {
-        Command::Videos(args) => {
+        Some(Command::Videos(args)) => {
             assert!(args.downloaded);
             assert!(args.parsed);
             assert_eq!(args.limit, Some(25));
@@ -135,7 +173,7 @@ fn parses_status_command() {
         "--parsed",
     ]);
     match cli.command {
-        Command::Status(args) => {
+        Some(Command::Status(args)) => {
             assert!(args.include_disabled);
             assert!(args.parsed);
         }
@@ -157,7 +195,7 @@ fn parses_distinguo_benchmark_command() {
         "faith alone",
     ]);
     match cli.command {
-        Command::Benchmark(args) => {
+        Some(Command::Benchmark(args)) => {
             assert_eq!(args.max_items, 2);
             assert!(args.no_auto_captions);
             assert_eq!(args.search_queries, vec!["faith alone"]);

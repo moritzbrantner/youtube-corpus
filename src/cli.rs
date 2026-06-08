@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use std::path::PathBuf;
 
 use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
@@ -21,12 +22,21 @@ use crate::subscriptions::{
 pub struct Cli {
     #[arg(long, global = true, value_name = "URL")]
     pub database_url: Option<String>,
+    #[arg(long, global = true, default_value = "127.0.0.1")]
+    pub host: IpAddr,
+    #[arg(long, global = true, default_value_t = 1420)]
+    pub port: u16,
+    #[arg(long, global = true)]
+    pub no_open: bool,
+    #[arg(long)]
+    pub migrate: bool,
     #[command(subcommand)]
-    pub command: Command,
+    pub command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    Serve(ServeArgs),
     Migrate,
     Ingest(IngestArgs),
     Subscribe(SubscribeArgs),
@@ -35,6 +45,12 @@ pub enum Command {
     Status(StatusArgs),
     Benchmark(BenchmarkArgs),
     Search(SearchArgs),
+}
+
+#[derive(Debug, Parser)]
+pub struct ServeArgs {
+    #[arg(long)]
+    pub migrate: bool,
 }
 
 #[derive(Debug, Parser)]
