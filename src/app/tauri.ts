@@ -32,6 +32,21 @@ export interface SearchTranscriptsInput {
   mode: SearchMode;
   topK: number;
   sourceKind?: SourceKind | null;
+  videoId?: string | null;
+  language?: string | null;
+  transcriptStartMin?: number | null;
+  transcriptStartMax?: number | null;
+  uploadDateFrom?: string | null;
+  uploadDateTo?: string | null;
+  durationMin?: number | null;
+  durationMax?: number | null;
+  channelQuery?: string | null;
+  titleQuery?: string | null;
+  categoryQuery?: string | null;
+  tagQuery?: string | null;
+  metadataQuery?: string | null;
+  viewCountMin?: number | null;
+  viewCountMax?: number | null;
 }
 
 export interface TranscriptContextInput {

@@ -78,6 +78,20 @@ pub async fn run_distinguo_benchmark(request: BenchmarkRequest) -> anyhow::Resul
             mode: SearchMode::Hybrid,
             source_kind: None,
             video_id: None,
+            language: None,
+            transcript_start_min: None,
+            transcript_start_max: None,
+            upload_date_from: None,
+            upload_date_to: None,
+            duration_min: None,
+            duration_max: None,
+            channel_query: None,
+            title_query: None,
+            category_query: None,
+            tag_query: None,
+            metadata_query: None,
+            view_count_min: None,
+            view_count_max: None,
         })
         .await?;
         searches.push(TimedSearchReport {

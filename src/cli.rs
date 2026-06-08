@@ -429,6 +429,34 @@ pub struct SearchArgs {
     pub source_kind: Option<SourceKind>,
     #[arg(long)]
     pub video_id: Option<Uuid>,
+    #[arg(long)]
+    pub language: Option<String>,
+    #[arg(long)]
+    pub transcript_start_min: Option<f64>,
+    #[arg(long)]
+    pub transcript_start_max: Option<f64>,
+    #[arg(long)]
+    pub upload_date_from: Option<String>,
+    #[arg(long)]
+    pub upload_date_to: Option<String>,
+    #[arg(long)]
+    pub duration_min: Option<f64>,
+    #[arg(long)]
+    pub duration_max: Option<f64>,
+    #[arg(long)]
+    pub channel: Option<String>,
+    #[arg(long)]
+    pub title: Option<String>,
+    #[arg(long)]
+    pub category: Option<String>,
+    #[arg(long)]
+    pub tag: Option<String>,
+    #[arg(long)]
+    pub metadata: Option<String>,
+    #[arg(long)]
+    pub view_count_min: Option<i64>,
+    #[arg(long)]
+    pub view_count_max: Option<i64>,
 }
 
 impl SearchArgs {
@@ -443,6 +471,20 @@ impl SearchArgs {
             mode: self.mode,
             source_kind: self.source_kind,
             video_id: self.video_id,
+            language: self.language,
+            transcript_start_min: self.transcript_start_min,
+            transcript_start_max: self.transcript_start_max,
+            upload_date_from: self.upload_date_from,
+            upload_date_to: self.upload_date_to,
+            duration_min: self.duration_min,
+            duration_max: self.duration_max,
+            channel_query: self.channel,
+            title_query: self.title,
+            category_query: self.category,
+            tag_query: self.tag,
+            metadata_query: self.metadata,
+            view_count_min: self.view_count_min,
+            view_count_max: self.view_count_max,
         })
     }
 }

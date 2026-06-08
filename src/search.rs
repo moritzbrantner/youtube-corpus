@@ -15,6 +15,20 @@ pub struct SearchRequest {
     pub mode: SearchMode,
     pub source_kind: Option<SourceKind>,
     pub video_id: Option<Uuid>,
+    pub language: Option<String>,
+    pub transcript_start_min: Option<f64>,
+    pub transcript_start_max: Option<f64>,
+    pub upload_date_from: Option<String>,
+    pub upload_date_to: Option<String>,
+    pub duration_min: Option<f64>,
+    pub duration_max: Option<f64>,
+    pub channel_query: Option<String>,
+    pub title_query: Option<String>,
+    pub category_query: Option<String>,
+    pub tag_query: Option<String>,
+    pub metadata_query: Option<String>,
+    pub view_count_min: Option<i64>,
+    pub view_count_max: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +72,7 @@ pub async fn search_corpus(request: SearchRequest) -> anyhow::Result<SearchRepor
 }
 
 async fn fts_search(pool: &PgPool, request: &SearchRequest) -> anyhow::Result<Vec<SearchResult>> {
+    let filters = SearchFilterParams::try_from(request)?;
     rows_to_results(
         sqlx::query(
             "SELECT s.id, s.video_id, s.stream_id, st.source_kind, s.language, s.start_seconds,
@@ -71,13 +86,59 @@ async fn fts_search(pool: &PgPool, request: &SearchRequest) -> anyhow::Result<Ve
              WHERE s.search_vector @@ plainto_tsquery('simple', $1)
                AND ($3::text IS NULL OR st.source_kind = $3)
                AND ($4::uuid IS NULL OR s.video_id = $4)
+               AND ($5::text IS NULL OR s.language = $5)
+               AND ($6::float8 IS NULL OR s.start_seconds >= $6)
+               AND ($7::float8 IS NULL OR s.start_seconds <= $7)
+               AND ($8::text IS NULL OR v.upload_date >= $8)
+               AND ($9::text IS NULL OR v.upload_date <= $9)
+               AND ($10::float8 IS NULL OR v.duration_seconds >= $10)
+               AND ($11::float8 IS NULL OR v.duration_seconds <= $11)
+               AND (
+                 $12::text IS NULL
+                 OR v.channel ILIKE ('%' || $12 || '%')
+                 OR v.channel_id ILIKE ('%' || $12 || '%')
+                 OR v.uploader ILIKE ('%' || $12 || '%')
+                 OR v.uploader_id ILIKE ('%' || $12 || '%')
+               )
+               AND ($13::text IS NULL OR v.title ILIKE ('%' || $13 || '%'))
+               AND (
+                 $14::text IS NULL
+                 OR EXISTS (
+                   SELECT 1 FROM unnest(v.categories) category
+                   WHERE category ILIKE ('%' || $14 || '%')
+                 )
+               )
+               AND (
+                 $15::text IS NULL
+                 OR EXISTS (
+                   SELECT 1 FROM unnest(v.tags) tag
+                   WHERE tag ILIKE ('%' || $15 || '%')
+                 )
+               )
+               AND ($16::text IS NULL OR v.metadata::text ILIKE ('%' || $16 || '%'))
+               AND ($17::bigint IS NULL OR v.view_count >= $17)
+               AND ($18::bigint IS NULL OR v.view_count <= $18)
              ORDER BY score DESC
              LIMIT $2",
         )
         .bind(&request.query)
         .bind(request.top_k)
-        .bind(request.source_kind.map(|kind| kind.as_str().to_string()))
-        .bind(request.video_id)
+        .bind(filters.source_kind)
+        .bind(filters.video_id)
+        .bind(filters.language)
+        .bind(filters.transcript_start_min)
+        .bind(filters.transcript_start_max)
+        .bind(filters.upload_date_from)
+        .bind(filters.upload_date_to)
+        .bind(filters.duration_min)
+        .bind(filters.duration_max)
+        .bind(filters.channel_query)
+        .bind(filters.title_query)
+        .bind(filters.category_query)
+        .bind(filters.tag_query)
+        .bind(filters.metadata_query)
+        .bind(filters.view_count_min)
+        .bind(filters.view_count_max)
         .fetch_all(pool)
         .await?,
     )
@@ -88,6 +149,7 @@ async fn semantic_search(
     request: &SearchRequest,
 ) -> anyhow::Result<Vec<SearchResult>> {
     let query_vector = query_vector(&request.query)?;
+    let filters = SearchFilterParams::try_from(request)?;
     rows_to_results(
         sqlx::query(
             "SELECT s.id, s.video_id, s.stream_id, st.source_kind, s.language, s.start_seconds,
@@ -101,13 +163,59 @@ async fn semantic_search(
              WHERE s.embedding IS NOT NULL
                AND ($3::text IS NULL OR st.source_kind = $3)
                AND ($4::uuid IS NULL OR s.video_id = $4)
+               AND ($5::text IS NULL OR s.language = $5)
+               AND ($6::float8 IS NULL OR s.start_seconds >= $6)
+               AND ($7::float8 IS NULL OR s.start_seconds <= $7)
+               AND ($8::text IS NULL OR v.upload_date >= $8)
+               AND ($9::text IS NULL OR v.upload_date <= $9)
+               AND ($10::float8 IS NULL OR v.duration_seconds >= $10)
+               AND ($11::float8 IS NULL OR v.duration_seconds <= $11)
+               AND (
+                 $12::text IS NULL
+                 OR v.channel ILIKE ('%' || $12 || '%')
+                 OR v.channel_id ILIKE ('%' || $12 || '%')
+                 OR v.uploader ILIKE ('%' || $12 || '%')
+                 OR v.uploader_id ILIKE ('%' || $12 || '%')
+               )
+               AND ($13::text IS NULL OR v.title ILIKE ('%' || $13 || '%'))
+               AND (
+                 $14::text IS NULL
+                 OR EXISTS (
+                   SELECT 1 FROM unnest(v.categories) category
+                   WHERE category ILIKE ('%' || $14 || '%')
+                 )
+               )
+               AND (
+                 $15::text IS NULL
+                 OR EXISTS (
+                   SELECT 1 FROM unnest(v.tags) tag
+                   WHERE tag ILIKE ('%' || $15 || '%')
+                 )
+               )
+               AND ($16::text IS NULL OR v.metadata::text ILIKE ('%' || $16 || '%'))
+               AND ($17::bigint IS NULL OR v.view_count >= $17)
+               AND ($18::bigint IS NULL OR v.view_count <= $18)
              ORDER BY s.embedding <=> $1::vector
              LIMIT $2",
         )
         .bind(query_vector)
         .bind(request.top_k)
-        .bind(request.source_kind.map(|kind| kind.as_str().to_string()))
-        .bind(request.video_id)
+        .bind(filters.source_kind)
+        .bind(filters.video_id)
+        .bind(filters.language)
+        .bind(filters.transcript_start_min)
+        .bind(filters.transcript_start_max)
+        .bind(filters.upload_date_from)
+        .bind(filters.upload_date_to)
+        .bind(filters.duration_min)
+        .bind(filters.duration_max)
+        .bind(filters.channel_query)
+        .bind(filters.title_query)
+        .bind(filters.category_query)
+        .bind(filters.tag_query)
+        .bind(filters.metadata_query)
+        .bind(filters.view_count_min)
+        .bind(filters.view_count_max)
         .fetch_all(pool)
         .await?,
     )
@@ -118,15 +226,49 @@ async fn hybrid_search(
     request: &SearchRequest,
 ) -> anyhow::Result<Vec<SearchResult>> {
     let query_vector = query_vector(&request.query)?;
+    let filters = SearchFilterParams::try_from(request)?;
     rows_to_results(
         sqlx::query(
             "WITH fts AS (
                 SELECT s.id, ts_rank(s.search_vector, plainto_tsquery('simple', $1))::float8 AS score
                 FROM transcript_segments s
                 JOIN transcript_streams st ON st.id = s.stream_id
+                JOIN videos v ON v.id = s.video_id
                 WHERE s.search_vector @@ plainto_tsquery('simple', $1)
                   AND ($4::text IS NULL OR st.source_kind = $4)
                   AND ($5::uuid IS NULL OR s.video_id = $5)
+                  AND ($6::text IS NULL OR s.language = $6)
+                  AND ($7::float8 IS NULL OR s.start_seconds >= $7)
+                  AND ($8::float8 IS NULL OR s.start_seconds <= $8)
+                  AND ($9::text IS NULL OR v.upload_date >= $9)
+                  AND ($10::text IS NULL OR v.upload_date <= $10)
+                  AND ($11::float8 IS NULL OR v.duration_seconds >= $11)
+                  AND ($12::float8 IS NULL OR v.duration_seconds <= $12)
+                  AND (
+                    $13::text IS NULL
+                    OR v.channel ILIKE ('%' || $13 || '%')
+                    OR v.channel_id ILIKE ('%' || $13 || '%')
+                    OR v.uploader ILIKE ('%' || $13 || '%')
+                    OR v.uploader_id ILIKE ('%' || $13 || '%')
+                  )
+                  AND ($14::text IS NULL OR v.title ILIKE ('%' || $14 || '%'))
+                  AND (
+                    $15::text IS NULL
+                    OR EXISTS (
+                      SELECT 1 FROM unnest(v.categories) category
+                      WHERE category ILIKE ('%' || $15 || '%')
+                    )
+                  )
+                  AND (
+                    $16::text IS NULL
+                    OR EXISTS (
+                      SELECT 1 FROM unnest(v.tags) tag
+                      WHERE tag ILIKE ('%' || $16 || '%')
+                    )
+                  )
+                  AND ($17::text IS NULL OR v.metadata::text ILIKE ('%' || $17 || '%'))
+                  AND ($18::bigint IS NULL OR v.view_count >= $18)
+                  AND ($19::bigint IS NULL OR v.view_count <= $19)
                 ORDER BY score DESC
                 LIMIT $3
               ),
@@ -134,9 +276,42 @@ async fn hybrid_search(
                 SELECT s.id, (1 - (s.embedding <=> $2::vector))::float8 AS score
                 FROM transcript_segments s
                 JOIN transcript_streams st ON st.id = s.stream_id
+                JOIN videos v ON v.id = s.video_id
                 WHERE s.embedding IS NOT NULL
                   AND ($4::text IS NULL OR st.source_kind = $4)
                   AND ($5::uuid IS NULL OR s.video_id = $5)
+                  AND ($6::text IS NULL OR s.language = $6)
+                  AND ($7::float8 IS NULL OR s.start_seconds >= $7)
+                  AND ($8::float8 IS NULL OR s.start_seconds <= $8)
+                  AND ($9::text IS NULL OR v.upload_date >= $9)
+                  AND ($10::text IS NULL OR v.upload_date <= $10)
+                  AND ($11::float8 IS NULL OR v.duration_seconds >= $11)
+                  AND ($12::float8 IS NULL OR v.duration_seconds <= $12)
+                  AND (
+                    $13::text IS NULL
+                    OR v.channel ILIKE ('%' || $13 || '%')
+                    OR v.channel_id ILIKE ('%' || $13 || '%')
+                    OR v.uploader ILIKE ('%' || $13 || '%')
+                    OR v.uploader_id ILIKE ('%' || $13 || '%')
+                  )
+                  AND ($14::text IS NULL OR v.title ILIKE ('%' || $14 || '%'))
+                  AND (
+                    $15::text IS NULL
+                    OR EXISTS (
+                      SELECT 1 FROM unnest(v.categories) category
+                      WHERE category ILIKE ('%' || $15 || '%')
+                    )
+                  )
+                  AND (
+                    $16::text IS NULL
+                    OR EXISTS (
+                      SELECT 1 FROM unnest(v.tags) tag
+                      WHERE tag ILIKE ('%' || $16 || '%')
+                    )
+                  )
+                  AND ($17::text IS NULL OR v.metadata::text ILIKE ('%' || $17 || '%'))
+                  AND ($18::bigint IS NULL OR v.view_count >= $18)
+                  AND ($19::bigint IS NULL OR v.view_count <= $19)
                 ORDER BY s.embedding <=> $2::vector
                 LIMIT $3
               ),
@@ -159,8 +334,22 @@ async fn hybrid_search(
         .bind(&request.query)
         .bind(query_vector)
         .bind(request.top_k)
-        .bind(request.source_kind.map(|kind| kind.as_str().to_string()))
-        .bind(request.video_id)
+        .bind(filters.source_kind)
+        .bind(filters.video_id)
+        .bind(filters.language)
+        .bind(filters.transcript_start_min)
+        .bind(filters.transcript_start_max)
+        .bind(filters.upload_date_from)
+        .bind(filters.upload_date_to)
+        .bind(filters.duration_min)
+        .bind(filters.duration_max)
+        .bind(filters.channel_query)
+        .bind(filters.title_query)
+        .bind(filters.category_query)
+        .bind(filters.tag_query)
+        .bind(filters.metadata_query)
+        .bind(filters.view_count_min)
+        .bind(filters.view_count_max)
         .fetch_all(pool)
         .await?,
     )
@@ -192,4 +381,81 @@ fn query_vector(query: &str) -> anyhow::Result<String> {
         HashedTextEmbedder::new(TextEmbeddingConfig::default(), CorpusOptions::default())?;
     let vector = embedder.embed_text(query)?;
     Ok(vector_literal(vector.as_slice()))
+}
+
+struct SearchFilterParams {
+    source_kind: Option<String>,
+    video_id: Option<Uuid>,
+    language: Option<String>,
+    transcript_start_min: Option<f64>,
+    transcript_start_max: Option<f64>,
+    upload_date_from: Option<String>,
+    upload_date_to: Option<String>,
+    duration_min: Option<f64>,
+    duration_max: Option<f64>,
+    channel_query: Option<String>,
+    title_query: Option<String>,
+    category_query: Option<String>,
+    tag_query: Option<String>,
+    metadata_query: Option<String>,
+    view_count_min: Option<i64>,
+    view_count_max: Option<i64>,
+}
+
+impl TryFrom<&SearchRequest> for SearchFilterParams {
+    type Error = anyhow::Error;
+
+    fn try_from(request: &SearchRequest) -> anyhow::Result<Self> {
+        Ok(Self {
+            source_kind: request.source_kind.map(|kind| kind.as_str().to_string()),
+            video_id: request.video_id,
+            language: trim_filter(&request.language),
+            transcript_start_min: request.transcript_start_min,
+            transcript_start_max: request.transcript_start_max,
+            upload_date_from: normalize_upload_date_filter(&request.upload_date_from)?,
+            upload_date_to: normalize_upload_date_filter(&request.upload_date_to)?,
+            duration_min: request.duration_min,
+            duration_max: request.duration_max,
+            channel_query: trim_filter(&request.channel_query),
+            title_query: trim_filter(&request.title_query),
+            category_query: trim_filter(&request.category_query),
+            tag_query: trim_filter(&request.tag_query),
+            metadata_query: trim_filter(&request.metadata_query),
+            view_count_min: request.view_count_min,
+            view_count_max: request.view_count_max,
+        })
+    }
+}
+
+fn trim_filter(value: &Option<String>) -> Option<String> {
+    value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn normalize_upload_date_filter(value: &Option<String>) -> anyhow::Result<Option<String>> {
+    let Some(value) = trim_filter(value) else {
+        return Ok(None);
+    };
+
+    if value.len() == 8 && value.chars().all(|character| character.is_ascii_digit()) {
+        return Ok(Some(value));
+    }
+
+    if value.len() == 10 {
+        let bytes = value.as_bytes();
+        let valid_date_input = bytes[4] == b'-'
+            && bytes[7] == b'-'
+            && value
+                .chars()
+                .enumerate()
+                .all(|(index, character)| index == 4 || index == 7 || character.is_ascii_digit());
+        if valid_date_input {
+            return Ok(Some(value.replace('-', "")));
+        }
+    }
+
+    anyhow::bail!("upload date filters must use YYYYMMDD or YYYY-MM-DD")
 }

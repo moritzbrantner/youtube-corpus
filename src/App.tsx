@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ChevronDown,
   Clock,
   Copy as CopyIcon,
   Database,
   ExternalLink,
+  Filter,
   FileText,
   PanelRightOpen,
+  RotateCcw,
   Search,
   Settings,
 } from "lucide-react";
@@ -196,6 +199,11 @@ function optionalNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function optionalInteger(value: string) {
+  const parsed = optionalNumber(value);
+  return parsed === null ? null : Math.floor(parsed);
+}
+
 function splitList(value: string) {
   return value
     .split(/[\n,]/)
@@ -212,6 +220,26 @@ function splitLines(value: string) {
 
 function addSourceKindLabel(value: AddSourceKind) {
   return addSourceKindOptions.find((option) => option.value === value)?.label ?? value;
+}
+
+function compactFilterLabel(label: string, value: string) {
+  const trimmed = value.trim();
+  return trimmed === "" ? null : `${label}: ${trimmed}`;
+}
+
+function compactRangeFilterLabel(label: string, minValue: string, maxValue: string) {
+  const min = minValue.trim();
+  const max = maxValue.trim();
+  if (min && max) {
+    return `${label}: ${min}-${max}`;
+  }
+  if (min) {
+    return `${label}: >= ${min}`;
+  }
+  if (max) {
+    return `${label}: <= ${max}`;
+  }
+  return null;
 }
 
 function statusBadgeVariant(status: string) {
@@ -372,7 +400,23 @@ export default function App() {
   const [mode, setMode] = React.useState<SearchMode>("hybrid");
   const [topK, setTopK] = React.useState(5);
   const [sourceKind, setSourceKind] = React.useState<SourceKind | "all">("all");
+  const [filterPanelOpen, setFilterPanelOpen] = React.useState(false);
+  const [languageFilter, setLanguageFilter] = React.useState("");
+  const [transcriptStartMin, setTranscriptStartMin] = React.useState("");
+  const [transcriptStartMax, setTranscriptStartMax] = React.useState("");
+  const [uploadDateFrom, setUploadDateFrom] = React.useState("");
+  const [uploadDateTo, setUploadDateTo] = React.useState("");
+  const [searchDurationMin, setSearchDurationMin] = React.useState("");
+  const [searchDurationMax, setSearchDurationMax] = React.useState("");
+  const [channelQuery, setChannelQuery] = React.useState("");
+  const [titleQuery, setTitleQuery] = React.useState("");
+  const [categoryQuery, setCategoryQuery] = React.useState("");
+  const [tagQuery, setTagQuery] = React.useState("");
+  const [metadataQuery, setMetadataQuery] = React.useState("");
+  const [viewCountMin, setViewCountMin] = React.useState("");
+  const [viewCountMax, setViewCountMax] = React.useState("");
   const [lastSearchSourceKind, setLastSearchSourceKind] = React.useState<SourceKind | "all">("all");
+  const [lastSearchFilterLabels, setLastSearchFilterLabels] = React.useState<string[]>([]);
   const [lastReport, setLastReport] = React.useState<SearchReport | null>(null);
   const [selectedResult, setSelectedResult] = React.useState<SearchResult | null>(null);
   const [contextOpen, setContextOpen] = React.useState(false);
@@ -477,10 +521,8 @@ export default function App() {
     sourceUrl.trim() !== "" &&
     !addSourceMutation.isPending &&
     (ingestNow || (canSaveSubscription && saveSubscription));
-  const sourceFilterLabel =
-    sourceKind === "all"
-      ? null
-      : sourceOptions.find((option) => option.value === sourceKind)?.label;
+  const activeSearchFilterLabels = buildSearchFilterLabels(sourceKind);
+  const activeSearchFilterCount = activeSearchFilterLabels.length;
   const contextMatch = transcriptContext.data?.match ?? selectedResult;
   const contextTimeRange = contextMatch
     ? formatTimeRange(contextMatch.startSeconds, contextMatch.endSeconds)
@@ -501,12 +543,27 @@ export default function App() {
       return;
     }
     setLastSearchSourceKind(nextSourceKind);
+    setLastSearchFilterLabels(buildSearchFilterLabels(nextSourceKind));
     searchMutation.mutate({
       databaseUrl: databaseUrl.trim() || undefined,
       query: trimmedQuery,
       mode,
       topK,
       sourceKind: nextSourceKind === "all" ? null : nextSourceKind,
+      language: languageFilter.trim() || null,
+      transcriptStartMin: optionalNumber(transcriptStartMin),
+      transcriptStartMax: optionalNumber(transcriptStartMax),
+      uploadDateFrom: uploadDateFrom.trim() || null,
+      uploadDateTo: uploadDateTo.trim() || null,
+      durationMin: optionalNumber(searchDurationMin),
+      durationMax: optionalNumber(searchDurationMax),
+      channelQuery: channelQuery.trim() || null,
+      titleQuery: titleQuery.trim() || null,
+      categoryQuery: categoryQuery.trim() || null,
+      tagQuery: tagQuery.trim() || null,
+      metadataQuery: metadataQuery.trim() || null,
+      viewCountMin: optionalInteger(viewCountMin),
+      viewCountMax: optionalInteger(viewCountMax),
     });
   }
 
@@ -549,6 +606,40 @@ export default function App() {
   function searchAllSources() {
     setSourceKind("all");
     runSearch("all");
+  }
+
+  function clearSearchFilters() {
+    setSourceKind("all");
+    setLanguageFilter("");
+    setTranscriptStartMin("");
+    setTranscriptStartMax("");
+    setUploadDateFrom("");
+    setUploadDateTo("");
+    setSearchDurationMin("");
+    setSearchDurationMax("");
+    setChannelQuery("");
+    setTitleQuery("");
+    setCategoryQuery("");
+    setTagQuery("");
+    setMetadataQuery("");
+    setViewCountMin("");
+    setViewCountMax("");
+  }
+
+  function buildSearchFilterLabels(nextSourceKind: SourceKind | "all") {
+    return [
+      nextSourceKind === "all" ? null : `Source: ${sourceLabel(nextSourceKind)}`,
+      compactFilterLabel("Language", languageFilter),
+      compactRangeFilterLabel("Transcript seconds", transcriptStartMin, transcriptStartMax),
+      compactRangeFilterLabel("Uploaded", uploadDateFrom, uploadDateTo),
+      compactRangeFilterLabel("Duration seconds", searchDurationMin, searchDurationMax),
+      compactFilterLabel("Channel/uploader", channelQuery),
+      compactFilterLabel("Title", titleQuery),
+      compactFilterLabel("Category", categoryQuery),
+      compactFilterLabel("Tag", tagQuery),
+      compactFilterLabel("Metadata", metadataQuery),
+      compactRangeFilterLabel("Views", viewCountMin, viewCountMax),
+    ].filter((label): label is string => label !== null);
   }
 
   function openContext(result: SearchResult) {
@@ -1018,13 +1109,25 @@ export default function App() {
       return (
         <SearchState
           title="No matches"
-          description={`No results for "${report.query}" in ${sourceDescription}.`}
+          description={
+            lastSearchFilterLabels.length === 0
+              ? `No results for "${report.query}" in ${sourceDescription}.`
+              : `No results for "${report.query}" with the selected filters.`
+          }
           actions={
-            lastSearchSourceKind === "all" ? null : (
-              <Button type="button" variant="outline" onClick={searchAllSources}>
-                Search all sources
-              </Button>
-            )
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {lastSearchSourceKind === "all" ? null : (
+                <Button type="button" variant="outline" onClick={searchAllSources}>
+                  Search all sources
+                </Button>
+              )}
+              {lastSearchFilterLabels.length === 0 ? null : (
+                <Button type="button" variant="ghost" onClick={clearSearchFilters}>
+                  <RotateCcw className="size-4" aria-hidden="true" />
+                  Clear filters
+                </Button>
+              )}
+            </div>
           }
         />
       );
@@ -1032,9 +1135,13 @@ export default function App() {
 
     return (
       <div className="grid gap-4">
-        {sourceFilterLabel ? (
-          <div>
-            <Badge variant="outline">Source: {sourceFilterLabel}</Badge>
+        {lastSearchFilterLabels.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {lastSearchFilterLabels.map((label) => (
+              <Badge key={label} variant="outline">
+                {label}
+              </Badge>
+            ))}
           </div>
         ) : null}
         {groupedResults.map((group) => (
@@ -1426,6 +1533,201 @@ export default function App() {
                     ))}
                   </NativeSelect>
                 </label>
+
+                <div className="overflow-hidden rounded-md border border-border bg-background">
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                    aria-expanded={filterPanelOpen}
+                    onClick={() => setFilterPanelOpen((open) => !open)}
+                  >
+                    <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
+                      <Filter
+                        className="size-4 shrink-0 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                      Filters
+                    </span>
+                    <span className="flex shrink-0 items-center gap-2">
+                      {activeSearchFilterCount > 0 ? (
+                        <Badge variant="secondary">{activeSearchFilterCount} active</Badge>
+                      ) : (
+                        <Badge variant="outline">None</Badge>
+                      )}
+                      <ChevronDown
+                        className={`size-4 text-muted-foreground transition-transform ${
+                          filterPanelOpen ? "rotate-180" : ""
+                        }`}
+                        aria-hidden="true"
+                      />
+                    </span>
+                  </button>
+
+                  {filterPanelOpen ? (
+                    <div className="grid gap-4 border-t border-border px-4 py-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <label className="grid gap-2">
+                          <span className="text-sm font-medium">Language</span>
+                          <Input
+                            value={languageFilter}
+                            onChange={(event) => setLanguageFilter(event.target.value)}
+                            placeholder="en"
+                            spellCheck={false}
+                          />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-medium">Title contains</span>
+                          <Input
+                            value={titleQuery}
+                            onChange={(event) => setTitleQuery(event.target.value)}
+                          />
+                        </label>
+                      </div>
+
+                      <div className="grid gap-3">
+                        <span className="text-sm font-medium">Time span</span>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <label className="grid gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Uploaded from
+                            </span>
+                            <Input
+                              type="date"
+                              value={uploadDateFrom}
+                              onChange={(event) => setUploadDateFrom(event.target.value)}
+                            />
+                          </label>
+                          <label className="grid gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Uploaded to
+                            </span>
+                            <Input
+                              type="date"
+                              value={uploadDateTo}
+                              onChange={(event) => setUploadDateTo(event.target.value)}
+                            />
+                          </label>
+                          <label className="grid gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Transcript start min
+                            </span>
+                            <Input
+                              value={transcriptStartMin}
+                              onChange={(event) => setTranscriptStartMin(event.target.value)}
+                              inputMode="decimal"
+                              placeholder="0"
+                            />
+                          </label>
+                          <label className="grid gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Transcript start max
+                            </span>
+                            <Input
+                              value={transcriptStartMax}
+                              onChange={(event) => setTranscriptStartMax(event.target.value)}
+                              inputMode="decimal"
+                              placeholder="300"
+                            />
+                          </label>
+                          <label className="grid gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Duration min
+                            </span>
+                            <Input
+                              value={searchDurationMin}
+                              onChange={(event) => setSearchDurationMin(event.target.value)}
+                              inputMode="decimal"
+                            />
+                          </label>
+                          <label className="grid gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Duration max
+                            </span>
+                            <Input
+                              value={searchDurationMax}
+                              onChange={(event) => setSearchDurationMax(event.target.value)}
+                              inputMode="decimal"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-3">
+                        <span className="text-sm font-medium">Video metadata</span>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <label className="grid gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Channel or uploader
+                            </span>
+                            <Input
+                              value={channelQuery}
+                              onChange={(event) => setChannelQuery(event.target.value)}
+                              spellCheck={false}
+                            />
+                          </label>
+                          <label className="grid gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Category
+                            </span>
+                            <Input
+                              value={categoryQuery}
+                              onChange={(event) => setCategoryQuery(event.target.value)}
+                            />
+                          </label>
+                          <label className="grid gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">Tag</span>
+                            <Input
+                              value={tagQuery}
+                              onChange={(event) => setTagQuery(event.target.value)}
+                            />
+                          </label>
+                          <label className="grid gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Metadata contains
+                            </span>
+                            <Input
+                              value={metadataQuery}
+                              onChange={(event) => setMetadataQuery(event.target.value)}
+                              spellCheck={false}
+                            />
+                          </label>
+                          <label className="grid gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Views min
+                            </span>
+                            <Input
+                              value={viewCountMin}
+                              onChange={(event) => setViewCountMin(event.target.value)}
+                              inputMode="numeric"
+                            />
+                          </label>
+                          <label className="grid gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              Views max
+                            </span>
+                            <Input
+                              value={viewCountMax}
+                              onChange={(event) => setViewCountMax(event.target.value)}
+                              inputMode="numeric"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={clearSearchFilters}
+                        >
+                          <RotateCcw className="size-4" aria-hidden="true" />
+                          Reset filters
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
 
                 <Button type="submit" disabled={searchMutation.isPending || query.trim() === ""}>
                   {searchMutation.isPending ? <Spinner className="mr-2 size-4" /> : <Search />}
