@@ -100,7 +100,7 @@ Cargo before running the update.
 Canonical validation:
 
 ```bash
-bun run validate
+bun run verify
 ```
 
 Expanded validation:
@@ -111,4 +111,9 @@ cargo fmt --check
 cargo check
 cargo clippy --all-targets -- -D warnings
 cargo test
+bun run verify:postgres
 ```
+
+For a faster loop without Docker, use `bun run verify:fast`. Network-backed
+`yt-dlp` checks stay outside the default verification path and can be run with
+`bun run verify:yt-dlp` when `yt-dlp` and network access are available.

@@ -12,7 +12,13 @@
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "preview": "vite preview",
-    "validate": "bun run format:check && bun run build && cargo fmt --check && cargo check && cargo clippy --all-targets -- -D warnings && cargo test"
+    "validate": "bun run verify:fast",
+    "verify:fast": "bun run format:check && bun run build && cargo fmt --check && cargo check && cargo clippy --all-targets -- -D warnings && cargo test",
+    "verify:postgres": "bash ./scripts/verify-postgres.sh",
+    "verify:yt-dlp": "cargo test --test yt_dlp_integration -- --ignored",
+    "verify:release": "bun run verify:fast && bun run verify:postgres",
+    "verify:ci": "bun run verify:release",
+    "verify": "bun run verify:release"
   },
   "dependencies": {
     "@moritzbrantner/ui": "1.0.0",

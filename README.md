@@ -239,7 +239,7 @@ Canonical validation:
 
 ```bash
 bun install --frozen-lockfile
-bun run validate
+bun run verify
 ```
 
 Expanded validation:
@@ -250,10 +250,13 @@ cargo fmt --check
 cargo check
 cargo clippy --all-targets -- -D warnings
 cargo test
-docker compose up -d --wait postgres
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus cargo test -- --ignored
-docker compose down -v
+bun run verify:postgres
 ```
+
+`bun run verify:fast` runs the deterministic checks without Docker. `bun run
+verify:postgres` starts the local Postgres service when `DATABASE_URL` is unset
+and uses a disposable `youtube_corpus_verify` database. Network-backed `yt-dlp`
+tests are intentionally separate under `bun run verify:yt-dlp`.
 
 See [docs/architecture.md](docs/architecture.md) and
 [docs/development.md](docs/development.md) for implementation details.

@@ -16,12 +16,12 @@ This project uses Docker services for local development or tests: `postgres`.
 ```bash
 bun install --frozen-lockfile
 bun run build
-bun run validate
+bun run verify
+bun run verify:fast
 cargo fmt --check
 cargo check
 cargo test
-docker compose up -d --wait postgres
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus cargo test -- --ignored
+bun run verify:postgres
 ```
 
 ## Conventions
