@@ -1210,22 +1210,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "moritzbrantner-text-retrieval"
-version = "0.1.0"
-dependencies = [
- "moritzbrantner-runtime-core",
- "moritzbrantner-text-core",
- "moritzbrantner-text-embeddings",
- "moritzbrantner-text-lexical",
- "moritzbrantner-text-model-runtime",
- "moritzbrantner-vector-analysis-index",
- "moritzbrantner-video-analysis-core",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
 name = "moritzbrantner-text-transcripts"
 version = "0.1.0"
 dependencies = [
@@ -1294,23 +1278,6 @@ dependencies = [
  "moritzbrantner-video-analysis-core",
  "num-rational",
  "serde_json",
-]
-
-[[package]]
-name = "moritzbrantner-video-analysis-youtube"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "moritzbrantner-runtime-core",
- "moritzbrantner-text-core",
- "moritzbrantner-text-retrieval",
- "moritzbrantner-text-transcripts",
- "moritzbrantner-video-analysis-ffmpeg",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "uuid",
 ]
 
 [[package]]
@@ -3015,11 +2982,9 @@ dependencies = [
  "moritzbrantner-text-core",
  "moritzbrantner-text-embeddings",
  "moritzbrantner-text-lexical",
- "moritzbrantner-text-retrieval",
  "moritzbrantner-text-transcripts",
  "moritzbrantner-video-analysis-ffmpeg",
  "moritzbrantner-video-analysis-ingest",
- "moritzbrantner-video-analysis-youtube",
  "open",
  "rust-embed",
  "serde",

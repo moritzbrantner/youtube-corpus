@@ -36,13 +36,11 @@ uuid = { version = "1.11", features = ["v4", "v5", "serde"] }
 text-core = { package = "moritzbrantner-text-core", path = "../rust-packages/crates/text/text-core" }
 text-embeddings = { package = "moritzbrantner-text-embeddings", path = "../rust-packages/crates/text/text-embeddings" }
 text-lexical = { package = "moritzbrantner-text-lexical", path = "../rust-packages/crates/text/text-lexical" }
-text-retrieval = { package = "moritzbrantner-text-retrieval", path = "../rust-packages/crates/text/text-retrieval" }
 text-transcripts = { package = "moritzbrantner-text-transcripts", path = "../rust-packages/crates/text/text-transcripts" }
 runtime-core = { package = "moritzbrantner-runtime-core", path = "../rust-packages/crates/runtime/runtime-core" }
 jobs-core = { package = "moritzbrantner-jobs-core", path = "../rust-packages/crates/jobs/jobs-core" }
 video-analysis-ffmpeg = { package = "moritzbrantner-video-analysis-ffmpeg", path = "../rust-packages/crates/video/video-analysis-ffmpeg" }
 video-analysis-ingest = { package = "moritzbrantner-video-analysis-ingest", path = "../rust-packages/crates/video/video-analysis-ingest" }
-video-analysis-youtube = { package = "moritzbrantner-video-analysis-youtube", path = "../rust-packages/crates/video/video-analysis-youtube" }
 
 [dev-dependencies]
 tempfile = "3.23"

@@ -1,4 +1,4 @@
-use video_analysis_youtube::YtDlpClient;
+use youtube_corpus::yt_dlp::YtDlpClient;
 use youtube_corpus::{BrowserCookieSource, YtDlpConfig};
 
 const TEST_VIDEO_URL: &str = "https://www.youtube.com/watch?v=jNQXAC9IVRw";
