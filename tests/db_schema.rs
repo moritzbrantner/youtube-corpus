@@ -14,4 +14,15 @@ async fn migrations_run_against_postgres() {
     .await
     .unwrap();
     assert_eq!(count, 1);
+
+    let transcriber_timeout_columns: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+         FROM information_schema.columns
+         WHERE table_name = 'corpus_subscriptions'
+           AND column_name = 'transcriber_timeout_seconds'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(transcriber_timeout_columns, 1);
 }

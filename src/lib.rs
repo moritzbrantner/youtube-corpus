@@ -1,9 +1,12 @@
+pub mod api_surface;
+pub mod api_types;
 pub mod asr;
 pub mod benchmark;
 pub mod captions;
 pub mod cli;
 pub mod config;
 pub mod db;
+pub mod diagnostics;
 pub mod ingest;
 pub mod search;
 pub mod status;

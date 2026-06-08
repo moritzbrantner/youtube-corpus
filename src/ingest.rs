@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
+use text_core::{TextSegmentContract, TextSourceRef, TimebaseContract, TimestampContract};
 use text_embeddings::{HashedTextEmbedder, TextEmbeddingConfig};
 use text_lexical::CorpusOptions;
 use uuid::Uuid;
@@ -12,6 +13,7 @@ use crate::youtube::{stable_child_id, stable_video_id, VideoItem};
 
 #[derive(Debug, Clone)]
 pub struct IngestRequest {
+    pub run_id: Option<Uuid>,
     pub database_url: String,
     pub source: CorpusSource,
     pub work_dir: PathBuf,
@@ -20,6 +22,7 @@ pub struct IngestRequest {
     pub asr_enabled: bool,
     pub transcriber_command: Option<PathBuf>,
     pub transcriber_args: Vec<String>,
+    pub transcriber_timeout_seconds: Option<u64>,
     pub max_items: Option<u64>,
     pub title_contains: Option<String>,
     pub title_excludes: Vec<String>,
@@ -79,7 +82,9 @@ async fn ingest_resolved_items(
     request: IngestRequest,
     mut items: Vec<VideoItem>,
 ) -> anyhow::Result<IngestReport> {
-    let run_id = Uuid::new_v5(&Uuid::NAMESPACE_URL, request.source.source_url().as_bytes());
+    let run_id = request.run_id.unwrap_or_else(|| {
+        Uuid::new_v5(&Uuid::NAMESPACE_URL, request.source.source_url().as_bytes())
+    });
     let videos_seen = items.len() as u64;
     items.retain(|item| {
         crate::youtube::filter_item(
@@ -96,7 +101,7 @@ async fn ingest_resolved_items(
     let mut segments_indexed = 0;
 
     for item in items {
-        match ingest_item(&pool, &request, &item).await {
+        match ingest_item(pool, &request, &item).await {
             Ok(item_report) => {
                 if item_report.status == "indexed" {
                     videos_indexed += 1;
@@ -199,6 +204,7 @@ async fn ingest_item(
             &item_dir,
             request.transcriber_command.as_ref(),
             &request.transcriber_args,
+            request.transcriber_timeout_seconds,
         )
         .await
         {
@@ -375,12 +381,24 @@ async fn upsert_stream(
             Err(_) => None,
         };
         let segment_id = stable_child_id(stream_id, &segment.index.to_string());
-        let metadata = serde_json::json!({
-            "source_url": source_url,
-            "source_kind": stream.source_kind.as_str(),
-            "start_seconds": segment.start_seconds,
-            "end_seconds": segment.end_seconds,
+        let contract = transcript_segment_contract(TranscriptSegmentContractInput {
+            stream_id,
+            source_url,
+            source_kind: stream.source_kind,
+            segment_index: segment.index,
+            text,
+            language: segment.language.clone().or_else(|| language.clone()),
+            start_seconds: segment.start_seconds,
+            end_seconds: segment.end_seconds,
         });
+        let metadata = transcript_segment_metadata(
+            source_url,
+            stream.source_kind,
+            stream_id,
+            &contract,
+            segment.start_seconds,
+            segment.end_seconds,
+        )?;
         sqlx::query(
             "INSERT INTO transcript_segments
              (id, stream_id, video_id, segment_index, start_seconds, end_seconds, text, language, metadata, embedding)
@@ -413,4 +431,69 @@ pub fn vector_literal(values: &[f32]) -> String {
     }
     output.push(']');
     output
+}
+
+pub struct TranscriptSegmentContractInput<'a> {
+    pub stream_id: Uuid,
+    pub source_url: &'a str,
+    pub source_kind: crate::config::SourceKind,
+    pub segment_index: u64,
+    pub text: &'a str,
+    pub language: Option<String>,
+    pub start_seconds: Option<f64>,
+    pub end_seconds: Option<f64>,
+}
+
+pub fn transcript_segment_contract(
+    input: TranscriptSegmentContractInput<'_>,
+) -> TextSegmentContract {
+    let timestamp = input.start_seconds.map(seconds_timestamp);
+    let duration_seconds = input
+        .start_seconds
+        .zip(input.end_seconds)
+        .map(|(start, end)| (end - start).max(0.0));
+    let mut contract = TextSegmentContract::new(input.segment_index, input.text);
+    contract.stream_id = Some(input.stream_id.to_string());
+    contract.language = input.language;
+    contract.timestamp = timestamp;
+    contract.duration_seconds = duration_seconds;
+    contract.source = Some(TextSourceRef {
+        source_id: Some(input.stream_id.to_string()),
+        source_kind: Some(input.source_kind.as_str().to_string()),
+        uri: Some(input.source_url.to_string()),
+        media_timestamp: timestamp,
+        duration_seconds,
+    });
+    contract
+}
+
+pub fn transcript_segment_metadata(
+    source_url: &str,
+    source_kind: crate::config::SourceKind,
+    stream_id: Uuid,
+    contract: &TextSegmentContract,
+    start_seconds: Option<f64>,
+    end_seconds: Option<f64>,
+) -> serde_json::Result<serde_json::Value> {
+    serde_json::to_value(contract).map(|contract_value| {
+        serde_json::json!({
+            "source_url": source_url,
+            "source_kind": source_kind.as_str(),
+            "stream_id": stream_id,
+            "segment_index": contract.segment_index,
+            "timestamp_seconds": start_seconds,
+            "duration_seconds": contract.duration_seconds,
+            "language": contract.language,
+            "start_seconds": start_seconds,
+            "end_seconds": end_seconds,
+            "text_contract": contract_value,
+        })
+    })
+}
+
+fn seconds_timestamp(seconds: f64) -> TimestampContract {
+    TimestampContract {
+        pts: (seconds * 1000.0).round() as i64,
+        timebase: TimebaseContract { num: 1, den: 1000 },
+    }
 }

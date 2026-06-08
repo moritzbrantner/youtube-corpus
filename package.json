@@ -12,10 +12,10 @@
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "preview": "vite preview",
-    "validate": "bun run format:check && bun run build && cargo fmt --check && cargo check && cargo test"
+    "validate": "bun run format:check && bun run build && cargo fmt --check && cargo check && cargo clippy --all-targets -- -D warnings && cargo test"
   },
   "dependencies": {
-    "@moritzbrantner/ui": "^0.10.0",
+    "@moritzbrantner/ui": "1.0.0",
     "@tanstack/react-query": "^5.100.6",
     "lucide-react": "^1.7.0",
     "react": "^19.2.5",

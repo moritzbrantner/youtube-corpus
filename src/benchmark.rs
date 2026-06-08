@@ -19,6 +19,7 @@ pub struct BenchmarkRequest {
     pub caption: CaptionConfig,
     pub yt_dlp: YtDlpConfig,
     pub asr_enabled: bool,
+    pub transcriber_timeout_seconds: Option<u64>,
     pub migrate: bool,
     pub search_queries: Vec<String>,
     pub top_k: i64,
@@ -45,6 +46,7 @@ pub struct TimedSearchReport {
 
 pub async fn run_distinguo_benchmark(request: BenchmarkRequest) -> anyhow::Result<BenchmarkReport> {
     let ingest_request = crate::ingest::IngestRequest {
+        run_id: None,
         database_url: request.database_url.clone(),
         source: CorpusSource::ChannelUrl {
             url: DISTINGUO_VIDEOS_URL.to_string(),
@@ -55,6 +57,7 @@ pub async fn run_distinguo_benchmark(request: BenchmarkRequest) -> anyhow::Resul
         asr_enabled: request.asr_enabled,
         transcriber_command: None,
         transcriber_args: Vec::new(),
+        transcriber_timeout_seconds: request.transcriber_timeout_seconds,
         max_items: Some(request.max_items),
         title_contains: None,
         title_excludes: Vec::new(),

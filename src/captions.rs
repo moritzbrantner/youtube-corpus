@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 
 use tokio::process::Command;
 
@@ -132,7 +133,15 @@ async fn run_caption_download(
     }
     crate::youtube::apply_yt_dlp_args(&mut command, yt_dlp);
     command.arg(url).stdin(Stdio::null());
-    let output = command.output().await?;
+    let output = if let Some(seconds) = yt_dlp.timeout_seconds {
+        tokio::time::timeout(Duration::from_secs(seconds), command.output())
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!("yt-dlp subtitle download timed out after {seconds} seconds")
+            })??
+    } else {
+        command.output().await?
+    };
     if !output.status.success() {
         anyhow::bail!(
             "yt-dlp subtitle download failed: {}",

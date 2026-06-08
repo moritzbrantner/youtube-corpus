@@ -1,4 +1,5 @@
-@import "@moritzbrantner/ui/styles.css";
+@import "@moritzbrantner/ui/zleek/styles.css";
+@import "@moritzbrantner/ui/component-sources.css";
 
 @source "../index.html";
 @source "./**/*.{ts,tsx}";

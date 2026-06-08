@@ -48,15 +48,16 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run_command(command: Command, database_url: Option<String>) -> anyhow::Result<()> {
-    let config = AppConfig::from_env_and_cli(database_url)?;
     match command {
         Command::Serve(_) => unreachable!("serve is handled before command dispatch"),
         Command::Migrate => {
+            let config = AppConfig::from_env_and_cli(database_url)?;
             let pool = youtube_corpus::db::connect(&config.database_url).await?;
             youtube_corpus::db::migrate(&pool).await?;
             println!("migrated");
         }
         Command::Ingest(args) => {
+            let config = AppConfig::from_env_and_cli(database_url)?;
             let request = args.try_into_request(&config)?;
             let report = youtube_corpus::ingest_corpus(request)
                 .await
@@ -64,6 +65,7 @@ async fn run_command(command: Command, database_url: Option<String>) -> anyhow::
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Command::Subscribe(args) => {
+            let config = AppConfig::from_env_and_cli(database_url)?;
             let request = args.try_into_request(&config)?;
             let subscription = youtube_corpus::subscriptions::add_subscription(request)
                 .await
@@ -72,6 +74,7 @@ async fn run_command(command: Command, database_url: Option<String>) -> anyhow::
         }
         Command::Subscriptions(args) => match args.command {
             SubscriptionsCommand::Add(args) => {
+                let config = AppConfig::from_env_and_cli(database_url)?;
                 let request = args.try_into_request(&config)?;
                 let subscription = youtube_corpus::subscriptions::add_subscription(request)
                     .await
@@ -79,6 +82,7 @@ async fn run_command(command: Command, database_url: Option<String>) -> anyhow::
                 println!("{}", serde_json::to_string_pretty(&subscription)?);
             }
             SubscriptionsCommand::List(args) => {
+                let config = AppConfig::from_env_and_cli(database_url)?;
                 let subscriptions = youtube_corpus::subscriptions::list_subscriptions(
                     &config.database_url,
                     args.include_disabled,
@@ -89,6 +93,7 @@ async fn run_command(command: Command, database_url: Option<String>) -> anyhow::
                 println!("{}", serde_json::to_string_pretty(&subscriptions)?);
             }
             SubscriptionsCommand::Check(args) => {
+                let config = AppConfig::from_env_and_cli(database_url)?;
                 let watch = args.watch;
                 let interval_seconds = args.interval_seconds;
                 let mut request = args.try_into_request(&config)?;
@@ -107,6 +112,7 @@ async fn run_command(command: Command, database_url: Option<String>) -> anyhow::
             }
         },
         Command::Videos(args) => {
+            let config = AppConfig::from_env_and_cli(database_url)?;
             let request = args.try_into_request(&config)?;
             let videos = youtube_corpus::status::list_videos(request)
                 .await
@@ -114,6 +120,7 @@ async fn run_command(command: Command, database_url: Option<String>) -> anyhow::
             println!("{}", serde_json::to_string_pretty(&videos)?);
         }
         Command::Status(args) => {
+            let config = AppConfig::from_env_and_cli(database_url)?;
             let request = args.try_into_request(&config)?;
             let report = youtube_corpus::status::corpus_status(request)
                 .await
@@ -121,6 +128,7 @@ async fn run_command(command: Command, database_url: Option<String>) -> anyhow::
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Command::Benchmark(args) => {
+            let config = AppConfig::from_env_and_cli(database_url)?;
             let request = args.try_into_request(&config)?;
             let report = youtube_corpus::benchmark::run_distinguo_benchmark(request)
                 .await
@@ -128,11 +136,25 @@ async fn run_command(command: Command, database_url: Option<String>) -> anyhow::
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Command::Search(args) => {
+            let config = AppConfig::from_env_and_cli(database_url)?;
             let request = args.try_into_request(&config)?;
             let report = youtube_corpus::search_corpus(request)
                 .await
                 .context("search failed")?;
             println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        Command::Diagnostics(args) => {
+            let report =
+                youtube_corpus::diagnostics::run(database_url, args.transcriber_command).await;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        Command::ApiSchema(args) => {
+            let surface = youtube_corpus::api_surface::package_surface();
+            if args.typescript {
+                println!("{}", youtube_corpus::api_surface::typescript_declarations());
+            } else {
+                println!("{}", serde_json::to_string_pretty(&surface)?);
+            }
         }
     }
     Ok(())

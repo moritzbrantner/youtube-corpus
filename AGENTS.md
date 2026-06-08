@@ -20,7 +20,7 @@ bun run validate
 cargo fmt --check
 cargo check
 cargo test
-docker compose up -d postgres
+docker compose up -d --wait postgres
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus cargo test -- --ignored
 ```
 

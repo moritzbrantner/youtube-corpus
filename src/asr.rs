@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 
 use tokio::process::Command;
 
@@ -11,6 +12,7 @@ pub async fn transcribe_with_command(
     work_dir: &Path,
     command: Option<&PathBuf>,
     args: &[String],
+    timeout_seconds: Option<u64>,
 ) -> anyhow::Result<Option<TranscriptStream>> {
     let Some(command) = command.cloned().or_else(|| resolve_command("whisper")) else {
         return Ok(Some(TranscriptStream {
@@ -27,16 +29,27 @@ pub async fn transcribe_with_command(
     tokio::fs::create_dir_all(work_dir).await?;
     let output_dir = work_dir.join("asr");
     tokio::fs::create_dir_all(&output_dir).await?;
-    let status = Command::new(&command)
+    let mut process = Command::new(&command);
+    process
         .args(args)
         .arg(media_path)
         .arg("--output_format")
         .arg("json")
         .arg("--output_dir")
         .arg(&output_dir)
-        .stdin(Stdio::null())
-        .status()
-        .await?;
+        .stdin(Stdio::null());
+    let status = if let Some(seconds) = timeout_seconds {
+        tokio::time::timeout(Duration::from_secs(seconds), process.status())
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "transcriber command `{}` timed out after {seconds} seconds",
+                    command.display()
+                )
+            })??
+    } else {
+        process.status().await?
+    };
     if !status.success() {
         anyhow::bail!("transcriber command `{}` failed", command.display());
     }

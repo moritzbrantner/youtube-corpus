@@ -1,4 +1,8 @@
 use youtube_corpus::captions::parse_caption_files;
+use youtube_corpus::config::SourceKind;
+use youtube_corpus::ingest::{
+    transcript_segment_contract, transcript_segment_metadata, TranscriptSegmentContractInput,
+};
 
 #[tokio::test]
 async fn parses_webvtt_caption_fixture() {
@@ -42,4 +46,45 @@ async fn normalizes_youtube_webvtt_inline_markup() {
 fn vector_literal_matches_pgvector_text_shape() {
     let value = youtube_corpus::ingest::vector_literal(&[0.1, -0.2, 0.0]);
     assert_eq!(value, "[0.10000000,-0.20000000,0.00000000]");
+}
+
+#[test]
+fn transcript_segment_metadata_preserves_text_contract_fields() {
+    let stream_id = uuid::Uuid::from_u128(0x50000000000000000000000000000001);
+    let contract = transcript_segment_contract(TranscriptSegmentContractInput {
+        stream_id,
+        source_url: "https://youtube.test/video",
+        source_kind: SourceKind::CaptionManual,
+        segment_index: 7,
+        text: "contract text",
+        language: Some("en".to_string()),
+        start_seconds: Some(12.5),
+        end_seconds: Some(15.0),
+    });
+    let metadata = transcript_segment_metadata(
+        "https://youtube.test/video",
+        SourceKind::CaptionManual,
+        stream_id,
+        &contract,
+        Some(12.5),
+        Some(15.0),
+    )
+    .unwrap();
+
+    assert_eq!(metadata["source_url"], "https://youtube.test/video");
+    assert_eq!(metadata["source_kind"], "caption_manual");
+    assert_eq!(metadata["stream_id"], stream_id.to_string());
+    assert_eq!(metadata["segment_index"], 7);
+    assert_eq!(metadata["timestamp_seconds"], 12.5);
+    assert_eq!(metadata["duration_seconds"], 2.5);
+    assert_eq!(metadata["language"], "en");
+    assert_eq!(metadata["text_contract"]["streamId"], stream_id.to_string());
+    assert_eq!(
+        metadata["text_contract"]["source"]["uri"],
+        "https://youtube.test/video"
+    );
+    assert_eq!(
+        metadata["text_contract"]["source"]["sourceKind"],
+        "caption_manual"
+    );
 }

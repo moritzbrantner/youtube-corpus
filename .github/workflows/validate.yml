@@ -29,6 +29,7 @@ jobs:
       typecheck_command: |
         bun run build
         cargo check
+        cargo clippy --all-targets -- -D warnings
       unit_test_command: cargo test
 
   integration-validation:
@@ -49,7 +50,7 @@ jobs:
         rustup default stable
       integration_command: |
         set -euo pipefail
-        docker compose up -d postgres
+        docker compose up -d --wait postgres
         timeout 90 bash -c 'until docker compose exec -T postgres pg_isready -U postgres -d youtube_corpus; do sleep 2; done'
         bun run build
         DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus cargo test -- --ignored

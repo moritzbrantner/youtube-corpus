@@ -95,6 +95,7 @@ checks.
 ```bash
 cargo run -- ingest --url "$URL" --caption-language de --transcriber-command whisper
 cargo run -- ingest --url "$URL" --yt-dlp-arg=--cookies-from-browser --yt-dlp-arg=firefox
+cargo run -- ingest --url "$URL" --yt-dlp-timeout-seconds 120 --transcriber-timeout-seconds 1800
 cargo run -- ingest --url "$URL" --no-asr
 ```
 
@@ -142,6 +143,32 @@ cargo run -- videos --parsed
 cargo run -- videos --downloaded --limit 25
 ```
 
+## Diagnostics
+
+Check local prerequisites without requiring a configured database:
+
+```bash
+cargo run -- diagnostics
+cargo run -- diagnostics --transcriber-command whisper
+```
+
+The report includes database reachability and migration readiness when
+`DATABASE_URL` is configured, plus availability/version checks for `yt-dlp` and
+the transcriber command.
+
+## API Schema
+
+The HTTP API surface is exposed without requiring a database connection:
+
+```bash
+cargo run -- api-schema
+cargo run -- api-schema --typescript
+```
+
+The same contract is available from the web server at `GET /api/schema`. Treat
+the schema output as the source of truth for operation ids, example requests,
+and execution-plan metadata.
+
 ## Search
 
 ```bash
@@ -170,6 +197,19 @@ default, skips ASR unless `--with-asr` is passed, stores files under
 `use-case-output/youtube-corpus-benchmarks/distinguo`, and returns a JSON report
 with ingest and search timings.
 
+## Web API Ingest Jobs
+
+The browser UI submits ingest work as a background job by default. `POST
+/api/sources` accepts `"async": true` and returns `202 Accepted` with `jobId`
+and the initial `ingestRun`. Poll `GET /api/ingest-runs/{id}` for status and
+`GET /api/ingest-runs?limit=20` for recent runs. Omitting `"async"` keeps the
+older synchronous response behavior.
+
+The persistent `ingest_runs.status` values remain `running`, `completed`, and
+`failed`. Responses also include `ingestRun.job.status`, which uses the
+structured job lifecycle values `running`, `succeeded`, and `failed` for the
+current database states.
+
 ## Verification
 
 Canonical validation:
@@ -185,8 +225,9 @@ Expanded validation:
 bun run build
 cargo fmt --check
 cargo check
+cargo clippy --all-targets -- -D warnings
 cargo test
-docker compose up -d postgres
+docker compose up -d --wait postgres
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus cargo test -- --ignored
 docker compose down -v
 ```

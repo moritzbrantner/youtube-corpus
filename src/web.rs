@@ -1,26 +1,28 @@
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use axum::body::Body;
-use axum::extract::{Query, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::{header, HeaderValue, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use rust_embed::RustEmbed;
-use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use serde::Serialize;
+use serde_json::Value;
+use sqlx::{PgPool, Row};
+use tokio::sync::OnceCell;
 use uuid::Uuid;
 
-use crate::config::{CaptionConfig, CorpusSource, SearchMode, SourceKind, YtDlpConfig};
-use crate::ingest::{ingest_corpus, IngestReport, IngestRequest};
+use crate::api_types::*;
+use crate::config::{CaptionConfig, CorpusSource, SourceKind, YtDlpConfig};
+use crate::ingest::{ingest_corpus, IngestRequest};
 use crate::search::{search_corpus, SearchRequest, SearchResult};
 use crate::status::{ListVideosRequest, VideoStatus};
-use crate::subscriptions::{
-    add_subscription, AddSubscriptionRequest, Subscription, SubscriptionSourceKind,
-};
+use crate::subscriptions::{add_subscription, AddSubscriptionRequest, SubscriptionSourceKind};
 
-const REQUIRED_TABLES: &[&str] = &[
+pub const REQUIRED_TABLES: &[&str] = &[
     "videos",
     "transcript_streams",
     "transcript_segments",
@@ -44,6 +46,16 @@ pub struct WebServerConfig {
 #[derive(Clone)]
 struct AppState {
     database_url: Option<String>,
+    pool: Arc<OnceCell<PgPool>>,
+}
+
+impl AppState {
+    fn new(database_url: Option<String>) -> Self {
+        Self {
+            database_url,
+            pool: Arc::new(OnceCell::new()),
+        }
+    }
 }
 
 pub async fn serve(config: WebServerConfig) -> anyhow::Result<()> {
@@ -55,7 +67,7 @@ pub async fn serve(config: WebServerConfig) -> anyhow::Result<()> {
         }
     }
 
-    let state = AppState { database_url };
+    let state = AppState::new(database_url);
     let address = SocketAddr::from((config.host, config.port));
     let listener = tokio::net::TcpListener::bind(address).await?;
     let local_address = listener.local_addr()?;
@@ -74,18 +86,26 @@ pub async fn serve(config: WebServerConfig) -> anyhow::Result<()> {
 
 fn app(state: AppState) -> Router {
     let api = Router::new()
+        .route("/schema", get(api_schema))
         .route("/database-status", get(database_status))
         .route("/corpus-status", get(corpus_status))
         .route("/search", post(search_transcripts))
         .route("/transcript-context", post(transcript_context))
         .route("/downloaded-files", get(downloaded_files))
         .route("/sources", post(add_source))
+        .route("/ingest-runs", get(list_ingest_runs))
+        .route("/ingest-runs/{id}", get(get_ingest_run))
         .fallback(api_not_found);
 
     Router::new()
         .nest("/api", api)
         .fallback(static_asset)
         .with_state(state)
+}
+
+#[doc(hidden)]
+pub fn app_for_tests(database_url: Option<String>) -> Router {
+    app(AppState::new(database_url))
 }
 
 fn browser_url(address: SocketAddr) -> String {
@@ -97,165 +117,8 @@ fn browser_url(address: SocketAddr) -> String {
     format!("http://{host}:{}", address.port())
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct DatabaseStatus {
-    configured: bool,
-    database_url: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SearchTranscriptsInput {
-    query: String,
-    mode: SearchMode,
-    top_k: i64,
-    source_kind: Option<SourceKind>,
-    video_id: Option<Uuid>,
-    language: Option<String>,
-    transcript_start_min: Option<f64>,
-    transcript_start_max: Option<f64>,
-    upload_date_from: Option<String>,
-    upload_date_to: Option<String>,
-    duration_min: Option<f64>,
-    duration_max: Option<f64>,
-    channel_query: Option<String>,
-    title_query: Option<String>,
-    category_query: Option<String>,
-    tag_query: Option<String>,
-    metadata_query: Option<String>,
-    view_count_min: Option<i64>,
-    view_count_max: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct TranscriptContextInput {
-    segment_id: String,
-    before: Option<i64>,
-    after: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ListDownloadedFilesInput {
-    downloaded_only: Option<bool>,
-    parsed_only: Option<bool>,
-    limit: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AddSourceInput {
-    source_kind: AddSourceKind,
-    source_url: String,
-    name: Option<String>,
-    work_dir: Option<String>,
-    caption_languages: Option<Vec<String>>,
-    captions_enabled: Option<bool>,
-    auto_captions_enabled: Option<bool>,
-    yt_dlp_args: Option<Vec<String>>,
-    asr_enabled: Option<bool>,
-    transcriber_command: Option<String>,
-    transcriber_args: Option<Vec<String>>,
-    max_items: Option<u64>,
-    title_contains: Option<String>,
-    title_excludes: Option<Vec<String>>,
-    duration_min: Option<f64>,
-    duration_max: Option<f64>,
-    migrate: Option<bool>,
-    subscribe: Option<bool>,
-    ingest_now: Option<bool>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum AddSourceKind {
-    Video,
-    Channel,
-    Playlist,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AddSourceReport {
-    source_kind: String,
-    source_url: String,
-    subscription: Option<Subscription>,
-    ingest: Option<IngestReport>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct TranscriptContextReport {
-    #[serde(rename = "match")]
-    match_segment: SearchResult,
-    segments: Vec<TranscriptContextSegment>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct TranscriptContextSegment {
-    segment_id: Uuid,
-    video_id: Uuid,
-    stream_id: Uuid,
-    segment_index: i64,
-    source_kind: SourceKind,
-    language: Option<String>,
-    start_seconds: Option<f64>,
-    end_seconds: Option<f64>,
-    text: String,
-    is_match: bool,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CorpusStatus {
-    configured: bool,
-    database_url: Option<String>,
-    reachable: bool,
-    schema_ready: bool,
-    message: Option<String>,
-    stats: Option<CorpusStats>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CorpusStats {
-    videos: i64,
-    streams: i64,
-    segments: i64,
-    subscriptions: i64,
-    enabled_subscriptions: i64,
-    source_kinds: Vec<SourceKindStat>,
-    languages: Vec<LanguageStat>,
-    last_ingest_run: Option<LastIngestRun>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SourceKindStat {
-    source_kind: SourceKind,
-    streams: i64,
-    segments: i64,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct LanguageStat {
-    language: String,
-    segments: i64,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct LastIngestRun {
-    id: String,
-    source_url: Option<String>,
-    status: String,
-    videos_indexed: i64,
-    segments_indexed: i64,
-    created_at: String,
+async fn api_schema() -> Json<runtime_core::PackageSurface> {
+    Json(crate::api_surface::package_surface())
 }
 
 #[derive(Debug, Serialize)]
@@ -330,7 +193,7 @@ async fn corpus_status(State(state): State<AppState>) -> Result<Json<CorpusStatu
         }));
     };
 
-    let pool = match crate::db::connect(&database_url).await {
+    let pool = match optional_pool(&state).await {
         Ok(pool) => pool,
         Err(error) => {
             return Ok(Json(CorpusStatus {
@@ -412,7 +275,6 @@ async fn transcript_context(
     State(state): State<AppState>,
     Json(input): Json<TranscriptContextInput>,
 ) -> Result<Json<TranscriptContextReport>, ApiError> {
-    let database_url = required_database_url(&state)?;
     let segment_id = input.segment_id.trim();
     if segment_id.is_empty() {
         return Err(ApiError::bad_request("segmentId is required."));
@@ -422,9 +284,7 @@ async fn transcript_context(
 
     let before = input.before.unwrap_or(4).clamp(0, 20);
     let after = input.after.unwrap_or(6).clamp(0, 20);
-    let pool = crate::db::connect(&database_url)
-        .await
-        .map_err(ApiError::internal)?;
+    let pool = required_pool(&state).await?;
 
     let match_row = sqlx::query(
         "SELECT s.id, s.video_id, s.stream_id, st.source_kind, s.language,
@@ -566,15 +426,73 @@ async fn downloaded_files(
     Ok(Json(videos))
 }
 
+async fn list_ingest_runs(
+    State(state): State<AppState>,
+    Query(input): Query<ListIngestRunsInput>,
+) -> Result<Json<Vec<IngestRunStatus>>, ApiError> {
+    let pool = required_pool(&state).await?;
+    let limit = input.limit.unwrap_or(20).clamp(1, 100);
+    let rows = sqlx::query(
+        "SELECT id, source_url, status, videos_seen, videos_indexed, segments_indexed,
+                report, created_at::text AS created_at
+         FROM ingest_runs
+         ORDER BY created_at DESC
+         LIMIT $1",
+    )
+    .bind(limit)
+    .fetch_all(&pool)
+    .await
+    .map_err(ApiError::internal)?;
+
+    rows.into_iter()
+        .map(ingest_run_from_row)
+        .collect::<Result<Vec<_>, _>>()
+        .map(Json)
+        .map_err(ApiError::internal)
+}
+
+async fn get_ingest_run(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<Uuid>,
+) -> Result<Json<IngestRunStatus>, ApiError> {
+    let pool = required_pool(&state).await?;
+    let row = sqlx::query(
+        "SELECT id, source_url, status, videos_seen, videos_indexed, segments_indexed,
+                report, created_at::text AS created_at
+         FROM ingest_runs
+         WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(ApiError::internal)?;
+
+    let Some(row) = row else {
+        return Err(ApiError::not_found("Ingest run not found."));
+    };
+    ingest_run_from_row(row)
+        .map(Json)
+        .map_err(ApiError::internal)
+}
+
 async fn add_source(
     State(state): State<AppState>,
     Json(input): Json<AddSourceInput>,
-) -> Result<Json<AddSourceReport>, ApiError> {
+) -> Result<Response, ApiError> {
     let database_url = required_database_url(&state)?;
     let source_url = input.source_url.trim().to_string();
     if source_url.is_empty() {
         return Err(ApiError::bad_request("Source URL is required."));
     }
+    if matches!(input.max_items, Some(0)) {
+        return Err(ApiError::bad_request("maxItems must be positive."));
+    }
+    validate_optional_range(
+        "durationMin",
+        input.duration_min,
+        "durationMax",
+        input.duration_max,
+    )?;
 
     let work_dir = input
         .work_dir
@@ -603,6 +521,7 @@ async fn add_source(
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
             .collect(),
+        timeout_seconds: input.yt_dlp_timeout_seconds,
     };
     let title_contains = input
         .title_contains
@@ -621,6 +540,7 @@ async fn add_source(
     let asr_enabled = input.asr_enabled.unwrap_or(false);
     let ingest_now = input.ingest_now.unwrap_or(true);
     let subscribe = input.subscribe.unwrap_or(false);
+    let async_ingest = input.async_ingest.unwrap_or(false) && ingest_now;
 
     let mut subscription = None;
     if subscribe {
@@ -651,6 +571,7 @@ async fn add_source(
                 asr_enabled,
                 transcriber_command: transcriber_command.clone(),
                 transcriber_args: transcriber_args.clone(),
+                transcriber_timeout_seconds: input.transcriber_timeout_seconds,
                 max_items: input.max_items,
                 title_contains: title_contains.clone(),
                 title_excludes: title_excludes.clone(),
@@ -663,28 +584,94 @@ async fn add_source(
         );
     }
 
-    let ingest = if ingest_now {
-        let source = match input.source_kind {
-            AddSourceKind::Video => CorpusSource::YoutubeUrl {
-                url: source_url.clone(),
-            },
-            AddSourceKind::Channel => CorpusSource::ChannelUrl {
-                url: source_url.clone(),
-            },
-            AddSourceKind::Playlist => CorpusSource::PlaylistUrl {
-                url: source_url.clone(),
-            },
+    let source_kind = match input.source_kind {
+        AddSourceKind::Video => "video",
+        AddSourceKind::Channel => "channel",
+        AddSourceKind::Playlist => "playlist",
+    };
+
+    let source = || match input.source_kind {
+        AddSourceKind::Video => CorpusSource::YoutubeUrl {
+            url: source_url.clone(),
+        },
+        AddSourceKind::Channel => CorpusSource::ChannelUrl {
+            url: source_url.clone(),
+        },
+        AddSourceKind::Playlist => CorpusSource::PlaylistUrl {
+            url: source_url.clone(),
+        },
+    };
+
+    if async_ingest {
+        let pool = required_pool(&state).await?;
+        if migrate && !subscribe {
+            crate::db::migrate(&pool)
+                .await
+                .map_err(ApiError::internal)?;
+        }
+        let run_id = Uuid::new_v4();
+        let ingest_run = insert_running_ingest_run(&pool, run_id, &source_url).await?;
+        let request = IngestRequest {
+            run_id: Some(run_id),
+            database_url: database_url.clone(),
+            source: source(),
+            work_dir,
+            caption,
+            yt_dlp,
+            asr_enabled,
+            transcriber_command,
+            transcriber_args,
+            transcriber_timeout_seconds: input.transcriber_timeout_seconds,
+            max_items: input.max_items,
+            title_contains,
+            title_excludes,
+            duration_min: input.duration_min,
+            duration_max: input.duration_max,
+            migrate: false,
         };
+        let failure_database_url = database_url.clone();
+        let failure_source_url = source_url.clone();
+        tokio::spawn(async move {
+            if let Err(error) = ingest_corpus(request).await {
+                if let Err(update_error) = mark_failed_ingest_run(
+                    &failure_database_url,
+                    run_id,
+                    &failure_source_url,
+                    error,
+                )
+                .await
+                {
+                    tracing::warn!(%update_error, %run_id, "failed to mark ingest run failed");
+                }
+            }
+        });
+        return Ok((
+            StatusCode::ACCEPTED,
+            Json(AddSourceReport {
+                source_kind: source_kind.to_string(),
+                source_url,
+                subscription,
+                ingest: None,
+                job_id: Some(run_id),
+                ingest_run: Some(ingest_run),
+            }),
+        )
+            .into_response());
+    }
+
+    let ingest = if ingest_now {
         Some(
             ingest_corpus(IngestRequest {
+                run_id: None,
                 database_url,
-                source,
+                source: source(),
                 work_dir,
                 caption,
                 yt_dlp,
                 asr_enabled,
                 transcriber_command,
                 transcriber_args,
+                transcriber_timeout_seconds: input.transcriber_timeout_seconds,
                 max_items: input.max_items,
                 title_contains,
                 title_excludes,
@@ -699,17 +686,15 @@ async fn add_source(
         None
     };
 
-    let source_kind = match input.source_kind {
-        AddSourceKind::Video => "video",
-        AddSourceKind::Channel => "channel",
-        AddSourceKind::Playlist => "playlist",
-    };
     Ok(Json(AddSourceReport {
         source_kind: source_kind.to_string(),
         source_url,
         subscription,
         ingest,
-    }))
+        job_id: None,
+        ingest_run: None,
+    })
+    .into_response())
 }
 
 async fn api_not_found() -> ApiError {
@@ -756,6 +741,23 @@ fn required_database_url(state: &AppState) -> Result<String, ApiError> {
         .database_url
         .clone()
         .ok_or_else(|| ApiError::bad_request("DATABASE_URL is required."))
+}
+
+async fn required_pool(state: &AppState) -> Result<PgPool, ApiError> {
+    required_database_url(state)?;
+    optional_pool(state).await.map_err(ApiError::internal)
+}
+
+async fn optional_pool(state: &AppState) -> anyhow::Result<PgPool> {
+    let database_url = state
+        .database_url
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("DATABASE_URL is required."))?;
+    let pool = state
+        .pool
+        .get_or_try_init(|| async move { crate::db::connect(&database_url).await })
+        .await?;
+    Ok(pool.clone())
 }
 
 fn mask_database_url(database_url: &str) -> String {
@@ -881,6 +883,8 @@ async fn load_corpus_stats(pool: &sqlx::PgPool) -> Result<CorpusStats, ApiError>
 enum StatusQueryError {
     Sql(sqlx::Error),
     InvalidSourceKind(String),
+    InvalidJobStatus(String),
+    InvalidJobId(String),
 }
 
 impl std::fmt::Display for StatusQueryError {
@@ -888,6 +892,10 @@ impl std::fmt::Display for StatusQueryError {
         match self {
             Self::Sql(error) => write!(formatter, "{error}"),
             Self::InvalidSourceKind(value) => write!(formatter, "invalid source_kind: {value}"),
+            Self::InvalidJobStatus(value) => {
+                write!(formatter, "invalid ingest_run status: {value}")
+            }
+            Self::InvalidJobId(value) => write!(formatter, "invalid job id: {value}"),
         }
     }
 }
@@ -926,6 +934,163 @@ fn normalized_languages(languages: Option<Vec<String>>) -> Vec<String> {
     }
 }
 
+fn validate_optional_range(
+    min_name: &str,
+    min: Option<f64>,
+    max_name: &str,
+    max: Option<f64>,
+) -> Result<(), ApiError> {
+    if matches!(min, Some(value) if value < 0.0) {
+        return Err(ApiError::bad_request(format!(
+            "{min_name} must be non-negative."
+        )));
+    }
+    if matches!(max, Some(value) if value < 0.0) {
+        return Err(ApiError::bad_request(format!(
+            "{max_name} must be non-negative."
+        )));
+    }
+    if let (Some(min), Some(max)) = (min, max) {
+        if min > max {
+            return Err(ApiError::bad_request(format!(
+                "{min_name} must be less than or equal to {max_name}."
+            )));
+        }
+    }
+    Ok(())
+}
+
+async fn insert_running_ingest_run(
+    pool: &PgPool,
+    run_id: Uuid,
+    source_url: &str,
+) -> Result<IngestRunStatus, ApiError> {
+    let report = serde_json::json!({
+        "workflow": "youtube_corpus_ingest",
+        "status": "running",
+        "sourceUrl": source_url,
+        "progress": {
+            "completed": 0,
+            "total": null,
+            "unit": "videos",
+            "message": "Queued"
+        }
+    });
+    let row = sqlx::query(
+        "INSERT INTO ingest_runs
+         (id, source_url, status, videos_seen, videos_indexed, segments_indexed, report)
+         VALUES ($1, $2, 'running', 0, 0, 0, $3)
+         RETURNING id, source_url, status, videos_seen, videos_indexed, segments_indexed,
+                   report, created_at::text AS created_at",
+    )
+    .bind(run_id)
+    .bind(source_url)
+    .bind(report)
+    .fetch_one(pool)
+    .await
+    .map_err(ApiError::internal)?;
+    ingest_run_from_row(row).map_err(ApiError::internal)
+}
+
+async fn mark_failed_ingest_run(
+    database_url: &str,
+    run_id: Uuid,
+    source_url: &str,
+    error: anyhow::Error,
+) -> anyhow::Result<()> {
+    let pool = crate::db::connect(database_url).await?;
+    let message = error.to_string();
+    let report = serde_json::json!({
+        "workflow": "youtube_corpus_ingest",
+        "status": "failed",
+        "sourceUrl": source_url,
+        "message": message,
+        "failure": {
+            "message": message
+        }
+    });
+    sqlx::query(
+        "INSERT INTO ingest_runs
+         (id, source_url, status, videos_seen, videos_indexed, segments_indexed, report)
+         VALUES ($1, $2, 'failed', 0, 0, 0, $3)
+         ON CONFLICT (id) DO UPDATE SET
+           status = EXCLUDED.status,
+           report = EXCLUDED.report",
+    )
+    .bind(run_id)
+    .bind(source_url)
+    .bind(report)
+    .execute(&pool)
+    .await?;
+    Ok(())
+}
+
+fn ingest_run_from_row(row: sqlx::postgres::PgRow) -> Result<IngestRunStatus, StatusQueryError> {
+    let id: Uuid = row.try_get("id")?;
+    let source_url: Option<String> = row.try_get("source_url")?;
+    let status: String = row.try_get("status")?;
+    let report: Value = row.try_get("report")?;
+    let created_at: String = row.try_get("created_at")?;
+    let job = ingest_job_from_status(id, source_url.clone(), &status, &report, created_at.clone())?;
+    Ok(IngestRunStatus {
+        id,
+        source_url,
+        status,
+        videos_seen: row.try_get("videos_seen")?,
+        videos_indexed: row.try_get("videos_indexed")?,
+        segments_indexed: row.try_get("segments_indexed")?,
+        report,
+        created_at,
+        job: Some(job),
+    })
+}
+
+fn ingest_job_from_status(
+    id: Uuid,
+    source_url: Option<String>,
+    status: &str,
+    report: &Value,
+    created_at: String,
+) -> Result<IngestJob, StatusQueryError> {
+    let job_status = ingest_status_to_job_status(status)
+        .ok_or_else(|| StatusQueryError::InvalidJobStatus(status.to_string()))?;
+    let progress = report
+        .get("progress")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()
+        .unwrap_or(None);
+    let failure = if job_status == jobs_core::JobStatus::Failed {
+        failure_message(report).map(|message| jobs_core::JobFailure { message })
+    } else {
+        None
+    };
+    let ingest = if job_status == jobs_core::JobStatus::Succeeded {
+        serde_json::from_value(report.clone()).ok()
+    } else {
+        None
+    };
+    Ok(IngestJob {
+        id: jobs_core::JobId::new(id.to_string())
+            .map_err(|error| StatusQueryError::InvalidJobId(error.to_string()))?,
+        status: job_status,
+        progress,
+        failure,
+        ingest,
+        source_url,
+        created_at,
+    })
+}
+
+fn failure_message(report: &Value) -> Option<String> {
+    report
+        .get("failure")
+        .and_then(|failure| failure.get("message"))
+        .or_else(|| report.get("message"))
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
 #[cfg(test)]
 mod tests {
     use axum::body::{to_bytes, Body};
@@ -935,7 +1100,7 @@ mod tests {
     use super::*;
 
     fn test_app(database_url: Option<String>) -> Router {
-        app(AppState { database_url })
+        app(AppState::new(database_url))
     }
 
     async fn request(method: Method, uri: &str, body: Option<&str>) -> Response {
@@ -974,6 +1139,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn api_schema_without_database_url_lists_operations() {
+        let response = request(Method::GET, "/api/schema", None).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        let operation_ids = value["operations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|operation| operation["id"].as_str())
+            .collect::<Vec<_>>();
+        assert!(operation_ids.contains(&"corpus.addSource"));
+        assert!(operation_ids.contains(&"corpus.ingestRuns.get"));
+    }
+
+    #[tokio::test]
     async fn search_with_empty_query_returns_bad_request() {
         let response = request(
             Method::POST,
@@ -999,6 +1180,12 @@ mod tests {
     async fn unknown_api_route_returns_not_found() {
         let response = request(Method::GET, "/api/missing", None).await;
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn ingest_runs_without_database_url_returns_bad_request() {
+        let response = request(Method::GET, "/api/ingest-runs", None).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

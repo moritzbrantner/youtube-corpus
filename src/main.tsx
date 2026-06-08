@@ -1,4 +1,3 @@
-import "@moritzbrantner/ui/styles.css";
 import "./styles.css";
 
 import { QueryClientProvider } from "@tanstack/react-query";

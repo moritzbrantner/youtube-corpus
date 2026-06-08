@@ -30,12 +30,14 @@ tower-http = "0.6.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2.5.8"
-uuid = { version = "1.11", features = ["v5", "serde"] }
+uuid = { version = "1.11", features = ["v4", "v5", "serde"] }
 
 text-core = { package = "moritzbrantner-text-core", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
 text-embeddings = { package = "moritzbrantner-text-embeddings", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
 text-lexical = { package = "moritzbrantner-text-lexical", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
 text-transcripts = { package = "moritzbrantner-text-transcripts", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
+runtime-core = { package = "moritzbrantner-runtime-core", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
+jobs-core = { package = "moritzbrantner-jobs-core", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
 
 [dev-dependencies]
 tempfile = "3.23"

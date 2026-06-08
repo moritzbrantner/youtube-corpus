@@ -49,6 +49,7 @@ pub struct AddSubscriptionRequest {
     pub asr_enabled: bool,
     pub transcriber_command: Option<PathBuf>,
     pub transcriber_args: Vec<String>,
+    pub transcriber_timeout_seconds: Option<u64>,
     pub max_items: Option<u64>,
     pub title_contains: Option<String>,
     pub title_excludes: Vec<String>,
@@ -79,6 +80,7 @@ pub struct Subscription {
     pub asr_enabled: bool,
     pub transcriber_command: Option<PathBuf>,
     pub transcriber_args: Vec<String>,
+    pub transcriber_timeout_seconds: Option<u64>,
     pub max_items: Option<u64>,
     pub title_contains: Option<String>,
     pub title_excludes: Vec<String>,
@@ -139,6 +141,7 @@ impl Subscription {
     fn to_ingest_request(&self, database_url: String) -> crate::ingest::IngestRequest {
         crate::ingest::IngestRequest {
             database_url,
+            run_id: None,
             source: match self.source_kind {
                 SubscriptionSourceKind::Channel => CorpusSource::ChannelUrl {
                     url: self.source_url.clone(),
@@ -153,6 +156,7 @@ impl Subscription {
             asr_enabled: self.asr_enabled,
             transcriber_command: self.transcriber_command.clone(),
             transcriber_args: self.transcriber_args.clone(),
+            transcriber_timeout_seconds: self.transcriber_timeout_seconds,
             max_items: self.max_items,
             title_contains: self.title_contains.clone(),
             title_excludes: self.title_excludes.clone(),
@@ -179,9 +183,9 @@ pub async fn add_subscription(request: AddSubscriptionRequest) -> anyhow::Result
     sqlx::query(
         "INSERT INTO corpus_subscriptions
          (id, source_kind, source_url, name, enabled, work_dir, caption, yt_dlp,
-          asr_enabled, transcriber_command, transcriber_args, max_items, title_contains, title_excludes,
-          duration_min, duration_max)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          asr_enabled, transcriber_command, transcriber_args, transcriber_timeout_seconds,
+          max_items, title_contains, title_excludes, duration_min, duration_max)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
          ON CONFLICT (source_url) DO UPDATE SET
            source_kind = EXCLUDED.source_kind,
            name = EXCLUDED.name,
@@ -192,6 +196,7 @@ pub async fn add_subscription(request: AddSubscriptionRequest) -> anyhow::Result
            asr_enabled = EXCLUDED.asr_enabled,
            transcriber_command = EXCLUDED.transcriber_command,
            transcriber_args = EXCLUDED.transcriber_args,
+           transcriber_timeout_seconds = EXCLUDED.transcriber_timeout_seconds,
            max_items = EXCLUDED.max_items,
            title_contains = EXCLUDED.title_contains,
            title_excludes = EXCLUDED.title_excludes,
@@ -210,6 +215,11 @@ pub async fn add_subscription(request: AddSubscriptionRequest) -> anyhow::Result
     .bind(request.asr_enabled)
     .bind(transcriber_command)
     .bind(&request.transcriber_args)
+    .bind(
+        request
+            .transcriber_timeout_seconds
+            .map(|value| value as i64),
+    )
     .bind(max_items)
     .bind(&request.title_contains)
     .bind(&request.title_excludes)
@@ -375,7 +385,8 @@ async fn get_subscription_by_url(pool: &PgPool, source_url: &str) -> anyhow::Res
 fn subscription_select_sql(where_clause: &str) -> String {
     format!(
         "SELECT id, source_kind, source_url, name, enabled, work_dir, caption, asr_enabled,
-          yt_dlp, transcriber_command, transcriber_args, max_items, title_contains, title_excludes,
+          yt_dlp, transcriber_command, transcriber_args, transcriber_timeout_seconds,
+          max_items, title_contains, title_excludes,
           duration_min, duration_max, last_checked_at, last_ingested_at, created_at, updated_at
          FROM corpus_subscriptions
          {where_clause}
@@ -388,6 +399,7 @@ fn subscription_from_row(row: PgRow) -> anyhow::Result<Subscription> {
     let caption: Json<CaptionConfig> = row.try_get("caption")?;
     let yt_dlp: Json<YtDlpConfig> = row.try_get("yt_dlp")?;
     let max_items: Option<i64> = row.try_get("max_items")?;
+    let transcriber_timeout_seconds: Option<i64> = row.try_get("transcriber_timeout_seconds")?;
     let transcriber_command: Option<String> = row.try_get("transcriber_command")?;
     let work_dir: String = row.try_get("work_dir")?;
     Ok(Subscription {
@@ -402,6 +414,7 @@ fn subscription_from_row(row: PgRow) -> anyhow::Result<Subscription> {
         asr_enabled: row.try_get("asr_enabled")?,
         transcriber_command: transcriber_command.map(PathBuf::from),
         transcriber_args: row.try_get("transcriber_args")?,
+        transcriber_timeout_seconds: transcriber_timeout_seconds.map(|value| value as u64),
         max_items: max_items.map(|value| value as u64),
         title_contains: row.try_get("title_contains")?,
         title_excludes: row.try_get("title_excludes")?,

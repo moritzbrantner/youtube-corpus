@@ -45,6 +45,8 @@ pub enum Command {
     Status(StatusArgs),
     Benchmark(BenchmarkArgs),
     Search(SearchArgs),
+    Diagnostics(DiagnosticsArgs),
+    ApiSchema(ApiSchemaArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -84,11 +86,15 @@ pub struct IngestArgs {
     )]
     pub yt_dlp_args: Vec<String>,
     #[arg(long)]
+    pub yt_dlp_timeout_seconds: Option<u64>,
+    #[arg(long)]
     pub no_asr: bool,
     #[arg(long)]
     pub transcriber_command: Option<PathBuf>,
     #[arg(long = "transcriber-arg")]
     pub transcriber_args: Vec<String>,
+    #[arg(long)]
+    pub transcriber_timeout_seconds: Option<u64>,
     #[arg(long)]
     pub max_items: Option<u64>,
     #[arg(long)]
@@ -121,7 +127,15 @@ impl IngestArgs {
         } else {
             self.caption_language
         };
+        validate_positive_option("--max-items", self.max_items)?;
+        validate_non_negative_range(
+            "--duration-min",
+            self.duration_min,
+            "--duration-max",
+            self.duration_max,
+        )?;
         Ok(IngestRequest {
+            run_id: None,
             database_url: config.database_url.clone(),
             source,
             work_dir: self.work_dir,
@@ -130,10 +144,11 @@ impl IngestArgs {
                 include_auto_captions: !self.no_auto_captions,
                 languages,
             },
-            yt_dlp: yt_dlp_config(self.yt_dlp_args),
+            yt_dlp: yt_dlp_config(self.yt_dlp_args, self.yt_dlp_timeout_seconds),
             asr_enabled: !self.no_asr,
             transcriber_command: self.transcriber_command,
             transcriber_args: self.transcriber_args,
+            transcriber_timeout_seconds: self.transcriber_timeout_seconds,
             max_items: self.max_items,
             title_contains: self.title_contains,
             title_excludes: self.title_excludes,
@@ -173,11 +188,15 @@ pub struct SubscribeArgs {
     )]
     pub yt_dlp_args: Vec<String>,
     #[arg(long)]
+    pub yt_dlp_timeout_seconds: Option<u64>,
+    #[arg(long)]
     pub no_asr: bool,
     #[arg(long)]
     pub transcriber_command: Option<PathBuf>,
     #[arg(long = "transcriber-arg")]
     pub transcriber_args: Vec<String>,
+    #[arg(long)]
+    pub transcriber_timeout_seconds: Option<u64>,
     #[arg(long)]
     pub max_items: Option<u64>,
     #[arg(long)]
@@ -208,6 +227,13 @@ impl SubscribeArgs {
         } else {
             self.caption_language
         };
+        validate_positive_option("--max-items", self.max_items)?;
+        validate_non_negative_range(
+            "--duration-min",
+            self.duration_min,
+            "--duration-max",
+            self.duration_max,
+        )?;
         Ok(AddSubscriptionRequest {
             database_url: config.database_url.clone(),
             source_kind,
@@ -220,10 +246,11 @@ impl SubscribeArgs {
                 include_auto_captions: !self.no_auto_captions,
                 languages,
             },
-            yt_dlp: yt_dlp_config(self.yt_dlp_args),
+            yt_dlp: yt_dlp_config(self.yt_dlp_args, self.yt_dlp_timeout_seconds),
             asr_enabled: !self.no_asr,
             transcriber_command: self.transcriber_command,
             transcriber_args: self.transcriber_args,
+            transcriber_timeout_seconds: self.transcriber_timeout_seconds,
             max_items: self.max_items,
             title_contains: self.title_contains,
             title_excludes: self.title_excludes,
@@ -241,6 +268,7 @@ pub struct SubscriptionsArgs {
 }
 
 #[derive(Debug, Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum SubscriptionsCommand {
     Add(SubscribeArgs),
     List(ListSubscriptionsArgs),
@@ -368,7 +396,11 @@ pub struct BenchmarkArgs {
     )]
     pub yt_dlp_args: Vec<String>,
     #[arg(long)]
+    pub yt_dlp_timeout_seconds: Option<u64>,
+    #[arg(long)]
     pub with_asr: bool,
+    #[arg(long)]
+    pub transcriber_timeout_seconds: Option<u64>,
     #[arg(long)]
     pub migrate: bool,
     #[arg(long = "query")]
@@ -413,8 +445,9 @@ impl BenchmarkArgs {
                     include_auto_captions: !self.no_auto_captions,
                     languages,
                 },
-                yt_dlp: yt_dlp_config(self.yt_dlp_args),
+                yt_dlp: yt_dlp_config(self.yt_dlp_args, self.yt_dlp_timeout_seconds),
                 asr_enabled: self.with_asr,
+                transcriber_timeout_seconds: self.transcriber_timeout_seconds,
                 migrate: self.migrate,
                 search_queries,
                 top_k: self.top_k,
@@ -423,13 +456,14 @@ impl BenchmarkArgs {
     }
 }
 
-fn yt_dlp_config(args: Vec<String>) -> YtDlpConfig {
+fn yt_dlp_config(args: Vec<String>, timeout_seconds: Option<u64>) -> YtDlpConfig {
     YtDlpConfig {
         args: args
             .into_iter()
             .map(|arg| arg.trim().to_string())
             .filter(|arg| !arg.is_empty())
             .collect(),
+        timeout_seconds,
     }
 }
 
@@ -480,6 +514,24 @@ impl SearchArgs {
         if self.top_k <= 0 {
             anyhow::bail!("--top-k must be positive");
         }
+        validate_non_negative_range(
+            "--transcript-start-min",
+            self.transcript_start_min,
+            "--transcript-start-max",
+            self.transcript_start_max,
+        )?;
+        validate_non_negative_range(
+            "--duration-min",
+            self.duration_min,
+            "--duration-max",
+            self.duration_max,
+        )?;
+        validate_i64_range(
+            "--view-count-min",
+            self.view_count_min,
+            "--view-count-max",
+            self.view_count_max,
+        )?;
         Ok(SearchRequest {
             database_url: config.database_url.clone(),
             query: self.query,
@@ -503,4 +555,63 @@ impl SearchArgs {
             view_count_max: self.view_count_max,
         })
     }
+}
+
+#[derive(Debug, Parser)]
+pub struct DiagnosticsArgs {
+    #[arg(long)]
+    pub transcriber_command: Option<String>,
+}
+
+#[derive(Debug, Parser)]
+pub struct ApiSchemaArgs {
+    #[arg(long)]
+    pub typescript: bool,
+}
+
+fn validate_positive_option(name: &str, value: Option<u64>) -> anyhow::Result<()> {
+    if matches!(value, Some(0)) {
+        anyhow::bail!("{name} must be positive");
+    }
+    Ok(())
+}
+
+fn validate_non_negative_range(
+    min_name: &str,
+    min: Option<f64>,
+    max_name: &str,
+    max: Option<f64>,
+) -> anyhow::Result<()> {
+    if matches!(min, Some(value) if value < 0.0) {
+        anyhow::bail!("{min_name} must be non-negative");
+    }
+    if matches!(max, Some(value) if value < 0.0) {
+        anyhow::bail!("{max_name} must be non-negative");
+    }
+    if let (Some(min), Some(max)) = (min, max) {
+        if min > max {
+            anyhow::bail!("{min_name} must be less than or equal to {max_name}");
+        }
+    }
+    Ok(())
+}
+
+fn validate_i64_range(
+    min_name: &str,
+    min: Option<i64>,
+    max_name: &str,
+    max: Option<i64>,
+) -> anyhow::Result<()> {
+    if matches!(min, Some(value) if value < 0) {
+        anyhow::bail!("{min_name} must be non-negative");
+    }
+    if matches!(max, Some(value) if value < 0) {
+        anyhow::bail!("{max_name} must be non-negative");
+    }
+    if let (Some(min), Some(max)) = (min, max) {
+        if min > max {
+            anyhow::bail!("{min_name} must be less than or equal to {max_name}");
+        }
+    }
+    Ok(())
 }

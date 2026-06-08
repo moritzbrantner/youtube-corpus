@@ -57,6 +57,8 @@ impl Default for CaptionConfig {
 #[serde(rename_all = "camelCase")]
 pub struct YtDlpConfig {
     pub args: Vec<String>,
+    #[serde(default)]
+    pub timeout_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]

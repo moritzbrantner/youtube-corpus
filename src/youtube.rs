@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
@@ -131,12 +132,13 @@ pub async fn discover_collection(
         command.arg("--playlist-end").arg(max_items.to_string());
     }
     apply_yt_dlp_args(&mut command, yt_dlp);
-    let output = command
-        .arg("-J")
-        .arg(url)
-        .stdin(Stdio::null())
-        .output()
-        .await?;
+    command.arg("-J").arg(url).stdin(Stdio::null());
+    let output = command_output(
+        command,
+        yt_dlp.timeout_seconds,
+        "yt-dlp collection discovery",
+    )
+    .await?;
     if !output.status.success() {
         anyhow::bail!(
             "yt-dlp collection discovery failed: {}",
@@ -242,11 +244,9 @@ pub async fn enrich_video_metadata(
         .arg("--skip-download")
         .arg("-J");
     apply_yt_dlp_args(&mut command, yt_dlp);
-    let output = command
-        .arg(&item.source_url)
-        .stdin(Stdio::null())
-        .output()
-        .await?;
+    command.arg(&item.source_url).stdin(Stdio::null());
+    let output =
+        command_output(command, yt_dlp.timeout_seconds, "yt-dlp metadata download").await?;
     if !output.status.success() {
         anyhow::bail!(
             "yt-dlp metadata download failed: {}",
@@ -301,11 +301,8 @@ pub async fn download_video(
         .arg("-o")
         .arg(&output_template);
     apply_yt_dlp_args(&mut command, yt_dlp);
-    let output = command
-        .arg(&item.source_url)
-        .stdin(Stdio::null())
-        .output()
-        .await?;
+    command.arg(&item.source_url).stdin(Stdio::null());
+    let output = command_output(command, yt_dlp.timeout_seconds, "yt-dlp media download").await?;
     if !output.status.success() {
         anyhow::bail!(
             "yt-dlp failed: {}",
@@ -379,6 +376,22 @@ pub fn require_command(command: &str) -> anyhow::Result<()> {
 
 pub fn apply_yt_dlp_args(command: &mut Command, config: &YtDlpConfig) {
     command.args(config.args.iter().filter(|arg| !arg.trim().is_empty()));
+}
+
+async fn command_output(
+    mut command: Command,
+    timeout_seconds: Option<u64>,
+    label: &str,
+) -> anyhow::Result<std::process::Output> {
+    let output = command.output();
+    if let Some(seconds) = timeout_seconds {
+        tokio::time::timeout(Duration::from_secs(seconds), output)
+            .await
+            .map_err(|_| anyhow::anyhow!("{label} timed out after {seconds} seconds"))?
+            .map_err(Into::into)
+    } else {
+        output.await.map_err(Into::into)
+    }
 }
 
 fn resolve_command(command: &str) -> Option<PathBuf> {

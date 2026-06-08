@@ -169,6 +169,41 @@ export interface IngestReport {
   items: IngestItemReport[];
 }
 
+export type JobStatus = "queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
+
+export interface JobProgress {
+  completed: number;
+  total: number | null;
+  unit: string;
+  message: string | null;
+}
+
+export interface JobFailure {
+  message: string;
+}
+
+export interface IngestJob {
+  id: string;
+  status: JobStatus;
+  progress: JobProgress | null;
+  failure: JobFailure | null;
+  ingest: IngestReport | null;
+  sourceUrl: string | null;
+  createdAt: string;
+}
+
+export interface IngestRunStatus {
+  id: string;
+  sourceUrl: string | null;
+  status: string;
+  videosSeen: number;
+  videosIndexed: number;
+  segmentsIndexed: number;
+  report: Record<string, unknown>;
+  createdAt: string;
+  job: IngestJob | null;
+}
+
 export interface Subscription {
   id: string;
   sourceKind: "channel" | "playlist";
@@ -190,9 +225,11 @@ export interface AddSourceInput {
   captionsEnabled?: boolean;
   autoCaptionsEnabled?: boolean;
   ytDlpArgs?: string[];
+  ytDlpTimeoutSeconds?: number | null;
   asrEnabled?: boolean;
   transcriberCommand?: string | null;
   transcriberArgs?: string[];
+  transcriberTimeoutSeconds?: number | null;
   maxItems?: number | null;
   titleContains?: string | null;
   titleExcludes?: string[];
@@ -201,6 +238,7 @@ export interface AddSourceInput {
   migrate?: boolean;
   subscribe?: boolean;
   ingestNow?: boolean;
+  async?: boolean;
 }
 
 export interface AddSourceReport {
@@ -208,6 +246,8 @@ export interface AddSourceReport {
   sourceUrl: string;
   subscription: Subscription | null;
   ingest: IngestReport | null;
+  jobId: string | null;
+  ingestRun: IngestRunStatus | null;
 }
 
 interface ApiErrorEnvelope {
@@ -241,16 +281,12 @@ function jsonPost<T>(path: string, body: unknown) {
   });
 }
 
-function queryString(input: DownloadedFilesInput) {
+function queryString(input: object) {
   const params = new URLSearchParams();
-  if (input.downloadedOnly !== undefined) {
-    params.set("downloadedOnly", String(input.downloadedOnly));
-  }
-  if (input.parsedOnly !== undefined) {
-    params.set("parsedOnly", String(input.parsedOnly));
-  }
-  if (input.limit !== undefined) {
-    params.set("limit", String(input.limit));
+  for (const [key, value] of Object.entries(input)) {
+    if (value !== undefined && value !== null) {
+      params.set(key, String(value));
+    }
   }
   const value = params.toString();
   return value ? `?${value}` : "";
@@ -274,6 +310,14 @@ export function getTranscriptContext(input: TranscriptContextInput) {
 
 export function getDownloadedFiles(input: DownloadedFilesInput) {
   return apiFetch<DownloadedFile[]>(`/api/downloaded-files${queryString(input)}`);
+}
+
+export function listIngestRuns(input: { limit?: number } = {}) {
+  return apiFetch<IngestRunStatus[]>(`/api/ingest-runs${queryString(input)}`);
+}
+
+export function getIngestRun(id: string) {
+  return apiFetch<IngestRunStatus>(`/api/ingest-runs/${id}`);
 }
 
 export function addSource(input: AddSourceInput) {

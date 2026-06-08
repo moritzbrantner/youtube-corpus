@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Row};
+use sqlx::postgres::PgArguments;
+use sqlx::query::Query;
+use sqlx::{PgPool, Postgres, Row};
 use text_embeddings::{HashedTextEmbedder, TextEmbeddingConfig};
 use text_lexical::CorpusOptions;
 use uuid::Uuid;
@@ -123,22 +125,7 @@ async fn fts_search(pool: &PgPool, request: &SearchRequest) -> anyhow::Result<Ve
         )
         .bind(&request.query)
         .bind(request.top_k)
-        .bind(filters.source_kind)
-        .bind(filters.video_id)
-        .bind(filters.language)
-        .bind(filters.transcript_start_min)
-        .bind(filters.transcript_start_max)
-        .bind(filters.upload_date_from)
-        .bind(filters.upload_date_to)
-        .bind(filters.duration_min)
-        .bind(filters.duration_max)
-        .bind(filters.channel_query)
-        .bind(filters.title_query)
-        .bind(filters.category_query)
-        .bind(filters.tag_query)
-        .bind(filters.metadata_query)
-        .bind(filters.view_count_min)
-        .bind(filters.view_count_max)
+        .bind_search_filters(&filters)
         .fetch_all(pool)
         .await?,
     )
@@ -200,22 +187,7 @@ async fn semantic_search(
         )
         .bind(query_vector)
         .bind(request.top_k)
-        .bind(filters.source_kind)
-        .bind(filters.video_id)
-        .bind(filters.language)
-        .bind(filters.transcript_start_min)
-        .bind(filters.transcript_start_max)
-        .bind(filters.upload_date_from)
-        .bind(filters.upload_date_to)
-        .bind(filters.duration_min)
-        .bind(filters.duration_max)
-        .bind(filters.channel_query)
-        .bind(filters.title_query)
-        .bind(filters.category_query)
-        .bind(filters.tag_query)
-        .bind(filters.metadata_query)
-        .bind(filters.view_count_min)
-        .bind(filters.view_count_max)
+        .bind_search_filters(&filters)
         .fetch_all(pool)
         .await?,
     )
@@ -334,25 +306,35 @@ async fn hybrid_search(
         .bind(&request.query)
         .bind(query_vector)
         .bind(request.top_k)
-        .bind(filters.source_kind)
-        .bind(filters.video_id)
-        .bind(filters.language)
-        .bind(filters.transcript_start_min)
-        .bind(filters.transcript_start_max)
-        .bind(filters.upload_date_from)
-        .bind(filters.upload_date_to)
-        .bind(filters.duration_min)
-        .bind(filters.duration_max)
-        .bind(filters.channel_query)
-        .bind(filters.title_query)
-        .bind(filters.category_query)
-        .bind(filters.tag_query)
-        .bind(filters.metadata_query)
-        .bind(filters.view_count_min)
-        .bind(filters.view_count_max)
+        .bind_search_filters(&filters)
         .fetch_all(pool)
         .await?,
     )
+}
+
+trait BindSearchFilters<'q> {
+    fn bind_search_filters(self, filters: &'q SearchFilterParams) -> Self;
+}
+
+impl<'q> BindSearchFilters<'q> for Query<'q, Postgres, PgArguments> {
+    fn bind_search_filters(self, filters: &'q SearchFilterParams) -> Self {
+        self.bind(filters.source_kind.as_deref())
+            .bind(filters.video_id)
+            .bind(filters.language.as_deref())
+            .bind(filters.transcript_start_min)
+            .bind(filters.transcript_start_max)
+            .bind(filters.upload_date_from.as_deref())
+            .bind(filters.upload_date_to.as_deref())
+            .bind(filters.duration_min)
+            .bind(filters.duration_max)
+            .bind(filters.channel_query.as_deref())
+            .bind(filters.title_query.as_deref())
+            .bind(filters.category_query.as_deref())
+            .bind(filters.tag_query.as_deref())
+            .bind(filters.metadata_query.as_deref())
+            .bind(filters.view_count_min)
+            .bind(filters.view_count_max)
+    }
 }
 
 fn rows_to_results(rows: Vec<sqlx::postgres::PgRow>) -> anyhow::Result<Vec<SearchResult>> {

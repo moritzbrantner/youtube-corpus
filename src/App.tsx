@@ -66,6 +66,8 @@ import {
 import {
   type AddSourceKind,
   type AddSourceReport,
+  type IngestReport,
+  type IngestRunStatus,
   type SearchMode,
   type SearchReport,
   type SearchResult,
@@ -74,7 +76,9 @@ import {
   addSource,
   getCorpusStatus,
   getDownloadedFiles,
+  getIngestRun,
   getTranscriptContext,
+  listIngestRuns,
   searchTranscripts,
 } from "./app/api";
 
@@ -222,6 +226,36 @@ function addSourceKindLabel(value: AddSourceKind) {
   return addSourceKindOptions.find((option) => option.value === value)?.label ?? value;
 }
 
+function isIngestReport(value: unknown): value is IngestReport {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Partial<IngestReport>;
+  return (
+    typeof candidate.workflow === "string" &&
+    typeof candidate.runId === "string" &&
+    typeof candidate.videosSeen === "number" &&
+    typeof candidate.videosIndexed === "number" &&
+    typeof candidate.segmentsIndexed === "number" &&
+    Array.isArray(candidate.items)
+  );
+}
+
+function ingestReportFromRun(run: IngestRunStatus | null) {
+  if (run?.job?.ingest) {
+    return run.job.ingest;
+  }
+  return run && isIngestReport(run.report) ? run.report : null;
+}
+
+function ingestRunMessage(run: IngestRunStatus | null) {
+  if (run?.job?.failure?.message) {
+    return run.job.failure.message;
+  }
+  const message = run?.report.message;
+  return typeof message === "string" ? message : null;
+}
+
 function compactFilterLabel(label: string, value: string) {
   const trimmed = value.trim();
   return trimmed === "" ? null : `${label}: ${trimmed}`;
@@ -243,7 +277,7 @@ function compactRangeFilterLabel(label: string, minValue: string, maxValue: stri
 }
 
 function statusBadgeVariant(status: string) {
-  if (status === "indexed" || status === "completed") {
+  if (status === "indexed" || status === "completed" || status === "succeeded") {
     return "default" as const;
   }
   if (status === "failed") {
@@ -384,9 +418,11 @@ export default function App() {
   const [captionsEnabled, setCaptionsEnabled] = React.useState(true);
   const [autoCaptionsEnabled, setAutoCaptionsEnabled] = React.useState(true);
   const [ytDlpArgs, setYtDlpArgs] = React.useState("");
+  const [ytDlpTimeoutSeconds, setYtDlpTimeoutSeconds] = React.useState("");
   const [asrEnabled, setAsrEnabled] = React.useState(false);
   const [transcriberCommand, setTranscriberCommand] = React.useState("");
   const [transcriberArgs, setTranscriberArgs] = React.useState("");
+  const [transcriberTimeoutSeconds, setTranscriberTimeoutSeconds] = React.useState("");
   const [maxItems, setMaxItems] = React.useState("10");
   const [titleContains, setTitleContains] = React.useState("");
   const [titleExcludes, setTitleExcludes] = React.useState("");
@@ -395,6 +431,7 @@ export default function App() {
   const [runMigrations, setRunMigrations] = React.useState(false);
   const [saveSubscription, setSaveSubscription] = React.useState(false);
   const [ingestNow, setIngestNow] = React.useState(true);
+  const [asyncIngest, setAsyncIngest] = React.useState(true);
   const [query, setQuery] = React.useState(defaultQuery);
   const [mode, setMode] = React.useState<SearchMode>("hybrid");
   const [topK, setTopK] = React.useState(5);
@@ -465,6 +502,23 @@ export default function App() {
     },
   });
 
+  const activeJobId = addSourceMutation.data?.jobId ?? null;
+  const activeIngestRun = useQuery({
+    queryKey: ["ingest-run", activeJobId],
+    queryFn: () => getIngestRun(activeJobId!),
+    enabled: activeJobId !== null,
+    refetchInterval: (query) =>
+      (query.state.data?.job?.status ?? query.state.data?.status) === "running" ? 2000 : false,
+  });
+
+  const recentIngestRuns = useQuery({
+    queryKey: ["ingest-runs", 10],
+    queryFn: () => listIngestRuns({ limit: 10 }),
+    enabled: Boolean(corpusStatus.data?.reachable && corpusStatus.data.schemaReady),
+    refetchInterval: activeIngestRun.data?.status === "running" ? 4000 : false,
+    refetchOnWindowFocus: false,
+  });
+
   const transcriptContext = useQuery({
     queryKey: ["transcript-context", selectedResult?.segmentId],
     queryFn: () =>
@@ -505,6 +559,8 @@ export default function App() {
     refetchOnWindowFocus: false,
   });
   const addReport = addSourceMutation.data ?? null;
+  const addIngestRun = activeIngestRun.data ?? addReport?.ingestRun ?? null;
+  const completedJobRefreshRef = React.useRef<string | null>(null);
   const canSaveSubscription = addSourceKind !== "video";
   const canSubmitSource =
     sourceUrl.trim() !== "" &&
@@ -525,6 +581,24 @@ export default function App() {
     mode: themeMode,
     onModeChange: setThemeMode,
   };
+
+  React.useEffect(() => {
+    const run = activeIngestRun.data;
+    const jobStatus = run?.job?.status;
+    if (!run || !jobStatus || jobStatus === "running" || jobStatus === "queued") {
+      return;
+    }
+    const refreshKey = `${run.id}:${jobStatus}`;
+    if (completedJobRefreshRef.current === refreshKey) {
+      return;
+    }
+    completedJobRefreshRef.current = refreshKey;
+    void queryClient.invalidateQueries({ queryKey: ["ingest-runs"] });
+    if (jobStatus === "succeeded") {
+      void queryClient.invalidateQueries({ queryKey: ["corpus-status"] });
+      void queryClient.invalidateQueries({ queryKey: ["downloaded-files"] });
+    }
+  }, [activeIngestRun.data, queryClient]);
 
   function runSearch(nextSourceKind: SourceKind | "all" = sourceKind) {
     const trimmedQuery = query.trim();
@@ -576,9 +650,11 @@ export default function App() {
       captionsEnabled,
       autoCaptionsEnabled,
       ytDlpArgs: splitLines(ytDlpArgs),
+      ytDlpTimeoutSeconds: optionalInteger(ytDlpTimeoutSeconds),
       asrEnabled,
       transcriberCommand: transcriberCommand.trim() || null,
       transcriberArgs: splitList(transcriberArgs),
+      transcriberTimeoutSeconds: optionalInteger(transcriberTimeoutSeconds),
       maxItems: parsedMaxItems === null ? null : Math.max(1, Math.floor(parsedMaxItems)),
       titleContains: titleContains.trim() || null,
       titleExcludes: splitList(titleExcludes),
@@ -587,6 +663,7 @@ export default function App() {
       migrate: runMigrations,
       subscribe: canSaveSubscription && saveSubscription,
       ingestNow,
+      async: asyncIngest,
     });
   }
 
@@ -634,9 +711,9 @@ export default function App() {
     setContextOpen(true);
   }
 
-  function renderAddReport(report: AddSourceReport | null) {
+  function renderAddReport(report: AddSourceReport | null, run: IngestRunStatus | null) {
     if (addSourceMutation.isPending) {
-      return <SearchState variant="loading" title="Downloading and parsing..." />;
+      return <SearchState variant="loading" title="Starting ingest..." />;
     }
 
     if (addSourceMutation.error) {
@@ -658,7 +735,8 @@ export default function App() {
       );
     }
 
-    const ingest = report.ingest;
+    const ingest = report.ingest ?? ingestReportFromRun(run);
+    const runMessage = ingestRunMessage(run);
     return (
       <div className="grid gap-4">
         <div className="grid gap-3 rounded-md border border-border bg-background px-4 py-4">
@@ -666,6 +744,8 @@ export default function App() {
             <Badge variant="outline">{addSourceKindLabel(report.sourceKind)}</Badge>
             {report.subscription ? <Badge variant="secondary">Subscription saved</Badge> : null}
             {ingest ? <Badge variant="default">Ingest completed</Badge> : null}
+            {run?.status === "running" ? <Badge variant="secondary">Ingest running</Badge> : null}
+            {run?.status === "failed" ? <Badge variant="destructive">Ingest failed</Badge> : null}
           </div>
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{report.sourceUrl}</p>
@@ -676,6 +756,39 @@ export default function App() {
             ) : null}
           </div>
         </div>
+
+        {run ? (
+          <MetricStrip
+            items={[
+              {
+                id: "run-status",
+                label: "Run status",
+                value: run.status,
+                delta: run.createdAt,
+              },
+              {
+                id: "run-indexed",
+                label: "Indexed",
+                value: run.videosIndexed.toLocaleString(),
+                delta: "Videos",
+              },
+              {
+                id: "run-segments",
+                label: "Segments",
+                value: run.segmentsIndexed.toLocaleString(),
+                delta: "Parsed",
+              },
+            ]}
+          />
+        ) : null}
+
+        {run?.status === "running" ? (
+          <SearchState variant="loading" title="Ingest running..." />
+        ) : null}
+
+        {run?.status === "failed" ? (
+          <SearchState variant="error" title="Ingest failed" description={runMessage} />
+        ) : null}
 
         {ingest ? (
           <>
@@ -736,9 +849,88 @@ export default function App() {
               ) : null}
             </div>
           </>
-        ) : (
+        ) : run ? null : (
           <SearchState title="Subscription saved" description="No ingest run was requested." />
         )}
+      </div>
+    );
+  }
+
+  function renderRecentRuns() {
+    if (!connectionReady && !corpusStatus.isLoading) {
+      return (
+        <SearchState
+          variant="error"
+          title="Runs unavailable"
+          description={statusMessage ?? "Corpus database is not ready."}
+        />
+      );
+    }
+
+    if (recentIngestRuns.isPending) {
+      return <SearchState variant="loading" title="Loading runs..." />;
+    }
+
+    if (recentIngestRuns.error) {
+      return (
+        <SearchState
+          variant="error"
+          title="Runs unavailable"
+          description={String(recentIngestRuns.error)}
+        />
+      );
+    }
+
+    const runs = recentIngestRuns.data ?? [];
+    if (runs.length === 0) {
+      return <SearchState title="No ingest runs" description="Background runs will appear here." />;
+    }
+
+    return (
+      <div className="grid gap-3">
+        <div className="flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void recentIngestRuns.refetch()}
+          >
+            <RotateCcw className="size-4" aria-hidden="true" />
+            Refresh
+          </Button>
+        </div>
+        {runs.map((run) => {
+          const status = run.job?.status ?? run.status;
+          const ingest = ingestReportFromRun(run);
+          return (
+            <article
+              key={run.id}
+              className="grid gap-3 rounded-md border border-border bg-background px-4 py-4"
+            >
+              <div className="flex min-w-0 flex-wrap items-start gap-3">
+                <Clock
+                  className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-sm font-semibold">
+                    {run.sourceUrl ?? run.job?.sourceUrl ?? run.id}
+                  </h2>
+                  <p className="mt-1 text-xs text-muted-foreground">{formatDate(run.createdAt)}</p>
+                </div>
+                <Badge variant={statusBadgeVariant(status)}>{status}</Badge>
+              </div>
+              <div className="flex min-w-0 flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                <span>{run.videosIndexed.toLocaleString()} videos</span>
+                <span>{run.segmentsIndexed.toLocaleString()} segments</span>
+                {ingest ? <span>{ingest.videosSeen.toLocaleString()} seen</span> : null}
+                {run.job?.failure?.message ? (
+                  <span className="text-destructive">{run.job.failure.message}</span>
+                ) : null}
+              </div>
+            </article>
+          );
+        })}
       </div>
     );
   }
@@ -866,6 +1058,27 @@ export default function App() {
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="grid gap-2">
+                  <span className="text-sm font-medium">yt-dlp timeout</span>
+                  <Input
+                    value={ytDlpTimeoutSeconds}
+                    onChange={(event) => setYtDlpTimeoutSeconds(event.target.value)}
+                    inputMode="numeric"
+                    placeholder="Seconds"
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-medium">Transcriber timeout</span>
+                  <Input
+                    value={transcriberTimeoutSeconds}
+                    onChange={(event) => setTranscriberTimeoutSeconds(event.target.value)}
+                    inputMode="numeric"
+                    placeholder="Seconds"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="grid gap-2">
                   <span className="text-sm font-medium">Title contains</span>
                   <Input
                     value={titleContains}
@@ -943,13 +1156,22 @@ export default function App() {
                     checked: ingestNow,
                     onCheckedChange: setIngestNow,
                   },
+                  {
+                    id: "async-ingest",
+                    label: "Run in background",
+                    checked: asyncIngest,
+                    onCheckedChange: setAsyncIngest,
+                  },
                 ].map((item) => (
                   <label key={item.id} className="flex items-center justify-between gap-3">
                     <span className="text-sm font-medium">{item.label}</span>
                     <Switch
                       checked={item.checked}
                       onCheckedChange={item.onCheckedChange}
-                      disabled={item.id === "ingest-now" && addSourceKind === "video"}
+                      disabled={
+                        (item.id === "ingest-now" && addSourceKind === "video") ||
+                        (item.id === "async-ingest" && !ingestNow)
+                      }
                     />
                   </label>
                 ))}
@@ -1001,7 +1223,17 @@ export default function App() {
                 Result returned by the Rust ingest and subscription pipeline.
               </SurfaceDescription>
             </SurfaceHeader>
-            <SurfaceContent className="mt-5">{renderAddReport(addReport)}</SurfaceContent>
+            <SurfaceContent className="mt-5">
+              {renderAddReport(addReport, addIngestRun)}
+            </SurfaceContent>
+          </Surface>
+
+          <Surface>
+            <SurfaceHeader>
+              <SurfaceTitle>Recent runs</SurfaceTitle>
+              <SurfaceDescription>Latest background ingest activity.</SurfaceDescription>
+            </SurfaceHeader>
+            <SurfaceContent className="mt-5">{renderRecentRuns()}</SurfaceContent>
           </Surface>
         </div>
       </PageContent>
@@ -1351,6 +1583,7 @@ export default function App() {
         brand={<span className="font-semibold">YouTube Corpus</span>}
         groups={navigationGroups}
         activeItemId={activePage}
+        defaultOpenGroupId={null}
         actionSlot={
           <NavbarActions
             notificationMenu={{

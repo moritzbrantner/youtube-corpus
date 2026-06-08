@@ -51,7 +51,11 @@ fn parses_ingest_url_command() {
         "--yt-dlp-arg=--cookies-from-browser",
         "--yt-dlp-arg",
         "firefox",
+        "--yt-dlp-timeout-seconds",
+        "30",
         "--no-asr",
+        "--transcriber-timeout-seconds",
+        "300",
     ]);
     match cli.command {
         Some(Command::Ingest(args)) => {
@@ -64,8 +68,35 @@ fn parses_ingest_url_command() {
                 args.yt_dlp_args,
                 vec!["--cookies-from-browser".to_string(), "firefox".to_string()]
             );
+            assert_eq!(args.yt_dlp_timeout_seconds, Some(30));
+            assert_eq!(args.transcriber_timeout_seconds, Some(300));
         }
         other => panic!("expected ingest command, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_diagnostics_command() {
+    let cli = Cli::parse_from([
+        "youtube-corpus",
+        "diagnostics",
+        "--transcriber-command",
+        "whisper",
+    ]);
+    match cli.command {
+        Some(Command::Diagnostics(args)) => {
+            assert_eq!(args.transcriber_command.as_deref(), Some("whisper"));
+        }
+        other => panic!("expected diagnostics command, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_api_schema_command() {
+    let cli = Cli::parse_from(["youtube-corpus", "api-schema", "--typescript"]);
+    match cli.command {
+        Some(Command::ApiSchema(args)) => assert!(args.typescript),
+        other => panic!("expected api-schema command, got {other:?}"),
     }
 }
 
