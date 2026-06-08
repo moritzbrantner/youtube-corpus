@@ -4,13 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:migrate": "DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/youtube_corpus} cargo run -- migrate",
+    "dev": "bun run db:up && bun run db:migrate && DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/youtube_corpus} tauri dev",
+    "dev:frontend": "vite",
     "build": "tsc && vite build",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "bun run dev",
     "tauri:build": "tauri build",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml"
   },

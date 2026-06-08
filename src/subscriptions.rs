@@ -26,6 +26,14 @@ impl SubscriptionSourceKind {
             Self::Playlist => "playlist",
         }
     }
+
+    pub fn parse(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "channel" => Ok(Self::Channel),
+            "playlist" => Ok(Self::Playlist),
+            other => anyhow::bail!("unknown subscription source kind `{other}`"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -397,11 +405,7 @@ fn subscription_from_row(row: PgRow) -> anyhow::Result<Subscription> {
 }
 
 fn parse_source_kind(value: &str) -> anyhow::Result<SubscriptionSourceKind> {
-    match value {
-        "channel" => Ok(SubscriptionSourceKind::Channel),
-        "playlist" => Ok(SubscriptionSourceKind::Playlist),
-        other => anyhow::bail!("unknown subscription source kind `{other}`"),
-    }
+    SubscriptionSourceKind::parse(value)
 }
 
 fn should_ingest_status(status: Option<&str>) -> bool {
@@ -436,13 +440,22 @@ async fn upsert_subscription_item(
     let id = stable_child_id(subscription_id, &item.source_url);
     sqlx::query(
         "INSERT INTO corpus_subscription_items
-         (id, subscription_id, source_url, youtube_id, title, duration_seconds, upload_date)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (id, subscription_id, source_url, youtube_id, title, duration_seconds, upload_date,
+          channel, channel_id, uploader, uploader_id, view_count, categories, tags, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
          ON CONFLICT (subscription_id, source_url) DO UPDATE SET
            youtube_id = EXCLUDED.youtube_id,
            title = EXCLUDED.title,
            duration_seconds = EXCLUDED.duration_seconds,
            upload_date = EXCLUDED.upload_date,
+           channel = EXCLUDED.channel,
+           channel_id = EXCLUDED.channel_id,
+           uploader = EXCLUDED.uploader,
+           uploader_id = EXCLUDED.uploader_id,
+           view_count = EXCLUDED.view_count,
+           categories = EXCLUDED.categories,
+           tags = EXCLUDED.tags,
+           metadata = EXCLUDED.metadata,
            last_seen_at = now()",
     )
     .bind(id)
@@ -452,6 +465,14 @@ async fn upsert_subscription_item(
     .bind(&item.title)
     .bind(item.duration_seconds)
     .bind(&item.upload_date)
+    .bind(&item.metadata.channel)
+    .bind(&item.metadata.channel_id)
+    .bind(&item.metadata.uploader)
+    .bind(&item.metadata.uploader_id)
+    .bind(item.metadata.view_count)
+    .bind(&item.metadata.categories)
+    .bind(&item.metadata.tags)
+    .bind(serde_json::to_value(&item.metadata)?)
     .execute(pool)
     .await?;
     Ok(())

@@ -96,6 +96,47 @@ fn parses_subscriptions_check_watch_command() {
 }
 
 #[test]
+fn parses_videos_command() {
+    let cli = Cli::parse_from([
+        "youtube-corpus",
+        "--database-url",
+        "postgres://postgres:postgres@localhost/youtube_corpus",
+        "videos",
+        "--downloaded",
+        "--parsed",
+        "--limit",
+        "25",
+    ]);
+    match cli.command {
+        Command::Videos(args) => {
+            assert!(args.downloaded);
+            assert!(args.parsed);
+            assert_eq!(args.limit, Some(25));
+        }
+        other => panic!("expected videos command, got {other:?}"),
+    }
+}
+
+#[test]
+fn parses_status_command() {
+    let cli = Cli::parse_from([
+        "youtube-corpus",
+        "--database-url",
+        "postgres://postgres:postgres@localhost/youtube_corpus",
+        "status",
+        "--include-disabled",
+        "--parsed",
+    ]);
+    match cli.command {
+        Command::Status(args) => {
+            assert!(args.include_disabled);
+            assert!(args.parsed);
+        }
+        other => panic!("expected status command, got {other:?}"),
+    }
+}
+
+#[test]
 fn parses_distinguo_benchmark_command() {
     let cli = Cli::parse_from([
         "youtube-corpus",

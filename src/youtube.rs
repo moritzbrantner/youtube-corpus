@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
 #[derive(Debug, Clone)]
@@ -12,7 +12,38 @@ pub struct VideoItem {
     pub source_url: String,
     pub duration_seconds: Option<f64>,
     pub upload_date: Option<String>,
+    pub metadata: VideoMetadata,
     pub local_video_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoMetadata {
+    pub youtube_id: Option<String>,
+    pub title: Option<String>,
+    pub webpage_url: Option<String>,
+    pub original_url: Option<String>,
+    pub duration_seconds: Option<f64>,
+    pub upload_date: Option<String>,
+    pub description: Option<String>,
+    pub channel: Option<String>,
+    pub channel_id: Option<String>,
+    pub channel_url: Option<String>,
+    pub uploader: Option<String>,
+    pub uploader_id: Option<String>,
+    pub uploader_url: Option<String>,
+    pub thumbnail_url: Option<String>,
+    pub duration_string: Option<String>,
+    pub timestamp: Option<i64>,
+    pub release_timestamp: Option<i64>,
+    pub view_count: Option<i64>,
+    pub like_count: Option<i64>,
+    pub comment_count: Option<i64>,
+    pub live_status: Option<String>,
+    pub availability: Option<String>,
+    pub age_limit: Option<i64>,
+    pub categories: Vec<String>,
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,8 +62,59 @@ struct YtDlpEntryJson {
     webpage_url: Option<String>,
     original_url: Option<String>,
     duration: Option<f64>,
+    duration_string: Option<String>,
     upload_date: Option<String>,
+    timestamp: Option<i64>,
+    release_timestamp: Option<i64>,
+    description: Option<String>,
+    channel: Option<String>,
+    channel_id: Option<String>,
+    channel_url: Option<String>,
+    uploader: Option<String>,
+    uploader_id: Option<String>,
+    uploader_url: Option<String>,
+    thumbnail: Option<String>,
+    view_count: Option<i64>,
+    like_count: Option<i64>,
+    comment_count: Option<i64>,
+    live_status: Option<String>,
+    availability: Option<String>,
+    age_limit: Option<i64>,
+    categories: Option<Vec<String>>,
+    tags: Option<Vec<String>>,
     entries: Option<Vec<Option<YtDlpEntryJson>>>,
+}
+
+impl VideoMetadata {
+    fn from_yt_dlp_entry(entry: &YtDlpEntryJson) -> Self {
+        Self {
+            youtube_id: clean_string(entry.id.clone()),
+            title: clean_string(entry.title.clone()),
+            webpage_url: clean_string(entry.webpage_url.clone()),
+            original_url: clean_string(entry.original_url.clone()),
+            duration_seconds: entry.duration,
+            upload_date: clean_string(entry.upload_date.clone()),
+            description: clean_string(entry.description.clone()),
+            channel: clean_string(entry.channel.clone()),
+            channel_id: clean_string(entry.channel_id.clone()),
+            channel_url: clean_string(entry.channel_url.clone()),
+            uploader: clean_string(entry.uploader.clone()),
+            uploader_id: clean_string(entry.uploader_id.clone()),
+            uploader_url: clean_string(entry.uploader_url.clone()),
+            thumbnail_url: clean_string(entry.thumbnail.clone()),
+            duration_string: clean_string(entry.duration_string.clone()),
+            timestamp: entry.timestamp,
+            release_timestamp: entry.release_timestamp,
+            view_count: entry.view_count,
+            like_count: entry.like_count,
+            comment_count: entry.comment_count,
+            live_status: clean_string(entry.live_status.clone()),
+            availability: clean_string(entry.availability.clone()),
+            age_limit: entry.age_limit,
+            categories: clean_strings(entry.categories.clone().unwrap_or_default()),
+            tags: clean_strings(entry.tags.clone().unwrap_or_default()),
+        }
+    }
 }
 
 pub async fn discover_collection(
@@ -91,6 +173,7 @@ fn collect_video_items(
             .map(sanitize_id)
             .filter(|value| !value.is_empty())
             .unwrap_or(fallback_id);
+        let metadata = VideoMetadata::from_yt_dlp_entry(&entry);
         items.push(VideoItem {
             item_id,
             youtube_id: entry.id,
@@ -98,6 +181,7 @@ fn collect_video_items(
             source_url,
             duration_seconds: entry.duration,
             upload_date: entry.upload_date,
+            metadata,
             local_video_path: None,
         });
     }
@@ -111,6 +195,7 @@ pub fn single_url_item(url: String) -> VideoItem {
         source_url: url,
         duration_seconds: None,
         upload_date: None,
+        metadata: VideoMetadata::default(),
         local_video_path: None,
     }
 }
@@ -132,7 +217,58 @@ pub fn local_file_item(path: PathBuf) -> VideoItem {
         source_url: path.to_string_lossy().into_owned(),
         duration_seconds: None,
         upload_date: None,
+        metadata: VideoMetadata::default(),
         local_video_path: Some(path),
+    }
+}
+
+pub async fn enrich_video_metadata(
+    item: &mut VideoItem,
+    metadata_dir: &Path,
+) -> anyhow::Result<()> {
+    if item.local_video_path.is_some() {
+        return Ok(());
+    }
+    require_command("yt-dlp")?;
+    tokio::fs::create_dir_all(metadata_dir).await?;
+    let output = Command::new("yt-dlp")
+        .arg("--no-playlist")
+        .arg("--skip-download")
+        .arg("-J")
+        .arg(&item.source_url)
+        .stdin(Stdio::null())
+        .output()
+        .await?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "yt-dlp metadata download failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    let entry: YtDlpEntryJson = serde_json::from_slice(&output.stdout)?;
+    item.merge_yt_dlp_entry(&entry);
+
+    let metadata_path = metadata_dir.join(format!("{}.metadata.json", item.item_id));
+    let metadata = serde_json::to_vec_pretty(&item.metadata)?;
+    tokio::fs::write(metadata_path, metadata).await?;
+    Ok(())
+}
+
+impl VideoItem {
+    fn merge_yt_dlp_entry(&mut self, entry: &YtDlpEntryJson) {
+        if let Some(id) = clean_string(entry.id.clone()) {
+            self.youtube_id = Some(id);
+        }
+        if let Some(title) = clean_string(entry.title.clone()) {
+            self.title = Some(title);
+        }
+        if entry.duration.is_some() {
+            self.duration_seconds = entry.duration;
+        }
+        if let Some(upload_date) = clean_string(entry.upload_date.clone()) {
+            self.upload_date = Some(upload_date);
+        }
+        self.metadata = VideoMetadata::from_yt_dlp_entry(entry);
     }
 }
 
@@ -321,6 +457,19 @@ fn sanitize_id(value: &str) -> String {
     }
 }
 
+fn clean_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn clean_strings(values: Vec<String>) -> Vec<String> {
+    values
+        .into_iter()
+        .filter_map(|value| clean_string(Some(value)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,5 +555,75 @@ mod tests {
             items[0].source_url,
             "https://www.youtube.com/watch?v=aaaaaaaaaaa"
         );
+    }
+
+    #[test]
+    fn parses_important_video_metadata_fields() {
+        let entry: YtDlpEntryJson = serde_json::from_slice(
+            br#"{
+            "id": "vA8-T5R8zDY",
+            "title": "Me at the zoo",
+            "description": "First YouTube upload",
+            "channel": "jawed",
+            "channel_id": "UC4QobU6STFB0P71PMvOGN5A",
+            "channel_url": "https://www.youtube.com/channel/UC4QobU6STFB0P71PMvOGN5A",
+            "uploader": "jawed",
+            "uploader_id": "jawed",
+            "thumbnail": "https://i.ytimg.com/vi/vA8-T5R8zDY/hqdefault.jpg",
+            "duration": 19.0,
+            "duration_string": "19",
+            "upload_date": "20050424",
+            "timestamp": 1114329600,
+            "view_count": 123,
+            "like_count": 45,
+            "comment_count": 6,
+            "live_status": "not_live",
+            "availability": "public",
+            "age_limit": 0,
+            "categories": ["People & Blogs"],
+            "tags": ["zoo", "youtube"]
+        }"#,
+        )
+        .unwrap();
+
+        let metadata = VideoMetadata::from_yt_dlp_entry(&entry);
+
+        assert_eq!(metadata.youtube_id.as_deref(), Some("vA8-T5R8zDY"));
+        assert_eq!(metadata.title.as_deref(), Some("Me at the zoo"));
+        assert_eq!(metadata.duration_seconds, Some(19.0));
+        assert_eq!(metadata.upload_date.as_deref(), Some("20050424"));
+        assert_eq!(metadata.channel.as_deref(), Some("jawed"));
+        assert_eq!(
+            metadata.channel_id.as_deref(),
+            Some("UC4QobU6STFB0P71PMvOGN5A")
+        );
+        assert_eq!(metadata.view_count, Some(123));
+        assert_eq!(metadata.categories, vec!["People & Blogs"]);
+        assert_eq!(metadata.tags, vec!["zoo", "youtube"]);
+    }
+
+    #[test]
+    fn merges_downloaded_metadata_into_video_item() {
+        let mut item = single_url_item("https://www.youtube.com/watch?v=vA8-T5R8zDY".to_string());
+        let entry: YtDlpEntryJson = serde_json::from_slice(
+            br#"{
+            "id": "vA8-T5R8zDY",
+            "title": "Me at the zoo",
+            "duration": 19.0,
+            "upload_date": "20050424",
+            "channel": "jawed",
+            "view_count": 123
+        }"#,
+        )
+        .unwrap();
+
+        item.merge_yt_dlp_entry(&entry);
+
+        assert_eq!(item.youtube_id.as_deref(), Some("vA8-T5R8zDY"));
+        assert_eq!(item.title.as_deref(), Some("Me at the zoo"));
+        assert_eq!(item.duration_seconds, Some(19.0));
+        assert_eq!(item.upload_date.as_deref(), Some("20050424"));
+        assert_eq!(item.metadata.channel.as_deref(), Some("jawed"));
+        assert_eq!(item.metadata.view_count, Some(123));
     }
 }

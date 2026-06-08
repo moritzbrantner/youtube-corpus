@@ -71,6 +71,20 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         },
+        Command::Videos(args) => {
+            let request = args.try_into_request(&config)?;
+            let videos = youtube_corpus::status::list_videos(request)
+                .await
+                .context("video list failed")?;
+            println!("{}", serde_json::to_string_pretty(&videos)?);
+        }
+        Command::Status(args) => {
+            let request = args.try_into_request(&config)?;
+            let report = youtube_corpus::status::corpus_status(request)
+                .await
+                .context("status failed")?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
         Command::Benchmark(args) => {
             let request = args.try_into_request(&config)?;
             let report = youtube_corpus::benchmark::run_distinguo_benchmark(request)

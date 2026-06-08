@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.moenarch.youtubecorpus",
   "build": {
-    "beforeDevCommand": "bun run dev",
+    "beforeDevCommand": "bash -lc 'ss -ltn | grep -q \":1420 \" || bun run dev:frontend'",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"

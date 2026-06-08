@@ -7,6 +7,7 @@ use crate::benchmark::{BenchmarkRequest, DISTINGUO_SEARCH_QUERIES};
 use crate::config::{AppConfig, CaptionConfig, CorpusSource, SearchMode, SourceKind};
 use crate::ingest::IngestRequest;
 use crate::search::SearchRequest;
+use crate::status::{CorpusStatusRequest, ListVideosRequest};
 use crate::subscriptions::{
     AddSubscriptionRequest, CheckSubscriptionsRequest, SubscriptionSourceKind,
 };
@@ -30,6 +31,8 @@ pub enum Command {
     Ingest(IngestArgs),
     Subscribe(SubscribeArgs),
     Subscriptions(SubscriptionsArgs),
+    Videos(ListVideosArgs),
+    Status(StatusArgs),
     Benchmark(BenchmarkArgs),
     Search(SearchArgs),
 }
@@ -246,6 +249,63 @@ impl CheckSubscriptionsArgs {
             database_url: config.database_url.clone(),
             id: self.id,
             include_disabled: self.include_disabled,
+            migrate: self.migrate,
+        })
+    }
+}
+
+#[derive(Debug, Parser)]
+pub struct ListVideosArgs {
+    #[arg(long)]
+    pub downloaded: bool,
+    #[arg(long)]
+    pub parsed: bool,
+    #[arg(long)]
+    pub limit: Option<i64>,
+    #[arg(long)]
+    pub migrate: bool,
+}
+
+impl ListVideosArgs {
+    pub fn try_into_request(self, config: &AppConfig) -> anyhow::Result<ListVideosRequest> {
+        if matches!(self.limit, Some(limit) if limit <= 0) {
+            anyhow::bail!("--limit must be positive");
+        }
+        Ok(ListVideosRequest {
+            database_url: config.database_url.clone(),
+            downloaded_only: self.downloaded,
+            parsed_only: self.parsed,
+            limit: self.limit,
+            migrate: self.migrate,
+        })
+    }
+}
+
+#[derive(Debug, Parser)]
+pub struct StatusArgs {
+    #[arg(long)]
+    pub include_disabled: bool,
+    #[arg(long)]
+    pub downloaded: bool,
+    #[arg(long)]
+    pub parsed: bool,
+    #[arg(long)]
+    pub limit: Option<i64>,
+    #[arg(long)]
+    pub migrate: bool,
+}
+
+impl StatusArgs {
+    pub fn try_into_request(self, config: &AppConfig) -> anyhow::Result<CorpusStatusRequest> {
+        if matches!(self.limit, Some(limit) if limit <= 0) {
+            anyhow::bail!("--limit must be positive");
+        }
+        Ok(CorpusStatusRequest {
+            database_url: config.database_url.clone(),
+            include_disabled: self.include_disabled,
+            downloaded_only: self.downloaded,
+            parsed_only: self.parsed,
+            limit: self.limit,
             migrate: self.migrate,
         })
     }

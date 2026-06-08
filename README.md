@@ -42,6 +42,7 @@ cargo run -- subscribe \
 cargo run -- subscriptions add --playlist-url "https://www.youtube.com/playlist?list=..."
 cargo run -- subscriptions list
 cargo run -- subscriptions check
+cargo run -- status
 ```
 
 `subscriptions check` discovers videos with `yt-dlp`, remembers which videos
@@ -50,6 +51,17 @@ items. To run continuously instead of from cron or systemd:
 
 ```bash
 cargo run -- subscriptions check --watch --interval-seconds 3600
+```
+
+Use `status` to see both the channels/playlists being monitored and the videos
+already known to the corpus. Each video reports whether media was downloaded,
+whether caption files were downloaded, and whether transcript segments were
+parsed and indexed:
+
+```bash
+cargo run -- status
+cargo run -- videos --parsed
+cargo run -- videos --downloaded --limit 25
 ```
 
 First example corpus and benchmark:
@@ -73,6 +85,12 @@ with ingest and search timings.
 By default the tool requests manual and auto captions in English and also tries
 to run a `whisper` command from `PATH`. If no ASR command is available, ASR is
 reported as skipped while captions are still indexed.
+
+For YouTube sources, ingest also downloads normalized video metadata with
+`yt-dlp` into each item's `metadata/` work-dir folder. The corpus stores common
+filter fields such as channel/uploader ids, thumbnails, view/like/comment
+counts, categories, tags, live status, availability, and age limit alongside the
+full normalized metadata JSON.
 
 ```bash
 cargo run -- ingest --url "$URL" --caption-language de --transcriber-command whisper

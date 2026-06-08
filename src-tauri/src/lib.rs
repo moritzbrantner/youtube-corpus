@@ -1,8 +1,14 @@
 use serde::{Deserialize, Serialize};
 use sqlx::Row;
+use std::path::PathBuf;
 use uuid::Uuid;
 use youtube_corpus::search::SearchResult;
-use youtube_corpus::{search_corpus, SearchMode, SearchRequest, SourceKind};
+use youtube_corpus::status::{ListVideosRequest, VideoStatus};
+use youtube_corpus::{
+    add_subscription, ingest_corpus, search_corpus, CaptionConfig, CorpusSource, IngestReport,
+    SearchMode, SearchRequest, SourceKind, Subscription,
+};
+use youtube_corpus::subscriptions::{AddSubscriptionRequest, SubscriptionSourceKind};
 
 const REQUIRED_TABLES: &[&str] = &[
     "videos",
@@ -42,6 +48,56 @@ struct TranscriptContextInput {
     segment_id: String,
     before: Option<i64>,
     after: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListDownloadedFilesInput {
+    database_url: Option<String>,
+    downloaded_only: Option<bool>,
+    parsed_only: Option<bool>,
+    limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AddSourceInput {
+    database_url: Option<String>,
+    source_kind: AddSourceKind,
+    source_url: String,
+    name: Option<String>,
+    work_dir: Option<String>,
+    caption_languages: Option<Vec<String>>,
+    captions_enabled: Option<bool>,
+    auto_captions_enabled: Option<bool>,
+    asr_enabled: Option<bool>,
+    transcriber_command: Option<String>,
+    transcriber_args: Option<Vec<String>>,
+    max_items: Option<u64>,
+    title_contains: Option<String>,
+    title_excludes: Option<Vec<String>>,
+    duration_min: Option<f64>,
+    duration_max: Option<f64>,
+    migrate: Option<bool>,
+    subscribe: Option<bool>,
+    ingest_now: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum AddSourceKind {
+    Video,
+    Channel,
+    Playlist,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AddSourceReport {
+    source_kind: String,
+    source_url: String,
+    subscription: Option<Subscription>,
+    ingest: Option<IngestReport>,
 }
 
 #[derive(Debug, Serialize)]
@@ -346,6 +402,168 @@ async fn transcript_context(
     })
 }
 
+#[tauri::command]
+async fn downloaded_files(input: ListDownloadedFilesInput) -> Result<Vec<VideoStatus>, String> {
+    let database_url = match resolve_database_url(input.database_url) {
+        Some(database_url) => database_url,
+        None => return Err("DATABASE_URL is required.".to_string()),
+    };
+
+    let downloaded_only = input.downloaded_only.unwrap_or(true);
+    let limit = input.limit;
+    let mut videos = youtube_corpus::status::list_videos(ListVideosRequest {
+        database_url,
+        downloaded_only: false,
+        parsed_only: input.parsed_only.unwrap_or(false),
+        limit: if downloaded_only { None } else { limit },
+        migrate: false,
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+
+    if downloaded_only {
+        videos.retain(|video| video.media_downloaded || video.caption_files_downloaded);
+        if let Some(limit) = limit.and_then(|value| usize::try_from(value.max(0)).ok()) {
+            videos.truncate(limit);
+        }
+    }
+
+    Ok(videos)
+}
+
+#[tauri::command]
+async fn add_source(input: AddSourceInput) -> Result<AddSourceReport, String> {
+    let database_url = match resolve_database_url(input.database_url.clone()) {
+        Some(database_url) => database_url,
+        None => return Err("DATABASE_URL is required.".to_string()),
+    };
+
+    let source_url = input.source_url.trim().to_string();
+    if source_url.is_empty() {
+        return Err("Source URL is required.".to_string());
+    }
+
+    let work_dir = input
+        .work_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("use-case-output/youtube-corpus"));
+    let caption = CaptionConfig {
+        enabled: input.captions_enabled.unwrap_or(true),
+        include_auto_captions: input.auto_captions_enabled.unwrap_or(true),
+        languages: normalized_languages(input.caption_languages),
+    };
+    let transcriber_command = input
+        .transcriber_command
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    let transcriber_args = input.transcriber_args.unwrap_or_default();
+    let title_contains = input
+        .title_contains
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+    let title_excludes = input
+        .title_excludes
+        .unwrap_or_default()
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    let migrate = input.migrate.unwrap_or(false);
+    let asr_enabled = input.asr_enabled.unwrap_or(false);
+    let ingest_now = input.ingest_now.unwrap_or(true);
+    let subscribe = input.subscribe.unwrap_or(false);
+
+    let mut subscription = None;
+    if subscribe {
+        let source_kind = match input.source_kind {
+            AddSourceKind::Channel => SubscriptionSourceKind::Channel,
+            AddSourceKind::Playlist => SubscriptionSourceKind::Playlist,
+            AddSourceKind::Video => return Err("Only channels and playlists can be subscribed.".to_string()),
+        };
+        subscription = Some(
+            add_subscription(AddSubscriptionRequest {
+                database_url: database_url.clone(),
+                source_kind,
+                source_url: source_url.clone(),
+                name: input
+                    .name
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned),
+                enabled: true,
+                work_dir: work_dir.clone(),
+                caption: caption.clone(),
+                asr_enabled,
+                transcriber_command: transcriber_command.clone(),
+                transcriber_args: transcriber_args.clone(),
+                max_items: input.max_items,
+                title_contains: title_contains.clone(),
+                title_excludes: title_excludes.clone(),
+                duration_min: input.duration_min,
+                duration_max: input.duration_max,
+                migrate,
+            })
+            .await
+            .map_err(|error| error.to_string())?,
+        );
+    }
+
+    let ingest = if ingest_now {
+        let source = match input.source_kind {
+            AddSourceKind::Video => CorpusSource::YoutubeUrl {
+                url: source_url.clone(),
+            },
+            AddSourceKind::Channel => CorpusSource::ChannelUrl {
+                url: source_url.clone(),
+            },
+            AddSourceKind::Playlist => CorpusSource::PlaylistUrl {
+                url: source_url.clone(),
+            },
+        };
+        Some(
+            ingest_corpus(youtube_corpus::ingest::IngestRequest {
+                database_url,
+                source,
+                work_dir,
+                caption,
+                asr_enabled,
+                transcriber_command,
+                transcriber_args,
+                max_items: input.max_items,
+                title_contains,
+                title_excludes,
+                duration_min: input.duration_min,
+                duration_max: input.duration_max,
+                migrate: migrate && !subscribe,
+            })
+            .await
+            .map_err(|error| error.to_string())?,
+        )
+    } else {
+        None
+    };
+
+    let source_kind = match input.source_kind {
+        AddSourceKind::Video => "video",
+        AddSourceKind::Channel => "channel",
+        AddSourceKind::Playlist => "playlist",
+    };
+    Ok(AddSourceReport {
+        source_kind: source_kind.to_string(),
+        source_url,
+        subscription,
+        ingest,
+    })
+}
+
 fn resolve_database_url(database_url: Option<String>) -> Option<String> {
     database_url
         .map(|value| value.trim().to_string())
@@ -500,12 +718,33 @@ fn parse_source_kind(value: &str) -> Result<SourceKind, StatusQueryError> {
     }
 }
 
+fn normalized_languages(languages: Option<Vec<String>>) -> Vec<String> {
+    let values = languages
+        .unwrap_or_default()
+        .into_iter()
+        .flat_map(|value| {
+            value
+                .split(',')
+                .map(|part| part.trim().to_string())
+                .collect::<Vec<_>>()
+        })
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        vec!["en".to_string()]
+    } else {
+        values
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            add_source,
             corpus_status,
             database_status,
+            downloaded_files,
             search_transcripts,
             transcript_context
         ])

@@ -63,6 +63,29 @@ pub async fn parse_caption_files(dir: &Path) -> anyhow::Result<Vec<TranscriptStr
         } else {
             SourceKind::CaptionManual
         };
+        let segments = parsed
+            .segments
+            .into_iter()
+            .filter_map(|segment| {
+                let mut segment = text_transcripts::TranscriptSegmentContract::from(segment);
+                segment.text = normalize_subtitle_text(&segment.text);
+                (!segment.text.is_empty()).then_some(segment)
+            })
+            .collect::<Vec<_>>();
+        let text = parsed
+            .text
+            .as_deref()
+            .map(normalize_subtitle_text)
+            .filter(|text| !text.is_empty())
+            .or_else(|| {
+                (!segments.is_empty()).then(|| {
+                    segments
+                        .iter()
+                        .map(|segment| segment.text.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+            });
         streams.push(TranscriptStream {
             source_kind,
             language: parsed
@@ -70,12 +93,8 @@ pub async fn parse_caption_files(dir: &Path) -> anyhow::Result<Vec<TranscriptStr
                 .clone()
                 .or_else(|| infer_language_from_path(&path)),
             source_path: Some(path),
-            text: parsed.text.clone(),
-            segments: parsed
-                .segments
-                .into_iter()
-                .map(text_transcripts::TranscriptSegmentContract::from)
-                .collect(),
+            text,
+            segments,
             message: None,
         });
     }
@@ -130,4 +149,94 @@ fn infer_language_from_path(path: &Path) -> Option<String> {
         .skip(1)
         .find(|part| part.len() == 2 || part.len() == 5)
         .map(|value| (*value).to_string())
+}
+
+fn normalize_subtitle_text(text: &str) -> String {
+    let without_markup = strip_subtitle_markup(text);
+    let decoded = decode_basic_entities(&without_markup);
+    collapse_whitespace(&decoded)
+}
+
+fn strip_subtitle_markup(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '<' {
+            output.push(ch);
+            continue;
+        }
+
+        let mut tag = String::new();
+        let mut closed = false;
+        for tag_ch in chars.by_ref() {
+            if tag_ch == '>' {
+                closed = true;
+                break;
+            }
+            tag.push(tag_ch);
+        }
+
+        if !closed {
+            output.push('<');
+            output.push_str(&tag);
+            break;
+        }
+
+        let tag = tag.trim();
+        if tag.is_empty() {
+            continue;
+        }
+
+        if is_subtitle_timestamp(tag) {
+            output.push(' ');
+        } else if is_subtitle_tag(tag) {
+            continue;
+        } else {
+            output.push('<');
+            output.push_str(tag);
+            output.push('>');
+        }
+    }
+    output
+}
+
+fn is_subtitle_tag(tag: &str) -> bool {
+    let tag = tag.trim_start_matches('/');
+    let name = tag
+        .split(|ch: char| ch.is_whitespace() || ch == '.')
+        .next()
+        .unwrap_or_default();
+    matches!(name, "b" | "c" | "i" | "lang" | "rt" | "ruby" | "u" | "v")
+}
+
+fn is_subtitle_timestamp(value: &str) -> bool {
+    let value = value.replace(',', ".");
+    let parts = value.split(':').collect::<Vec<_>>();
+    let [hours, minutes, seconds] = parts.as_slice() else {
+        return false;
+    };
+    is_two_digits(hours)
+        && is_two_digits(minutes)
+        && seconds.len() == 6
+        && seconds.as_bytes().get(2) == Some(&b'.')
+        && seconds[..2].bytes().all(|byte| byte.is_ascii_digit())
+        && seconds[3..].bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn is_two_digits(value: &str) -> bool {
+    value.len() == 2 && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn decode_basic_entities(text: &str) -> String {
+    text.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&nbsp;", " ")
+}
+
+fn collapse_whitespace(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

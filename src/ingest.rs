@@ -157,12 +157,22 @@ async fn ingest_item(
     request: &IngestRequest,
     item: &VideoItem,
 ) -> anyhow::Result<IngestItemReport> {
+    let mut item = item.clone();
     let item_dir = request.work_dir.join(&item.item_id);
+    let metadata_dir = item_dir.join("metadata");
     let caption_dir = item_dir.join("captions");
     let mut video_path = item.local_video_path.clone();
 
+    if let Err(error) = crate::youtube::enrich_video_metadata(&mut item, &metadata_dir).await {
+        tracing::warn!(
+            source_url = %item.source_url,
+            error = %error,
+            "video metadata download failed"
+        );
+    }
+
     let mut streams =
-        crate::captions::download_and_parse_captions(item, &caption_dir, &request.caption)
+        crate::captions::download_and_parse_captions(&item, &caption_dir, &request.caption)
             .await
             .unwrap_or_default();
 
@@ -170,7 +180,7 @@ async fn ingest_item(
         let media_path = match &video_path {
             Some(path) => path.clone(),
             None => {
-                let path = crate::youtube::download_video(item, &item_dir.join("media")).await?;
+                let path = crate::youtube::download_video(&item, &item_dir.join("media")).await?;
                 video_path = Some(path.clone());
                 path
             }
@@ -198,7 +208,7 @@ async fn ingest_item(
 
     let video_id = stable_video_id(&item.source_url);
     let mut tx = pool.begin().await?;
-    upsert_video(&mut tx, video_id, item, video_path.as_deref()).await?;
+    upsert_video(&mut tx, video_id, &item, video_path.as_deref()).await?;
 
     let embedder =
         HashedTextEmbedder::new(TextEmbeddingConfig::default(), CorpusOptions::default())?;
@@ -240,11 +250,28 @@ async fn upsert_video(
     video_path: Option<&std::path::Path>,
 ) -> anyhow::Result<()> {
     sqlx::query(
-        "INSERT INTO videos (id, youtube_id, source_url, title, local_video_path, duration_seconds, upload_date)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        "INSERT INTO videos
+         (id, youtube_id, source_url, title, local_video_path, duration_seconds, upload_date,
+          description, channel, channel_id, channel_url, uploader, uploader_id, uploader_url,
+          thumbnail_url, duration_string, timestamp, release_timestamp, view_count, like_count,
+          comment_count, live_status, availability, age_limit, categories, tags, metadata)
+         VALUES
+         ($1, $2, $3, $4, $5, $6, $7,
+          $8, $9, $10, $11, $12, $13, $14,
+          $15, $16, $17, $18, $19, $20,
+          $21, $22, $23, $24, $25, $26, $27)
          ON CONFLICT (id) DO UPDATE SET youtube_id = EXCLUDED.youtube_id, source_url = EXCLUDED.source_url,
            title = EXCLUDED.title, local_video_path = EXCLUDED.local_video_path,
            duration_seconds = EXCLUDED.duration_seconds, upload_date = EXCLUDED.upload_date,
+           description = EXCLUDED.description, channel = EXCLUDED.channel, channel_id = EXCLUDED.channel_id,
+           channel_url = EXCLUDED.channel_url, uploader = EXCLUDED.uploader, uploader_id = EXCLUDED.uploader_id,
+           uploader_url = EXCLUDED.uploader_url, thumbnail_url = EXCLUDED.thumbnail_url,
+           duration_string = EXCLUDED.duration_string, timestamp = EXCLUDED.timestamp,
+           release_timestamp = EXCLUDED.release_timestamp, view_count = EXCLUDED.view_count,
+           like_count = EXCLUDED.like_count, comment_count = EXCLUDED.comment_count,
+           live_status = EXCLUDED.live_status, availability = EXCLUDED.availability,
+           age_limit = EXCLUDED.age_limit, categories = EXCLUDED.categories, tags = EXCLUDED.tags,
+           metadata = EXCLUDED.metadata,
            updated_at = now()",
     )
     .bind(video_id)
@@ -254,6 +281,26 @@ async fn upsert_video(
     .bind(video_path.map(|path| path.to_string_lossy().into_owned()))
     .bind(item.duration_seconds)
     .bind(&item.upload_date)
+    .bind(&item.metadata.description)
+    .bind(&item.metadata.channel)
+    .bind(&item.metadata.channel_id)
+    .bind(&item.metadata.channel_url)
+    .bind(&item.metadata.uploader)
+    .bind(&item.metadata.uploader_id)
+    .bind(&item.metadata.uploader_url)
+    .bind(&item.metadata.thumbnail_url)
+    .bind(&item.metadata.duration_string)
+    .bind(item.metadata.timestamp)
+    .bind(item.metadata.release_timestamp)
+    .bind(item.metadata.view_count)
+    .bind(item.metadata.like_count)
+    .bind(item.metadata.comment_count)
+    .bind(&item.metadata.live_status)
+    .bind(&item.metadata.availability)
+    .bind(item.metadata.age_limit)
+    .bind(&item.metadata.categories)
+    .bind(&item.metadata.tags)
+    .bind(serde_json::to_value(&item.metadata)?)
     .execute(&mut **tx)
     .await?;
     Ok(())
