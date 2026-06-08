@@ -92,8 +92,14 @@ filter fields such as channel/uploader ids, thumbnails, view/like/comment
 counts, categories, tags, live status, availability, and age limit alongside the
 full normalized metadata JSON.
 
+Pass extra `yt-dlp` arguments with repeated `--yt-dlp-arg` flags. Each flag is
+passed as one argv entry to every `yt-dlp` call used by ingest, caption download,
+metadata download, media download, benchmark ingest, and saved subscription
+checks.
+
 ```bash
 cargo run -- ingest --url "$URL" --caption-language de --transcriber-command whisper
+cargo run -- ingest --url "$URL" --yt-dlp-arg=--cookies-from-browser --yt-dlp-arg=firefox
 cargo run -- ingest --url "$URL" --no-asr
 cargo run -- ingest --input ./lecture.mp4 --transcriber-command whisper
 ```

@@ -10,6 +10,9 @@ fn parses_ingest_url_command() {
         "ingest",
         "--url",
         "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+        "--yt-dlp-arg=--cookies-from-browser",
+        "--yt-dlp-arg",
+        "firefox",
         "--no-asr",
     ]);
     match cli.command {
@@ -19,6 +22,10 @@ fn parses_ingest_url_command() {
                 Some("https://www.youtube.com/watch?v=jNQXAC9IVRw")
             );
             assert!(args.no_asr);
+            assert_eq!(
+                args.yt_dlp_args,
+                vec!["--cookies-from-browser".to_string(), "firefox".to_string()]
+            );
         }
         other => panic!("expected ingest command, got {other:?}"),
     }

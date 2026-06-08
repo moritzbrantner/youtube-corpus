@@ -3,7 +3,7 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{CaptionConfig, CorpusSource, SearchMode};
+use crate::config::{CaptionConfig, CorpusSource, SearchMode, YtDlpConfig};
 use crate::ingest::{ingest_corpus, IngestReport};
 use crate::search::{search_corpus, SearchReport, SearchRequest};
 
@@ -17,6 +17,7 @@ pub struct BenchmarkRequest {
     pub work_dir: PathBuf,
     pub max_items: u64,
     pub caption: CaptionConfig,
+    pub yt_dlp: YtDlpConfig,
     pub asr_enabled: bool,
     pub migrate: bool,
     pub search_queries: Vec<String>,
@@ -50,6 +51,7 @@ pub async fn run_distinguo_benchmark(request: BenchmarkRequest) -> anyhow::Resul
         },
         work_dir: request.work_dir,
         caption: request.caption,
+        yt_dlp: request.yt_dlp,
         asr_enabled: request.asr_enabled,
         transcriber_command: None,
         transcriber_args: Vec::new(),

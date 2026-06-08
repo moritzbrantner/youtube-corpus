@@ -7,7 +7,7 @@ use text_lexical::CorpusOptions;
 use uuid::Uuid;
 
 use crate::captions::TranscriptStream;
-use crate::config::{CaptionConfig, CorpusSource};
+use crate::config::{CaptionConfig, CorpusSource, YtDlpConfig};
 use crate::youtube::{stable_child_id, stable_video_id, VideoItem};
 
 #[derive(Debug, Clone)]
@@ -16,6 +16,7 @@ pub struct IngestRequest {
     pub source: CorpusSource,
     pub work_dir: PathBuf,
     pub caption: CaptionConfig,
+    pub yt_dlp: YtDlpConfig,
     pub asr_enabled: bool,
     pub transcriber_command: Option<PathBuf>,
     pub transcriber_args: Vec<String>,
@@ -146,7 +147,7 @@ async fn resolve_items(request: &IngestRequest) -> anyhow::Result<Vec<VideoItem>
     match &request.source {
         CorpusSource::YoutubeUrl { url } => Ok(vec![crate::youtube::single_url_item(url.clone())]),
         CorpusSource::PlaylistUrl { url } | CorpusSource::ChannelUrl { url } => {
-            crate::youtube::discover_collection(url, request.max_items).await
+            crate::youtube::discover_collection(url, request.max_items, &request.yt_dlp).await
         }
         CorpusSource::LocalFile { path } => Ok(vec![crate::youtube::local_file_item(path.clone())]),
     }
@@ -163,7 +164,9 @@ async fn ingest_item(
     let caption_dir = item_dir.join("captions");
     let mut video_path = item.local_video_path.clone();
 
-    if let Err(error) = crate::youtube::enrich_video_metadata(&mut item, &metadata_dir).await {
+    if let Err(error) =
+        crate::youtube::enrich_video_metadata(&mut item, &metadata_dir, &request.yt_dlp).await
+    {
         tracing::warn!(
             source_url = %item.source_url,
             error = %error,
@@ -171,16 +174,22 @@ async fn ingest_item(
         );
     }
 
-    let mut streams =
-        crate::captions::download_and_parse_captions(&item, &caption_dir, &request.caption)
-            .await
-            .unwrap_or_default();
+    let mut streams = crate::captions::download_and_parse_captions(
+        &item,
+        &caption_dir,
+        &request.caption,
+        &request.yt_dlp,
+    )
+    .await
+    .unwrap_or_default();
 
     if request.asr_enabled {
         let media_path = match &video_path {
             Some(path) => path.clone(),
             None => {
-                let path = crate::youtube::download_video(&item, &item_dir.join("media")).await?;
+                let path =
+                    crate::youtube::download_video(&item, &item_dir.join("media"), &request.yt_dlp)
+                        .await?;
                 video_path = Some(path.clone());
                 path
             }

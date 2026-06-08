@@ -3,7 +3,7 @@ use std::process::Stdio;
 
 use tokio::process::Command;
 
-use crate::config::{CaptionConfig, SourceKind};
+use crate::config::{CaptionConfig, SourceKind, YtDlpConfig};
 use crate::youtube::VideoItem;
 
 #[derive(Debug, Clone)]
@@ -20,6 +20,7 @@ pub async fn download_and_parse_captions(
     item: &VideoItem,
     dir: &Path,
     config: &CaptionConfig,
+    yt_dlp: &YtDlpConfig,
 ) -> anyhow::Result<Vec<TranscriptStream>> {
     if !config.enabled || item.local_video_path.is_some() {
         return Ok(Vec::new());
@@ -29,9 +30,9 @@ pub async fn download_and_parse_captions(
     let langs = config.languages.join(",");
     let template = dir.join(format!("{}-subs.%(id)s.%(ext)s", item.item_id));
 
-    run_caption_download(&item.source_url, &template, &langs, false).await?;
+    run_caption_download(&item.source_url, &template, &langs, false, yt_dlp).await?;
     if config.include_auto_captions {
-        let _ = run_caption_download(&item.source_url, &template, &langs, true).await;
+        let _ = run_caption_download(&item.source_url, &template, &langs, true, yt_dlp).await;
     }
 
     parse_caption_files(dir).await
@@ -112,6 +113,7 @@ async fn run_caption_download(
     template: &Path,
     languages: &str,
     auto: bool,
+    yt_dlp: &YtDlpConfig,
 ) -> anyhow::Result<()> {
     let mut command = Command::new("yt-dlp");
     command
@@ -122,14 +124,14 @@ async fn run_caption_download(
         .arg("--sub-langs")
         .arg(languages)
         .arg("-o")
-        .arg(template)
-        .arg(url)
-        .stdin(Stdio::null());
+        .arg(template);
     if auto {
         command.arg("--write-auto-subs");
     } else {
         command.arg("--write-subs");
     }
+    crate::youtube::apply_yt_dlp_args(&mut command, yt_dlp);
+    command.arg(url).stdin(Stdio::null());
     let output = command.output().await?;
     if !output.status.success() {
         anyhow::bail!(

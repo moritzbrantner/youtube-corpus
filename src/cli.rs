@@ -4,7 +4,7 @@ use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use uuid::Uuid;
 
 use crate::benchmark::{BenchmarkRequest, DISTINGUO_SEARCH_QUERIES};
-use crate::config::{AppConfig, CaptionConfig, CorpusSource, SearchMode, SourceKind};
+use crate::config::{AppConfig, CaptionConfig, CorpusSource, SearchMode, SourceKind, YtDlpConfig};
 use crate::ingest::IngestRequest;
 use crate::search::SearchRequest;
 use crate::status::{CorpusStatusRequest, ListVideosRequest};
@@ -60,6 +60,13 @@ pub struct IngestArgs {
     pub no_captions: bool,
     #[arg(long)]
     pub no_auto_captions: bool,
+    #[arg(
+        long = "yt-dlp-arg",
+        value_name = "ARG",
+        num_args = 1,
+        allow_hyphen_values = true
+    )]
+    pub yt_dlp_args: Vec<String>,
     #[arg(long)]
     pub no_asr: bool,
     #[arg(long)]
@@ -107,6 +114,7 @@ impl IngestArgs {
                 include_auto_captions: !self.no_auto_captions,
                 languages,
             },
+            yt_dlp: yt_dlp_config(self.yt_dlp_args),
             asr_enabled: !self.no_asr,
             transcriber_command: self.transcriber_command,
             transcriber_args: self.transcriber_args,
@@ -141,6 +149,13 @@ pub struct SubscribeArgs {
     pub no_captions: bool,
     #[arg(long)]
     pub no_auto_captions: bool,
+    #[arg(
+        long = "yt-dlp-arg",
+        value_name = "ARG",
+        num_args = 1,
+        allow_hyphen_values = true
+    )]
+    pub yt_dlp_args: Vec<String>,
     #[arg(long)]
     pub no_asr: bool,
     #[arg(long)]
@@ -189,6 +204,7 @@ impl SubscribeArgs {
                 include_auto_captions: !self.no_auto_captions,
                 languages,
             },
+            yt_dlp: yt_dlp_config(self.yt_dlp_args),
             asr_enabled: !self.no_asr,
             transcriber_command: self.transcriber_command,
             transcriber_args: self.transcriber_args,
@@ -328,6 +344,13 @@ pub struct BenchmarkArgs {
     pub no_captions: bool,
     #[arg(long)]
     pub no_auto_captions: bool,
+    #[arg(
+        long = "yt-dlp-arg",
+        value_name = "ARG",
+        num_args = 1,
+        allow_hyphen_values = true
+    )]
+    pub yt_dlp_args: Vec<String>,
     #[arg(long)]
     pub with_asr: bool,
     #[arg(long)]
@@ -374,12 +397,23 @@ impl BenchmarkArgs {
                     include_auto_captions: !self.no_auto_captions,
                     languages,
                 },
+                yt_dlp: yt_dlp_config(self.yt_dlp_args),
                 asr_enabled: self.with_asr,
                 migrate: self.migrate,
                 search_queries,
                 top_k: self.top_k,
             }),
         }
+    }
+}
+
+fn yt_dlp_config(args: Vec<String>) -> YtDlpConfig {
+    YtDlpConfig {
+        args: args
+            .into_iter()
+            .map(|arg| arg.trim().to_string())
+            .filter(|arg| !arg.is_empty())
+            .collect(),
     }
 }
 

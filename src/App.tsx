@@ -203,6 +203,13 @@ function splitList(value: string) {
     .filter(Boolean);
 }
 
+function splitLines(value: string) {
+  return value
+    .split(/\n/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function addSourceKindLabel(value: AddSourceKind) {
   return addSourceKindOptions.find((option) => option.value === value)?.label ?? value;
 }
@@ -349,6 +356,7 @@ export default function App() {
   const [captionLanguages, setCaptionLanguages] = React.useState("en");
   const [captionsEnabled, setCaptionsEnabled] = React.useState(true);
   const [autoCaptionsEnabled, setAutoCaptionsEnabled] = React.useState(true);
+  const [ytDlpArgs, setYtDlpArgs] = React.useState("");
   const [asrEnabled, setAsrEnabled] = React.useState(false);
   const [transcriberCommand, setTranscriberCommand] = React.useState("");
   const [transcriberArgs, setTranscriberArgs] = React.useState("");
@@ -523,6 +531,7 @@ export default function App() {
       captionLanguages: splitList(captionLanguages),
       captionsEnabled,
       autoCaptionsEnabled,
+      ytDlpArgs: splitLines(ytDlpArgs),
       asrEnabled,
       transcriberCommand: transcriberCommand.trim() || null,
       transcriberArgs: splitList(transcriberArgs),
@@ -760,6 +769,17 @@ export default function App() {
                   />
                 </label>
               </div>
+
+              <label className="grid gap-2">
+                <span className="text-sm font-medium">yt-dlp args</span>
+                <Textarea
+                  value={ytDlpArgs}
+                  onChange={(event) => setYtDlpArgs(event.target.value)}
+                  rows={3}
+                  placeholder={"--cookies-from-browser\nfirefox"}
+                  spellCheck={false}
+                />
+              </label>
 
               <label className="grid gap-2">
                 <span className="text-sm font-medium">Transcriber args</span>

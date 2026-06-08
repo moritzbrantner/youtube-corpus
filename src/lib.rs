@@ -10,7 +10,7 @@ pub mod status;
 pub mod subscriptions;
 pub mod youtube;
 
-pub use config::{AppConfig, CaptionConfig, CorpusSource, SearchMode, SourceKind};
+pub use config::{AppConfig, CaptionConfig, CorpusSource, SearchMode, SourceKind, YtDlpConfig};
 pub use ingest::{ingest_corpus, IngestReport};
 pub use search::{search_corpus, SearchReport, SearchRequest};
 pub use status::{corpus_status, list_videos, CorpusStatusReport, VideoStatus};

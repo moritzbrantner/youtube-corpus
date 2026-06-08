@@ -8,7 +8,7 @@ use sqlx::types::Json;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use crate::config::{CaptionConfig, CorpusSource};
+use crate::config::{CaptionConfig, CorpusSource, YtDlpConfig};
 use crate::ingest::{ingest_video_items, IngestReport};
 use crate::youtube::{stable_child_id, stable_video_id, VideoItem};
 
@@ -45,6 +45,7 @@ pub struct AddSubscriptionRequest {
     pub enabled: bool,
     pub work_dir: PathBuf,
     pub caption: CaptionConfig,
+    pub yt_dlp: YtDlpConfig,
     pub asr_enabled: bool,
     pub transcriber_command: Option<PathBuf>,
     pub transcriber_args: Vec<String>,
@@ -74,6 +75,7 @@ pub struct Subscription {
     pub enabled: bool,
     pub work_dir: PathBuf,
     pub caption: CaptionConfig,
+    pub yt_dlp: YtDlpConfig,
     pub asr_enabled: bool,
     pub transcriber_command: Option<PathBuf>,
     pub transcriber_args: Vec<String>,
@@ -147,6 +149,7 @@ impl Subscription {
             },
             work_dir: self.work_dir.clone(),
             caption: self.caption.clone(),
+            yt_dlp: self.yt_dlp.clone(),
             asr_enabled: self.asr_enabled,
             transcriber_command: self.transcriber_command.clone(),
             transcriber_args: self.transcriber_args.clone(),
@@ -175,16 +178,17 @@ pub async fn add_subscription(request: AddSubscriptionRequest) -> anyhow::Result
     let work_dir = request.work_dir.to_string_lossy().into_owned();
     sqlx::query(
         "INSERT INTO corpus_subscriptions
-         (id, source_kind, source_url, name, enabled, work_dir, caption, asr_enabled,
-          transcriber_command, transcriber_args, max_items, title_contains, title_excludes,
+         (id, source_kind, source_url, name, enabled, work_dir, caption, yt_dlp,
+          asr_enabled, transcriber_command, transcriber_args, max_items, title_contains, title_excludes,
           duration_min, duration_max)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          ON CONFLICT (source_url) DO UPDATE SET
            source_kind = EXCLUDED.source_kind,
            name = EXCLUDED.name,
            enabled = EXCLUDED.enabled,
            work_dir = EXCLUDED.work_dir,
            caption = EXCLUDED.caption,
+           yt_dlp = EXCLUDED.yt_dlp,
            asr_enabled = EXCLUDED.asr_enabled,
            transcriber_command = EXCLUDED.transcriber_command,
            transcriber_args = EXCLUDED.transcriber_args,
@@ -202,6 +206,7 @@ pub async fn add_subscription(request: AddSubscriptionRequest) -> anyhow::Result
     .bind(request.enabled)
     .bind(&work_dir)
     .bind(Json(request.caption))
+    .bind(Json(request.yt_dlp))
     .bind(request.asr_enabled)
     .bind(transcriber_command)
     .bind(&request.transcriber_args)
@@ -284,9 +289,12 @@ async fn check_subscription(
     database_url: &str,
     subscription: &Subscription,
 ) -> anyhow::Result<SubscriptionCheckReport> {
-    let discovered =
-        crate::youtube::discover_collection(&subscription.source_url, subscription.max_items)
-            .await?;
+    let discovered = crate::youtube::discover_collection(
+        &subscription.source_url,
+        subscription.max_items,
+        &subscription.yt_dlp,
+    )
+    .await?;
     let mut new_items = Vec::new();
     let mut new_videos = 0;
     for item in &discovered {
@@ -367,7 +375,7 @@ async fn get_subscription_by_url(pool: &PgPool, source_url: &str) -> anyhow::Res
 fn subscription_select_sql(where_clause: &str) -> String {
     format!(
         "SELECT id, source_kind, source_url, name, enabled, work_dir, caption, asr_enabled,
-          transcriber_command, transcriber_args, max_items, title_contains, title_excludes,
+          yt_dlp, transcriber_command, transcriber_args, max_items, title_contains, title_excludes,
           duration_min, duration_max, last_checked_at, last_ingested_at, created_at, updated_at
          FROM corpus_subscriptions
          {where_clause}
@@ -378,6 +386,7 @@ fn subscription_select_sql(where_clause: &str) -> String {
 fn subscription_from_row(row: PgRow) -> anyhow::Result<Subscription> {
     let source_kind: String = row.try_get("source_kind")?;
     let caption: Json<CaptionConfig> = row.try_get("caption")?;
+    let yt_dlp: Json<YtDlpConfig> = row.try_get("yt_dlp")?;
     let max_items: Option<i64> = row.try_get("max_items")?;
     let transcriber_command: Option<String> = row.try_get("transcriber_command")?;
     let work_dir: String = row.try_get("work_dir")?;
@@ -389,6 +398,7 @@ fn subscription_from_row(row: PgRow) -> anyhow::Result<Subscription> {
         enabled: row.try_get("enabled")?,
         work_dir: PathBuf::from(work_dir),
         caption: caption.0,
+        yt_dlp: yt_dlp.0,
         asr_enabled: row.try_get("asr_enabled")?,
         transcriber_command: transcriber_command.map(PathBuf::from),
         transcriber_args: row.try_get("transcriber_args")?,

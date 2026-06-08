@@ -8,6 +8,7 @@ use youtube_corpus::{
     add_subscription, ingest_corpus, search_corpus, CaptionConfig, CorpusSource, IngestReport,
     SearchMode, SearchRequest, SourceKind, Subscription,
 };
+use youtube_corpus::config::YtDlpConfig;
 use youtube_corpus::subscriptions::{AddSubscriptionRequest, SubscriptionSourceKind};
 
 const REQUIRED_TABLES: &[&str] = &[
@@ -70,6 +71,7 @@ struct AddSourceInput {
     caption_languages: Option<Vec<String>>,
     captions_enabled: Option<bool>,
     auto_captions_enabled: Option<bool>,
+    yt_dlp_args: Option<Vec<String>>,
     asr_enabled: Option<bool>,
     transcriber_command: Option<String>,
     transcriber_args: Option<Vec<String>>,
@@ -462,6 +464,15 @@ async fn add_source(input: AddSourceInput) -> Result<AddSourceReport, String> {
         .filter(|value| !value.is_empty())
         .map(PathBuf::from);
     let transcriber_args = input.transcriber_args.unwrap_or_default();
+    let yt_dlp = YtDlpConfig {
+        args: input
+            .yt_dlp_args
+            .unwrap_or_default()
+            .into_iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect(),
+    };
     let title_contains = input
         .title_contains
         .as_deref()
@@ -501,6 +512,7 @@ async fn add_source(input: AddSourceInput) -> Result<AddSourceReport, String> {
                 enabled: true,
                 work_dir: work_dir.clone(),
                 caption: caption.clone(),
+                yt_dlp: yt_dlp.clone(),
                 asr_enabled,
                 transcriber_command: transcriber_command.clone(),
                 transcriber_args: transcriber_args.clone(),
@@ -534,6 +546,7 @@ async fn add_source(input: AddSourceInput) -> Result<AddSourceReport, String> {
                 source,
                 work_dir,
                 caption,
+                yt_dlp,
                 asr_enabled,
                 transcriber_command,
                 transcriber_args,

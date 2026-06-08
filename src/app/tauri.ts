@@ -182,6 +182,7 @@ export interface AddSourceInput {
   captionLanguages?: string[];
   captionsEnabled?: boolean;
   autoCaptionsEnabled?: boolean;
+  ytDlpArgs?: string[];
   asrEnabled?: boolean;
   transcriberCommand?: string | null;
   transcriberArgs?: string[];

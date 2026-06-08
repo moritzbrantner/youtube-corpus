@@ -4,6 +4,8 @@ use std::process::Stdio;
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
+use crate::config::YtDlpConfig;
+
 #[derive(Debug, Clone)]
 pub struct VideoItem {
     pub item_id: String,
@@ -120,6 +122,7 @@ impl VideoMetadata {
 pub async fn discover_collection(
     url: &str,
     max_items: Option<u64>,
+    yt_dlp: &YtDlpConfig,
 ) -> anyhow::Result<Vec<VideoItem>> {
     require_command("yt-dlp")?;
     let mut command = Command::new("yt-dlp");
@@ -127,6 +130,7 @@ pub async fn discover_collection(
     if let Some(max_items) = max_items.filter(|value| *value > 0) {
         command.arg("--playlist-end").arg(max_items.to_string());
     }
+    apply_yt_dlp_args(&mut command, yt_dlp);
     let output = command
         .arg("-J")
         .arg(url)
@@ -225,16 +229,20 @@ pub fn local_file_item(path: PathBuf) -> VideoItem {
 pub async fn enrich_video_metadata(
     item: &mut VideoItem,
     metadata_dir: &Path,
+    yt_dlp: &YtDlpConfig,
 ) -> anyhow::Result<()> {
     if item.local_video_path.is_some() {
         return Ok(());
     }
     require_command("yt-dlp")?;
     tokio::fs::create_dir_all(metadata_dir).await?;
-    let output = Command::new("yt-dlp")
+    let mut command = Command::new("yt-dlp");
+    command
         .arg("--no-playlist")
         .arg("--skip-download")
-        .arg("-J")
+        .arg("-J");
+    apply_yt_dlp_args(&mut command, yt_dlp);
+    let output = command
         .arg(&item.source_url)
         .stdin(Stdio::null())
         .output()
@@ -272,21 +280,28 @@ impl VideoItem {
     }
 }
 
-pub async fn download_video(item: &VideoItem, media_dir: &Path) -> anyhow::Result<PathBuf> {
+pub async fn download_video(
+    item: &VideoItem,
+    media_dir: &Path,
+    yt_dlp: &YtDlpConfig,
+) -> anyhow::Result<PathBuf> {
     if let Some(path) = &item.local_video_path {
         return Ok(path.clone());
     }
     require_command("yt-dlp")?;
     tokio::fs::create_dir_all(media_dir).await?;
     let output_template = media_dir.join(format!("{}-%(id)s.%(ext)s", item.item_id));
-    let output = Command::new("yt-dlp")
+    let mut command = Command::new("yt-dlp");
+    command
         .arg("--no-playlist")
         .arg("--merge-output-format")
         .arg("mp4")
         .arg("--print")
         .arg("after_move:filepath")
         .arg("-o")
-        .arg(&output_template)
+        .arg(&output_template);
+    apply_yt_dlp_args(&mut command, yt_dlp);
+    let output = command
         .arg(&item.source_url)
         .stdin(Stdio::null())
         .output()
@@ -360,6 +375,10 @@ pub fn require_command(command: &str) -> anyhow::Result<()> {
     } else {
         anyhow::bail!("required command `{command}` was not found on PATH")
     }
+}
+
+pub fn apply_yt_dlp_args(command: &mut Command, config: &YtDlpConfig) {
+    command.args(config.args.iter().filter(|arg| !arg.trim().is_empty()));
 }
 
 fn resolve_command(command: &str) -> Option<PathBuf> {
