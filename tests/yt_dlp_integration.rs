@@ -31,7 +31,10 @@ async fn fetches_real_captions_if_available() {
 #[tokio::test]
 #[ignore = "requires YT_DLP_COOKIE_BROWSER=brave or another browser name"]
 async fn probes_browser_cookies_when_requested() {
-    let browser = std::env::var("YT_DLP_COOKIE_BROWSER").unwrap();
+    let Ok(browser) = std::env::var("YT_DLP_COOKIE_BROWSER") else {
+        eprintln!("YT_DLP_COOKIE_BROWSER unset; skipping");
+        return;
+    };
     let client = YtDlpClient::new(YtDlpConfig {
         cookies_from_browser: Some(BrowserCookieSource {
             browser,
