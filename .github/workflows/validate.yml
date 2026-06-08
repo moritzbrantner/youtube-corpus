@@ -6,12 +6,20 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   fast-validation:
+    uses: moritzbrantner/reusable-workflows/.github/workflows/fast-validation.yml@458c85c1a58cac26a5ab978e12ab8e9a27d4e0ee
     permissions:
       contents: read
       packages: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/fast-validation.yml@workflow-standard-v1
     with:
       node_version: ""
       bun_version: "1.3.14"
@@ -33,10 +41,10 @@ jobs:
       unit_test_command: cargo test
 
   integration-validation:
+    uses: moritzbrantner/reusable-workflows/.github/workflows/integration-validation.yml@458c85c1a58cac26a5ab978e12ab8e9a27d4e0ee
     permissions:
       contents: read
       packages: read
-    uses: moritzbrantner/reusable-workflows/.github/workflows/integration-validation.yml@workflow-standard-v1
     with:
       node_version: ""
       bun_version: "1.3.14"
@@ -48,10 +56,19 @@ jobs:
         set -euo pipefail
         rustup toolchain install stable --profile minimal
         rustup default stable
-      integration_command: |
-        set -euo pipefail
-        docker compose up -d --wait postgres
-        timeout 90 bash -c 'until docker compose exec -T postgres pg_isready -U postgres -d youtube_corpus; do sleep 2; done'
-        bun run build
-        DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus cargo test -- --ignored
+      integration_command: bun run verify:postgres
       post_command: docker compose down -v
+
+  link-validation:
+    uses: moritzbrantner/reusable-workflows/.github/workflows/link-validation.yml@458c85c1a58cac26a5ab978e12ab8e9a27d4e0ee
+    permissions:
+      contents: read
+      packages: read
+    with:
+      node_version: ""
+      bun_version: "1.3.14"
+      install_command: bun install --frozen-lockfile
+      build_command: bun run build
+      start_command: bun run preview -- --host 127.0.0.1 --port 4173
+      link_check_url: http://127.0.0.1:4173
+      upload_artifacts_on: failure
