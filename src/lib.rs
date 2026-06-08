@@ -13,7 +13,6 @@ pub mod status;
 pub mod subscriptions;
 pub mod web;
 pub mod youtube;
-pub mod yt_dlp;
 
 pub use config::{
     AppConfig, BrowserCookieSource, CaptionConfig, CorpusSource, SearchMode, SourceKind,

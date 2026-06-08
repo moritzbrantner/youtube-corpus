@@ -1064,7 +1064,6 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-audio-analysis-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-math-signal-core",
  "moritzbrantner-runtime-core",
@@ -1077,7 +1076,6 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-jobs-core"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "chrono",
  "moritzbrantner-runtime-core",
@@ -1089,7 +1087,6 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-math-linear"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-runtime-core",
  "moritzbrantner-tensor-data",
@@ -1102,7 +1099,6 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-math-signal-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-numbers-core",
  "moritzbrantner-runtime-core",
@@ -1114,7 +1110,6 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-math-sparse-data"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-math-linear",
  "moritzbrantner-numbers-core",
@@ -1128,7 +1123,6 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-numbers-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-runtime-core",
  "moritzbrantner-video-analysis-core",
@@ -1139,16 +1133,22 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-runtime-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "serde",
  "serde_json",
 ]
 
 [[package]]
+name = "moritzbrantner-runtime-onnx"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "moritzbrantner-tensor-data"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-runtime-core",
  "moritzbrantner-video-analysis-core",
@@ -1159,7 +1159,6 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-text-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-jobs-core",
  "moritzbrantner-runtime-core",
@@ -1173,10 +1172,10 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-text-embeddings"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-math-sparse-data",
  "moritzbrantner-runtime-core",
+ "moritzbrantner-runtime-onnx",
  "moritzbrantner-text-core",
  "moritzbrantner-text-lexical",
  "moritzbrantner-text-model-runtime",
@@ -1190,7 +1189,6 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-text-lexical"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-math-sparse-data",
  "moritzbrantner-runtime-core",
@@ -1203,18 +1201,33 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-text-model-runtime"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-runtime-core",
+ "moritzbrantner-runtime-onnx",
  "moritzbrantner-video-analysis-core",
  "serde",
  "serde_json",
 ]
 
 [[package]]
+name = "moritzbrantner-text-retrieval"
+version = "0.1.0"
+dependencies = [
+ "moritzbrantner-runtime-core",
+ "moritzbrantner-text-core",
+ "moritzbrantner-text-embeddings",
+ "moritzbrantner-text-lexical",
+ "moritzbrantner-text-model-runtime",
+ "moritzbrantner-vector-analysis-index",
+ "moritzbrantner-video-analysis-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "moritzbrantner-text-transcripts"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "cmake",
  "hound",
@@ -1231,7 +1244,6 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-vector-analysis-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-runtime-core",
  "moritzbrantner-video-analysis-core",
@@ -1242,7 +1254,6 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-vector-analysis-index"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-runtime-core",
  "moritzbrantner-vector-analysis-core",
@@ -1254,7 +1265,6 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-video-analysis-core"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-runtime-core",
  "num-rational",
@@ -1267,7 +1277,6 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-video-analysis-ffmpeg"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-runtime-core",
  "moritzbrantner-video-analysis-core",
@@ -1280,12 +1289,28 @@ dependencies = [
 [[package]]
 name = "moritzbrantner-video-analysis-ingest"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/rust-packages.git?rev=172534174120eda09ab55ddfec35d1cac65fbfe3#172534174120eda09ab55ddfec35d1cac65fbfe3"
 dependencies = [
  "moritzbrantner-runtime-core",
  "moritzbrantner-video-analysis-core",
  "num-rational",
  "serde_json",
+]
+
+[[package]]
+name = "moritzbrantner-video-analysis-youtube"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "moritzbrantner-runtime-core",
+ "moritzbrantner-text-core",
+ "moritzbrantner-text-retrieval",
+ "moritzbrantner-text-transcripts",
+ "moritzbrantner-video-analysis-ffmpeg",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]
@@ -2990,9 +3015,11 @@ dependencies = [
  "moritzbrantner-text-core",
  "moritzbrantner-text-embeddings",
  "moritzbrantner-text-lexical",
+ "moritzbrantner-text-retrieval",
  "moritzbrantner-text-transcripts",
  "moritzbrantner-video-analysis-ffmpeg",
  "moritzbrantner-video-analysis-ingest",
+ "moritzbrantner-video-analysis-youtube",
  "open",
  "rust-embed",
  "serde",
