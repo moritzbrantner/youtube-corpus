@@ -13,8 +13,12 @@ pub mod status;
 pub mod subscriptions;
 pub mod web;
 pub mod youtube;
+pub mod yt_dlp;
 
-pub use config::{AppConfig, CaptionConfig, CorpusSource, SearchMode, SourceKind, YtDlpConfig};
+pub use config::{
+    AppConfig, BrowserCookieSource, CaptionConfig, CorpusSource, SearchMode, SourceKind,
+    YtDlpConfig,
+};
 pub use ingest::{ingest_corpus, IngestReport};
 pub use search::{search_corpus, SearchReport, SearchRequest};
 pub use status::{corpus_status, list_videos, CorpusStatusReport, VideoStatus};

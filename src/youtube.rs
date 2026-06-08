@@ -1,11 +1,9 @@
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use tokio::process::Command;
 
 use crate::config::YtDlpConfig;
+use crate::yt_dlp::YtDlpClient;
 
 #[derive(Debug, Clone)]
 pub struct VideoItem {
@@ -47,6 +45,22 @@ pub struct VideoMetadata {
     pub age_limit: Option<i64>,
     pub categories: Vec<String>,
     pub tags: Vec<String>,
+    pub yt_dlp_version: Option<String>,
+    pub metadata_downloaded_at: Option<String>,
+    pub metadata_source: Option<String>,
+    pub yt_dlp_args_redacted: Vec<String>,
+    pub media_probe: Option<MediaProbeMetadata>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaProbeMetadata {
+    pub input: String,
+    pub path: Option<PathBuf>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub frame_rate: Option<String>,
+    pub duration_seconds: Option<f64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -116,6 +130,11 @@ impl VideoMetadata {
             age_limit: entry.age_limit,
             categories: clean_strings(entry.categories.clone().unwrap_or_default()),
             tags: clean_strings(entry.tags.clone().unwrap_or_default()),
+            yt_dlp_version: None,
+            metadata_downloaded_at: None,
+            metadata_source: None,
+            yt_dlp_args_redacted: Vec::new(),
+            media_probe: None,
         }
     }
 }
@@ -125,27 +144,9 @@ pub async fn discover_collection(
     max_items: Option<u64>,
     yt_dlp: &YtDlpConfig,
 ) -> anyhow::Result<Vec<VideoItem>> {
-    require_command("yt-dlp")?;
-    let mut command = Command::new("yt-dlp");
-    command.arg("--flat-playlist");
-    if let Some(max_items) = max_items.filter(|value| *value > 0) {
-        command.arg("--playlist-end").arg(max_items.to_string());
-    }
-    apply_yt_dlp_args(&mut command, yt_dlp);
-    command.arg("-J").arg(url).stdin(Stdio::null());
-    let output = command_output(
-        command,
-        yt_dlp.timeout_seconds,
-        "yt-dlp collection discovery",
-    )
-    .await?;
-    if !output.status.success() {
-        anyhow::bail!(
-            "yt-dlp collection discovery failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    parse_collection_json(&output.stdout, max_items)
+    let client = YtDlpClient::new(yt_dlp.clone());
+    let (stdout, _) = client.discover_collection_json(url, max_items).await?;
+    parse_collection_json(&stdout, max_items)
 }
 
 fn parse_collection_json(bytes: &[u8], max_items: Option<u64>) -> anyhow::Result<Vec<VideoItem>> {
@@ -236,25 +237,15 @@ pub async fn enrich_video_metadata(
     if item.local_video_path.is_some() {
         return Ok(());
     }
-    require_command("yt-dlp")?;
     tokio::fs::create_dir_all(metadata_dir).await?;
-    let mut command = Command::new("yt-dlp");
-    command
-        .arg("--no-playlist")
-        .arg("--skip-download")
-        .arg("-J");
-    apply_yt_dlp_args(&mut command, yt_dlp);
-    command.arg(&item.source_url).stdin(Stdio::null());
-    let output =
-        command_output(command, yt_dlp.timeout_seconds, "yt-dlp metadata download").await?;
-    if !output.status.success() {
-        anyhow::bail!(
-            "yt-dlp metadata download failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    let entry: YtDlpEntryJson = serde_json::from_slice(&output.stdout)?;
+    let client = YtDlpClient::new(yt_dlp.clone());
+    let (stdout, report) = client.fetch_metadata_json(&item.source_url).await?;
+    let entry: YtDlpEntryJson = serde_json::from_slice(&stdout)?;
     item.merge_yt_dlp_entry(&entry);
+    item.metadata.yt_dlp_version = report.yt_dlp_version;
+    item.metadata.metadata_downloaded_at = Some(chrono::Utc::now().to_rfc3339());
+    item.metadata.metadata_source = Some("yt-dlp --dump-json".to_string());
+    item.metadata.yt_dlp_args_redacted = report.args_redacted;
 
     let metadata_path = metadata_dir.join(format!("{}.metadata.json", item.item_id));
     let metadata = serde_json::to_vec_pretty(&item.metadata)?;
@@ -281,41 +272,76 @@ impl VideoItem {
 }
 
 pub async fn download_video(
-    item: &VideoItem,
+    item: &mut VideoItem,
     media_dir: &Path,
     yt_dlp: &YtDlpConfig,
 ) -> anyhow::Result<PathBuf> {
     if let Some(path) = &item.local_video_path {
         return Ok(path.clone());
     }
-    require_command("yt-dlp")?;
     tokio::fs::create_dir_all(media_dir).await?;
-    let output_template = media_dir.join(format!("{}-%(id)s.%(ext)s", item.item_id));
-    let mut command = Command::new("yt-dlp");
-    command
-        .arg("--no-playlist")
-        .arg("--merge-output-format")
-        .arg("mp4")
-        .arg("--print")
-        .arg("after_move:filepath")
-        .arg("-o")
-        .arg(&output_template);
-    apply_yt_dlp_args(&mut command, yt_dlp);
-    command.arg(&item.source_url).stdin(Stdio::null());
-    let output = command_output(command, yt_dlp.timeout_seconds, "yt-dlp media download").await?;
-    if !output.status.success() {
+    let temp_dir = media_dir.join(format!(".tmp-{}", item.item_id));
+    if temp_dir.exists() {
+        tokio::fs::remove_dir_all(&temp_dir).await?;
+    }
+    tokio::fs::create_dir_all(&temp_dir).await?;
+    let output_template = temp_dir.join(format!("{}-%(id)s.%(ext)s", item.item_id));
+    let archive = media_dir.parent().and_then(Path::parent).map(|work_dir| {
+        work_dir
+            .join("archives")
+            .join("yt-dlp-media-download-archive.txt")
+    });
+    if let Some(archive) = archive.as_ref().and_then(|path| path.parent()) {
+        tokio::fs::create_dir_all(archive).await?;
+    }
+
+    let client = YtDlpClient::new(yt_dlp.clone());
+    let (stdout, report) = client
+        .download_media(&item.source_url, &output_template, archive)
+        .await?;
+    let printed_path = printed_download_path(&stdout)
+        .ok_or_else(|| anyhow::anyhow!("yt-dlp completed but did not print after_move:filepath"))?;
+    let temp_root = temp_dir.canonicalize()?;
+    let canonical_path = printed_path.canonicalize()?;
+    if !canonical_path.starts_with(&temp_root) {
         anyhow::bail!(
-            "yt-dlp failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            "yt-dlp reported output outside temporary directory: {}",
+            canonical_path.display()
         );
     }
-    for line in String::from_utf8_lossy(&output.stdout).lines().rev() {
-        let path = PathBuf::from(line.trim());
-        if path.exists() {
-            return Ok(path);
+    let probe = probe_downloaded_media(&canonical_path)?;
+    let file_name = canonical_path
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("yt-dlp reported output without a file name"))?;
+    let final_path = media_dir.join(file_name);
+    if final_path.exists() {
+        tokio::fs::remove_file(&final_path).await?;
+    }
+    tokio::fs::rename(&canonical_path, &final_path).await?;
+
+    if let Some(info_path) = info_json_path(&canonical_path) {
+        if info_path.exists() {
+            if let Ok(bytes) = tokio::fs::read(&info_path).await {
+                if let Ok(entry) = serde_json::from_slice::<YtDlpEntryJson>(&bytes) {
+                    item.merge_yt_dlp_entry(&entry);
+                }
+            }
+            if let Some(file_name) = info_path.file_name() {
+                let final_info_path = media_dir.join(file_name);
+                if final_info_path.exists() {
+                    tokio::fs::remove_file(&final_info_path).await?;
+                }
+                tokio::fs::rename(&info_path, final_info_path).await?;
+            }
         }
     }
-    find_video(media_dir).ok_or_else(|| anyhow::anyhow!("yt-dlp completed but no video was found"))
+    item.metadata.yt_dlp_version = report.yt_dlp_version;
+    item.metadata.metadata_downloaded_at = Some(chrono::Utc::now().to_rfc3339());
+    item.metadata.metadata_source = Some("yt-dlp --write-info-json".to_string());
+    item.metadata.yt_dlp_args_redacted = report.args_redacted;
+    item.metadata.media_probe = Some(probe);
+    let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+    Ok(final_path)
 }
 
 pub fn filter_item(
@@ -374,26 +400,6 @@ pub fn require_command(command: &str) -> anyhow::Result<()> {
     }
 }
 
-pub fn apply_yt_dlp_args(command: &mut Command, config: &YtDlpConfig) {
-    command.args(config.args.iter().filter(|arg| !arg.trim().is_empty()));
-}
-
-async fn command_output(
-    mut command: Command,
-    timeout_seconds: Option<u64>,
-    label: &str,
-) -> anyhow::Result<std::process::Output> {
-    let output = command.output();
-    if let Some(seconds) = timeout_seconds {
-        tokio::time::timeout(Duration::from_secs(seconds), output)
-            .await
-            .map_err(|_| anyhow::anyhow!("{label} timed out after {seconds} seconds"))?
-            .map_err(Into::into)
-    } else {
-        output.await.map_err(Into::into)
-    }
-}
-
 fn resolve_command(command: &str) -> Option<PathBuf> {
     std::env::var_os("PATH").and_then(|paths| {
         std::env::split_paths(&paths)
@@ -402,19 +408,44 @@ fn resolve_command(command: &str) -> Option<PathBuf> {
     })
 }
 
-fn find_video(dir: &Path) -> Option<PathBuf> {
-    let mut entries = std::fs::read_dir(dir)
-        .ok()?
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| {
-            matches!(
-                path.extension().and_then(|value| value.to_str()),
-                Some("mp4" | "mkv" | "webm" | "mov")
-            )
-        })
-        .collect::<Vec<_>>();
-    entries.sort();
-    entries.pop()
+fn printed_download_path(stdout: &[u8]) -> Option<PathBuf> {
+    String::from_utf8_lossy(stdout)
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(PathBuf::from)
+}
+
+fn info_json_path(media_path: &Path) -> Option<PathBuf> {
+    let parent = media_path.parent()?;
+    let stem = media_path.file_stem()?.to_str()?;
+    Some(parent.join(format!("{stem}.info.json")))
+}
+
+fn probe_downloaded_media(path: &Path) -> anyhow::Result<MediaProbeMetadata> {
+    let metadata = video_analysis_ffmpeg::probe(path)?;
+    if metadata.duration_seconds.unwrap_or(0.0) <= 0.0 {
+        anyhow::bail!(
+            "ffprobe returned no positive duration for {}",
+            path.display()
+        );
+    }
+    if metadata.width == 0 || metadata.height == 0 {
+        anyhow::bail!("ffprobe returned no video stream for {}", path.display());
+    }
+    Ok(MediaProbeMetadata {
+        input: metadata.input,
+        path: metadata.path,
+        width: Some(metadata.width),
+        height: Some(metadata.height),
+        frame_rate: Some(format!(
+            "{}/{}",
+            metadata.frame_rate.numer(),
+            metadata.frame_rate.denom()
+        )),
+        duration_seconds: metadata.duration_seconds,
+    })
 }
 
 fn source_url_from_entry(entry: &YtDlpEntryJson) -> Option<String> {
@@ -657,5 +688,25 @@ mod tests {
         assert_eq!(item.upload_date.as_deref(), Some("20050424"));
         assert_eq!(item.metadata.channel.as_deref(), Some("jawed"));
         assert_eq!(item.metadata.view_count, Some(123));
+    }
+
+    #[test]
+    fn parses_last_printed_download_path() {
+        let path = printed_download_path(b"[download] progress\n/tmp/video.mp4\n").unwrap();
+
+        assert_eq!(path, PathBuf::from("/tmp/video.mp4"));
+    }
+
+    #[test]
+    fn rejects_missing_printed_download_path() {
+        assert!(printed_download_path(b"\n\n").is_none());
+    }
+
+    #[test]
+    fn builds_info_json_path_next_to_media() {
+        assert_eq!(
+            info_json_path(Path::new("/tmp/video.mp4")).unwrap(),
+            PathBuf::from("/tmp/video.info.json")
+        );
     }
 }

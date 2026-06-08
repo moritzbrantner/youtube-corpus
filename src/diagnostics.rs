@@ -35,13 +35,35 @@ pub async fn run(
     DiagnosticsReport {
         database: database_diagnostic(database_url).await,
         tools: vec![
-            command_diagnostic("yt-dlp", &["--version"]),
+            yt_dlp_diagnostic(),
+            command_diagnostic("ffmpeg", &["-version"]),
+            command_diagnostic("ffprobe", &["-version"]),
             command_diagnostic(
                 transcriber_command.as_deref().unwrap_or("whisper"),
                 &["--help"],
             ),
         ],
     }
+}
+
+fn yt_dlp_diagnostic() -> ToolDiagnostic {
+    let mut diagnostic = command_diagnostic("yt-dlp", &["--version"]);
+    if diagnostic.available {
+        let mut warnings = Vec::new();
+        if let Some(version) = diagnostic.version.as_deref() {
+            if looks_old_yt_dlp_version(version) {
+                warnings.push(format!(
+                    "yt-dlp version {version} may be old; update yt-dlp if YouTube extraction fails."
+                ));
+            }
+        }
+        warnings.push(
+            "For full YouTube support, install yt-dlp's JavaScript runtime support when required by your yt-dlp build."
+                .to_string(),
+        );
+        diagnostic.message = Some(warnings.join(" "));
+    }
+    diagnostic
 }
 
 async fn database_diagnostic(database_url: Option<String>) -> DatabaseDiagnostic {
@@ -134,4 +156,16 @@ fn command_diagnostic(command: &str, args: &[&str]) -> ToolDiagnostic {
             message: Some(error.to_string()),
         },
     }
+}
+
+fn looks_old_yt_dlp_version(version: &str) -> bool {
+    let digits = version
+        .chars()
+        .filter(|ch| ch.is_ascii_digit())
+        .take(8)
+        .collect::<String>();
+    digits
+        .parse::<u32>()
+        .map(|value| value < 20250101)
+        .unwrap_or(false)
 }

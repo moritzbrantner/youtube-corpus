@@ -253,6 +253,7 @@ fn subscription_request(database_url: &str) -> AddSubscriptionRequest {
         yt_dlp: YtDlpConfig {
             args: vec!["--flat-playlist".to_string()],
             timeout_seconds: Some(12),
+            ..YtDlpConfig::default()
         },
         asr_enabled: false,
         transcriber_command: None,

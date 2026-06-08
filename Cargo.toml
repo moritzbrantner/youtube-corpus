@@ -15,6 +15,7 @@ open = "5.3.5"
 rust-embed = "8.11.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+shlex = "2.0.1"
 sqlx = { version = "0.8", default-features = false, features = [
   "runtime-tokio-rustls",
   "postgres",
@@ -38,6 +39,8 @@ text-lexical = { package = "moritzbrantner-text-lexical", git = "https://github.
 text-transcripts = { package = "moritzbrantner-text-transcripts", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
 runtime-core = { package = "moritzbrantner-runtime-core", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
 jobs-core = { package = "moritzbrantner-jobs-core", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
+video-analysis-ffmpeg = { package = "moritzbrantner-video-analysis-ffmpeg", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
+video-analysis-ingest = { package = "moritzbrantner-video-analysis-ingest", git = "https://github.com/moritzbrantner/rust-packages.git", rev = "172534174120eda09ab55ddfec35d1cac65fbfe3" }
 
 [dev-dependencies]
 tempfile = "3.23"

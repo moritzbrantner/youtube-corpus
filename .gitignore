@@ -2,6 +2,7 @@
 node_modules/
 dist/
 /.env
+/youtube-corpus.conf
 /use-case-output/
 /.sqlx/
 *.mp4

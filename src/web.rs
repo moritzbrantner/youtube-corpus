@@ -41,18 +41,21 @@ pub struct WebServerConfig {
     pub port: u16,
     pub open_browser: bool,
     pub migrate: bool,
+    pub yt_dlp: YtDlpConfig,
 }
 
 #[derive(Clone)]
 struct AppState {
     database_url: Option<String>,
+    yt_dlp: YtDlpConfig,
     pool: Arc<OnceCell<PgPool>>,
 }
 
 impl AppState {
-    fn new(database_url: Option<String>) -> Self {
+    fn new(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Self {
         Self {
             database_url,
+            yt_dlp,
             pool: Arc::new(OnceCell::new()),
         }
     }
@@ -67,7 +70,7 @@ pub async fn serve(config: WebServerConfig) -> anyhow::Result<()> {
         }
     }
 
-    let state = AppState::new(database_url);
+    let state = AppState::new(database_url, config.yt_dlp);
     let address = SocketAddr::from((config.host, config.port));
     let listener = tokio::net::TcpListener::bind(address).await?;
     let local_address = listener.local_addr()?;
@@ -105,7 +108,7 @@ fn app(state: AppState) -> Router {
 
 #[doc(hidden)]
 pub fn app_for_tests(database_url: Option<String>) -> Router {
-    app(AppState::new(database_url))
+    app(AppState::new(database_url, YtDlpConfig::default()))
 }
 
 fn browser_url(address: SocketAddr) -> String {
@@ -513,15 +516,22 @@ async fn add_source(
         .filter(|value| !value.is_empty())
         .map(PathBuf::from);
     let transcriber_args = input.transcriber_args.unwrap_or_default();
-    let yt_dlp = YtDlpConfig {
-        args: input
+    let mut yt_dlp_args = state.yt_dlp.args.clone();
+    yt_dlp_args.extend(
+        input
             .yt_dlp_args
             .unwrap_or_default()
             .into_iter()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
-            .collect(),
-        timeout_seconds: input.yt_dlp_timeout_seconds,
+            .collect::<Vec<_>>(),
+    );
+    let yt_dlp = YtDlpConfig {
+        args: yt_dlp_args,
+        timeout_seconds: input
+            .yt_dlp_timeout_seconds
+            .or(state.yt_dlp.timeout_seconds),
+        ..state.yt_dlp.clone()
     };
     let title_contains = input
         .title_contains
@@ -1100,7 +1110,7 @@ mod tests {
     use super::*;
 
     fn test_app(database_url: Option<String>) -> Router {
-        app(AppState::new(database_url))
+        app(AppState::new(database_url, YtDlpConfig::default()))
     }
 
     async fn request(method: Method, uri: &str, body: Option<&str>) -> Response {

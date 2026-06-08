@@ -1,11 +1,15 @@
+use std::ffi::OsString;
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use clap::{ArgGroup, Parser, Subcommand, ValueEnum};
 use uuid::Uuid;
 
 use crate::benchmark::{BenchmarkRequest, DISTINGUO_SEARCH_QUERIES};
-use crate::config::{AppConfig, CaptionConfig, CorpusSource, SearchMode, SourceKind, YtDlpConfig};
+use crate::config::{
+    AppConfig, BrowserCookieSource, CaptionConfig, CorpusSource, SearchMode, SourceKind,
+    YtDlpConfig,
+};
 use crate::ingest::IngestRequest;
 use crate::search::SearchRequest;
 use crate::status::{CorpusStatusRequest, ListVideosRequest};
@@ -13,11 +17,14 @@ use crate::subscriptions::{
     AddSubscriptionRequest, CheckSubscriptionsRequest, SubscriptionSourceKind,
 };
 
+pub const CONFIG_FILE_NAME: &str = "youtube-corpus.conf";
+
 #[derive(Debug, Parser)]
 #[command(
     name = "youtube-corpus",
     version,
-    about = "Build and search a Postgres-backed YouTube transcript corpus"
+    about = "Build and search a Postgres-backed YouTube transcript corpus",
+    args_override_self = true
 )]
 pub struct Cli {
     #[arg(long, global = true, value_name = "URL")]
@@ -28,10 +35,84 @@ pub struct Cli {
     pub port: u16,
     #[arg(long, global = true)]
     pub no_open: bool,
+    #[arg(
+        long = "yt-dlp-arg",
+        global = true,
+        value_name = "ARG",
+        num_args = 1,
+        allow_hyphen_values = true
+    )]
+    pub yt_dlp_args: Vec<String>,
+    #[arg(long, global = true)]
+    pub yt_dlp_timeout_seconds: Option<u64>,
+    #[arg(long, global = true)]
+    pub yt_dlp_cookies_from_browser: Option<String>,
+    #[arg(long, global = true)]
+    pub yt_dlp_cookie_profile: Option<String>,
+    #[arg(long, global = true)]
+    pub yt_dlp_cookie_keyring: Option<String>,
+    #[arg(long, global = true)]
+    pub yt_dlp_cache_dir: Option<PathBuf>,
+    #[arg(long, global = true)]
+    pub yt_dlp_user_agent: Option<String>,
+    #[arg(long, global = true)]
+    pub yt_dlp_sleep_requests_seconds: Option<f64>,
+    #[arg(long, global = true)]
+    pub yt_dlp_sleep_interval_seconds: Option<f64>,
+    #[arg(long, global = true)]
+    pub yt_dlp_max_sleep_interval_seconds: Option<f64>,
+    #[arg(long, global = true)]
+    pub yt_dlp_socket_timeout_seconds: Option<f64>,
+    #[arg(long, global = true)]
+    pub yt_dlp_retry_sleep: Option<String>,
+    #[arg(long, global = true)]
+    pub yt_dlp_retries: Option<u32>,
+    #[arg(long, global = true)]
+    pub yt_dlp_fragment_retries: Option<u32>,
+    #[arg(long, global = true)]
+    pub yt_dlp_format: Option<String>,
     #[arg(long)]
     pub migrate: bool,
     #[command(subcommand)]
     pub command: Option<Command>,
+}
+
+impl Cli {
+    pub fn parse_with_config_file() -> anyhow::Result<Self> {
+        let args = args_with_config_file(std::env::args_os(), Path::new(CONFIG_FILE_NAME))?;
+        Ok(Self::parse_from(args))
+    }
+
+    pub fn yt_dlp_config(&self) -> YtDlpConfig {
+        yt_dlp_config(self)
+    }
+}
+
+pub fn args_with_config_file<I, T>(args: I, config_path: &Path) -> anyhow::Result<Vec<OsString>>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString>,
+{
+    let args = args.into_iter().map(Into::into).collect::<Vec<_>>();
+    let Some((program, runtime_args)) = args.split_first() else {
+        return Ok(args);
+    };
+    if !config_path.exists() {
+        return Ok(args);
+    }
+    let config = std::fs::read_to_string(config_path)
+        .map_err(|error| anyhow::anyhow!("failed to read {}: {error}", config_path.display()))?;
+    let mut config_args = shlex::split(&config).ok_or_else(|| {
+        anyhow::anyhow!(
+            "failed to parse {}: unmatched quote or trailing escape",
+            config_path.display()
+        )
+    })?;
+    let mut merged = Vec::with_capacity(1 + config_args.len() + runtime_args.len());
+    merged.push(program.clone());
+    merged.extend(config_args.drain(..).map(OsString::from));
+    merged.extend(runtime_args.iter().cloned());
+    Ok(merged)
 }
 
 #[derive(Debug, Subcommand)]
@@ -50,12 +131,14 @@ pub enum Command {
 }
 
 #[derive(Debug, Parser)]
+#[command(args_override_self = true)]
 pub struct ServeArgs {
     #[arg(long)]
     pub migrate: bool,
 }
 
 #[derive(Debug, Parser)]
+#[command(args_override_self = true)]
 #[command(group(
     ArgGroup::new("source")
         .args(["url", "playlist_url", "channel_url", "input"])
@@ -78,15 +161,6 @@ pub struct IngestArgs {
     pub no_captions: bool,
     #[arg(long)]
     pub no_auto_captions: bool,
-    #[arg(
-        long = "yt-dlp-arg",
-        value_name = "ARG",
-        num_args = 1,
-        allow_hyphen_values = true
-    )]
-    pub yt_dlp_args: Vec<String>,
-    #[arg(long)]
-    pub yt_dlp_timeout_seconds: Option<u64>,
     #[arg(long)]
     pub no_asr: bool,
     #[arg(long)]
@@ -110,7 +184,11 @@ pub struct IngestArgs {
 }
 
 impl IngestArgs {
-    pub fn try_into_request(self, config: &AppConfig) -> anyhow::Result<IngestRequest> {
+    pub fn try_into_request(
+        self,
+        config: &AppConfig,
+        yt_dlp: YtDlpConfig,
+    ) -> anyhow::Result<IngestRequest> {
         let source = if let Some(url) = self.url {
             CorpusSource::YoutubeUrl { url }
         } else if let Some(url) = self.playlist_url {
@@ -144,7 +222,7 @@ impl IngestArgs {
                 include_auto_captions: !self.no_auto_captions,
                 languages,
             },
-            yt_dlp: yt_dlp_config(self.yt_dlp_args, self.yt_dlp_timeout_seconds),
+            yt_dlp,
             asr_enabled: !self.no_asr,
             transcriber_command: self.transcriber_command,
             transcriber_args: self.transcriber_args,
@@ -160,6 +238,7 @@ impl IngestArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(args_override_self = true)]
 #[command(group(
     ArgGroup::new("source")
         .args(["playlist_url", "channel_url"])
@@ -180,15 +259,6 @@ pub struct SubscribeArgs {
     pub no_captions: bool,
     #[arg(long)]
     pub no_auto_captions: bool,
-    #[arg(
-        long = "yt-dlp-arg",
-        value_name = "ARG",
-        num_args = 1,
-        allow_hyphen_values = true
-    )]
-    pub yt_dlp_args: Vec<String>,
-    #[arg(long)]
-    pub yt_dlp_timeout_seconds: Option<u64>,
     #[arg(long)]
     pub no_asr: bool,
     #[arg(long)]
@@ -214,7 +284,11 @@ pub struct SubscribeArgs {
 }
 
 impl SubscribeArgs {
-    pub fn try_into_request(self, config: &AppConfig) -> anyhow::Result<AddSubscriptionRequest> {
+    pub fn try_into_request(
+        self,
+        config: &AppConfig,
+        yt_dlp: YtDlpConfig,
+    ) -> anyhow::Result<AddSubscriptionRequest> {
         let (source_kind, source_url) = if let Some(url) = self.channel_url {
             (SubscriptionSourceKind::Channel, url)
         } else if let Some(url) = self.playlist_url {
@@ -246,7 +320,7 @@ impl SubscribeArgs {
                 include_auto_captions: !self.no_auto_captions,
                 languages,
             },
-            yt_dlp: yt_dlp_config(self.yt_dlp_args, self.yt_dlp_timeout_seconds),
+            yt_dlp,
             asr_enabled: !self.no_asr,
             transcriber_command: self.transcriber_command,
             transcriber_args: self.transcriber_args,
@@ -262,6 +336,7 @@ impl SubscribeArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(args_override_self = true)]
 pub struct SubscriptionsArgs {
     #[command(subcommand)]
     pub command: SubscriptionsCommand,
@@ -276,6 +351,7 @@ pub enum SubscriptionsCommand {
 }
 
 #[derive(Debug, Parser)]
+#[command(args_override_self = true)]
 pub struct ListSubscriptionsArgs {
     #[arg(long)]
     pub include_disabled: bool,
@@ -284,6 +360,7 @@ pub struct ListSubscriptionsArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(args_override_self = true)]
 pub struct CheckSubscriptionsArgs {
     #[arg(long)]
     pub id: Option<Uuid>,
@@ -315,6 +392,7 @@ impl CheckSubscriptionsArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(args_override_self = true)]
 pub struct ListVideosArgs {
     #[arg(long)]
     pub downloaded: bool,
@@ -342,6 +420,7 @@ impl ListVideosArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(args_override_self = true)]
 pub struct StatusArgs {
     #[arg(long)]
     pub include_disabled: bool,
@@ -372,6 +451,7 @@ impl StatusArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(args_override_self = true)]
 pub struct BenchmarkArgs {
     #[arg(long, value_enum, default_value_t = BenchmarkPreset::Distinguo)]
     pub preset: BenchmarkPreset,
@@ -388,15 +468,6 @@ pub struct BenchmarkArgs {
     pub no_captions: bool,
     #[arg(long)]
     pub no_auto_captions: bool,
-    #[arg(
-        long = "yt-dlp-arg",
-        value_name = "ARG",
-        num_args = 1,
-        allow_hyphen_values = true
-    )]
-    pub yt_dlp_args: Vec<String>,
-    #[arg(long)]
-    pub yt_dlp_timeout_seconds: Option<u64>,
     #[arg(long)]
     pub with_asr: bool,
     #[arg(long)]
@@ -415,7 +486,11 @@ pub enum BenchmarkPreset {
 }
 
 impl BenchmarkArgs {
-    pub fn try_into_request(self, config: &AppConfig) -> anyhow::Result<BenchmarkRequest> {
+    pub fn try_into_request(
+        self,
+        config: &AppConfig,
+        yt_dlp: YtDlpConfig,
+    ) -> anyhow::Result<BenchmarkRequest> {
         if self.max_items == 0 {
             anyhow::bail!("--max-items must be positive");
         }
@@ -445,7 +520,7 @@ impl BenchmarkArgs {
                     include_auto_captions: !self.no_auto_captions,
                     languages,
                 },
-                yt_dlp: yt_dlp_config(self.yt_dlp_args, self.yt_dlp_timeout_seconds),
+                yt_dlp,
                 asr_enabled: self.with_asr,
                 transcriber_timeout_seconds: self.transcriber_timeout_seconds,
                 migrate: self.migrate,
@@ -456,18 +531,66 @@ impl BenchmarkArgs {
     }
 }
 
-fn yt_dlp_config(args: Vec<String>, timeout_seconds: Option<u64>) -> YtDlpConfig {
+fn yt_dlp_config(cli: &Cli) -> YtDlpConfig {
     YtDlpConfig {
-        args: args
+        args: cli
+            .yt_dlp_args
+            .clone()
             .into_iter()
             .map(|arg| arg.trim().to_string())
             .filter(|arg| !arg.is_empty())
             .collect(),
-        timeout_seconds,
+        timeout_seconds: cli.yt_dlp_timeout_seconds,
+        cookies_from_browser: cli
+            .yt_dlp_cookies_from_browser
+            .as_deref()
+            .map(str::trim)
+            .filter(|browser| !browser.is_empty())
+            .map(|browser| BrowserCookieSource {
+                browser: browser.to_string(),
+                profile: cli
+                    .yt_dlp_cookie_profile
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string),
+                keyring: cli
+                    .yt_dlp_cookie_keyring
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string),
+            }),
+        cache_dir: cli.yt_dlp_cache_dir.clone(),
+        user_agent: cli
+            .yt_dlp_user_agent
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        sleep_requests_seconds: cli.yt_dlp_sleep_requests_seconds,
+        sleep_interval_seconds: cli.yt_dlp_sleep_interval_seconds,
+        max_sleep_interval_seconds: cli.yt_dlp_max_sleep_interval_seconds,
+        socket_timeout_seconds: cli.yt_dlp_socket_timeout_seconds,
+        retry_sleep: cli
+            .yt_dlp_retry_sleep
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
+        retries: cli.yt_dlp_retries,
+        fragment_retries: cli.yt_dlp_fragment_retries,
+        format: cli
+            .yt_dlp_format
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string),
     }
 }
 
 #[derive(Debug, Parser)]
+#[command(args_override_self = true)]
 pub struct SearchArgs {
     #[arg(long)]
     pub query: String,
@@ -558,12 +681,14 @@ impl SearchArgs {
 }
 
 #[derive(Debug, Parser)]
+#[command(args_override_self = true)]
 pub struct DiagnosticsArgs {
     #[arg(long)]
     pub transcriber_command: Option<String>,
 }
 
 #[derive(Debug, Parser)]
+#[command(args_override_self = true)]
 pub struct ApiSchemaArgs {
     #[arg(long)]
     pub typescript: bool,

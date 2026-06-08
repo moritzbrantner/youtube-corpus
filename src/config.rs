@@ -53,12 +53,45 @@ impl Default for CaptionConfig {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct YtDlpConfig {
+    #[serde(default)]
     pub args: Vec<String>,
     #[serde(default)]
     pub timeout_seconds: Option<u64>,
+    #[serde(default)]
+    pub cookies_from_browser: Option<BrowserCookieSource>,
+    #[serde(default)]
+    pub cache_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub user_agent: Option<String>,
+    #[serde(default)]
+    pub sleep_requests_seconds: Option<f64>,
+    #[serde(default)]
+    pub sleep_interval_seconds: Option<f64>,
+    #[serde(default)]
+    pub max_sleep_interval_seconds: Option<f64>,
+    #[serde(default)]
+    pub socket_timeout_seconds: Option<f64>,
+    #[serde(default)]
+    pub retry_sleep: Option<String>,
+    #[serde(default)]
+    pub retries: Option<u32>,
+    #[serde(default)]
+    pub fragment_retries: Option<u32>,
+    #[serde(default)]
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserCookieSource {
+    pub browser: String,
+    #[serde(default)]
+    pub profile: Option<String>,
+    #[serde(default)]
+    pub keyring: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]

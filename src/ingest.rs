@@ -192,9 +192,12 @@ async fn ingest_item(
         let media_path = match &video_path {
             Some(path) => path.clone(),
             None => {
-                let path =
-                    crate::youtube::download_video(&item, &item_dir.join("media"), &request.yt_dlp)
-                        .await?;
+                let path = crate::youtube::download_video(
+                    &mut item,
+                    &item_dir.join("media"),
+                    &request.yt_dlp,
+                )
+                .await?;
                 video_path = Some(path.clone());
                 path
             }
@@ -229,6 +232,12 @@ async fn ingest_item(
         HashedTextEmbedder::new(TextEmbeddingConfig::default(), CorpusOptions::default())?;
     let mut streams_indexed = 0;
     let mut segments_indexed = 0;
+    let stage_messages = streams
+        .iter()
+        .filter_map(|stream| stream.message.as_deref())
+        .filter(|message| !message.trim().is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
     for stream in streams {
         if stream.segments.is_empty() {
             continue;
@@ -254,7 +263,7 @@ async fn ingest_item(
         .to_string(),
         streams_indexed,
         segments_indexed,
-        message: None,
+        message: (!stage_messages.is_empty()).then(|| stage_messages.join("; ")),
     })
 }
 

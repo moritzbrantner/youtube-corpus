@@ -1,11 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
-use std::time::Duration;
-
-use tokio::process::Command;
 
 use crate::config::{CaptionConfig, SourceKind, YtDlpConfig};
 use crate::youtube::VideoItem;
+use crate::yt_dlp::YtDlpClient;
 
 #[derive(Debug, Clone)]
 pub struct TranscriptStream {
@@ -26,17 +23,41 @@ pub async fn download_and_parse_captions(
     if !config.enabled || item.local_video_path.is_some() {
         return Ok(Vec::new());
     }
-    crate::youtube::require_command("yt-dlp")?;
     tokio::fs::create_dir_all(dir).await?;
     let langs = config.languages.join(",");
     let template = dir.join(format!("{}-subs.%(id)s.%(ext)s", item.item_id));
 
-    run_caption_download(&item.source_url, &template, &langs, false, yt_dlp).await?;
+    let mut messages = Vec::new();
+    if let Err(error) =
+        run_caption_download(&item.source_url, &template, &langs, false, yt_dlp).await
+    {
+        messages.push(TranscriptStream {
+            source_kind: SourceKind::CaptionManual,
+            language: None,
+            source_path: None,
+            text: None,
+            segments: Vec::new(),
+            message: Some(format!("manual captions unavailable: {error}")),
+        });
+    }
     if config.include_auto_captions {
-        let _ = run_caption_download(&item.source_url, &template, &langs, true, yt_dlp).await;
+        if let Err(error) =
+            run_caption_download(&item.source_url, &template, &langs, true, yt_dlp).await
+        {
+            messages.push(TranscriptStream {
+                source_kind: SourceKind::CaptionAuto,
+                language: None,
+                source_path: None,
+                text: None,
+                segments: Vec::new(),
+                message: Some(format!("auto captions unavailable: {error}")),
+            });
+        }
     }
 
-    parse_caption_files(dir).await
+    let mut streams = parse_caption_files(dir).await?;
+    streams.extend(messages);
+    Ok(streams)
 }
 
 pub async fn parse_caption_files(dir: &Path) -> anyhow::Result<Vec<TranscriptStream>> {
@@ -116,39 +137,12 @@ async fn run_caption_download(
     auto: bool,
     yt_dlp: &YtDlpConfig,
 ) -> anyhow::Result<()> {
-    let mut command = Command::new("yt-dlp");
-    command
-        .arg("--skip-download")
-        .arg("--no-playlist")
-        .arg("--sub-format")
-        .arg("vtt/srt/best")
-        .arg("--sub-langs")
-        .arg(languages)
-        .arg("-o")
-        .arg(template);
-    if auto {
-        command.arg("--write-auto-subs");
-    } else {
-        command.arg("--write-subs");
-    }
-    crate::youtube::apply_yt_dlp_args(&mut command, yt_dlp);
-    command.arg(url).stdin(Stdio::null());
-    let output = if let Some(seconds) = yt_dlp.timeout_seconds {
-        tokio::time::timeout(Duration::from_secs(seconds), command.output())
-            .await
-            .map_err(|_| {
-                anyhow::anyhow!("yt-dlp subtitle download timed out after {seconds} seconds")
-            })??
-    } else {
-        command.output().await?
-    };
-    if !output.status.success() {
-        anyhow::bail!(
-            "yt-dlp subtitle download failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    Ok(())
+    let client = YtDlpClient::new(yt_dlp.clone());
+    client
+        .download_captions(url, template.to_path_buf(), languages, auto)
+        .await
+        .map(|_| ())
+        .map_err(Into::into)
 }
 
 fn infer_language_from_path(path: &Path) -> Option<String> {

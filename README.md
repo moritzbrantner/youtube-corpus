@@ -56,6 +56,24 @@ cargo run -- serve --host 0.0.0.0 --port 1420
 The web server reads `DATABASE_URL` from the process environment, or from
 `--database-url`. The browser UI cannot override the database URL per request.
 
+If the current directory contains `youtube-corpus.conf`, the CLI reads it before
+parsing command-line arguments. Put the same arguments in this file that you
+would pass to `youtube-corpus`; quoting and `#` comments use shell-style syntax.
+Arguments typed on the command line are applied after the config file, so scalar
+flags such as `--port` or `--database-url` can be overridden per run.
+
+```conf
+--database-url postgres://postgres:postgres@localhost:5432/youtube_corpus
+--port 1420
+--no-open
+--yt-dlp-cookies-from-browser brave
+--yt-dlp-retries 5
+--yt-dlp-fragment-retries 5
+```
+
+`bun dev` starts the Rust process the same way, so it also picks up
+`youtube-corpus.conf` from the repository root.
+
 For frontend development, run the Rust API and Vite separately:
 
 ```bash
@@ -87,14 +105,19 @@ For local media:
 cargo run -- ingest --input ./lecture.mp4 --transcriber-command whisper
 ```
 
-Pass extra `yt-dlp` arguments with repeated `--yt-dlp-arg` flags. Each flag is
-passed as one argv entry to every `yt-dlp` call used by ingest, caption download,
-metadata download, media download, benchmark ingest, and saved subscription
-checks.
+Common `yt-dlp` reliability options have typed flags, including
+`--yt-dlp-cookies-from-browser`, `--yt-dlp-retries`,
+`--yt-dlp-fragment-retries`, `--yt-dlp-sleep-interval-seconds`,
+`--yt-dlp-max-sleep-interval-seconds`, `--yt-dlp-socket-timeout-seconds`,
+`--yt-dlp-format`, and `--yt-dlp-user-agent`. Pass emergency compatibility
+arguments with repeated `--yt-dlp-arg` flags. Each raw flag is passed as one argv
+entry after the typed options to every `yt-dlp` call used by ingest, caption
+download, metadata download, media download, benchmark ingest, and saved
+subscription checks.
 
 ```bash
 cargo run -- ingest --url "$URL" --caption-language de --transcriber-command whisper
-cargo run -- ingest --url "$URL" --yt-dlp-arg=--cookies-from-browser --yt-dlp-arg=firefox
+cargo run -- ingest --url "$URL" --yt-dlp-cookies-from-browser brave
 cargo run -- ingest --url "$URL" --yt-dlp-timeout-seconds 120 --transcriber-timeout-seconds 1800
 cargo run -- ingest --url "$URL" --no-asr
 ```
@@ -153,8 +176,8 @@ cargo run -- diagnostics --transcriber-command whisper
 ```
 
 The report includes database reachability and migration readiness when
-`DATABASE_URL` is configured, plus availability/version checks for `yt-dlp` and
-the transcriber command.
+`DATABASE_URL` is configured, plus availability/version checks for `yt-dlp`,
+`ffmpeg`, `ffprobe`, and the transcriber command.
 
 ## API Schema
 

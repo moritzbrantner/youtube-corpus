@@ -1,5 +1,5 @@
 use clap::Parser;
-use youtube_corpus::cli::{Cli, Command, SubscriptionsCommand};
+use youtube_corpus::cli::{args_with_config_file, Cli, Command, SubscriptionsCommand};
 
 #[test]
 fn parses_default_web_ui_command() {
@@ -18,6 +18,50 @@ fn parses_default_web_ui_flags() {
     assert_eq!(cli.port, 1421);
     assert!(cli.no_open);
     assert!(cli.migrate);
+}
+
+#[test]
+fn merges_youtube_corpus_conf_arguments_before_cli_arguments() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("youtube-corpus.conf");
+    std::fs::write(
+        &config_path,
+        r#"
+            # Local development defaults.
+            --database-url "postgres://postgres:postgres@localhost:5432/youtube corpus"
+            --port 1421
+            --no-open
+            --yt-dlp-arg=--cookies-from-browser
+            --yt-dlp-arg=brave
+        "#,
+    )
+    .unwrap();
+
+    let args = args_with_config_file(["youtube-corpus", "--port", "1422"], &config_path).unwrap();
+    let cli = Cli::parse_from(args);
+
+    assert_eq!(
+        cli.database_url.as_deref(),
+        Some("postgres://postgres:postgres@localhost:5432/youtube corpus")
+    );
+    assert_eq!(cli.port, 1422);
+    assert!(cli.no_open);
+    assert_eq!(
+        cli.yt_dlp_args,
+        vec!["--cookies-from-browser".to_string(), "brave".to_string()]
+    );
+}
+
+#[test]
+fn ignores_missing_youtube_corpus_conf() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("youtube-corpus.conf");
+
+    let args = args_with_config_file(["youtube-corpus", "--port", "1422"], &config_path).unwrap();
+    let cli = Cli::parse_from(args);
+
+    assert_eq!(cli.port, 1422);
+    assert!(cli.database_url.is_none());
 }
 
 #[test]
@@ -53,6 +97,14 @@ fn parses_ingest_url_command() {
         "firefox",
         "--yt-dlp-timeout-seconds",
         "30",
+        "--yt-dlp-cookies-from-browser",
+        "brave",
+        "--yt-dlp-retries",
+        "4",
+        "--yt-dlp-fragment-retries",
+        "5",
+        "--yt-dlp-sleep-interval-seconds",
+        "1.5",
         "--no-asr",
         "--transcriber-timeout-seconds",
         "300",
@@ -64,15 +116,19 @@ fn parses_ingest_url_command() {
                 Some("https://www.youtube.com/watch?v=jNQXAC9IVRw")
             );
             assert!(args.no_asr);
-            assert_eq!(
-                args.yt_dlp_args,
-                vec!["--cookies-from-browser".to_string(), "firefox".to_string()]
-            );
-            assert_eq!(args.yt_dlp_timeout_seconds, Some(30));
             assert_eq!(args.transcriber_timeout_seconds, Some(300));
         }
         other => panic!("expected ingest command, got {other:?}"),
     }
+    assert_eq!(
+        cli.yt_dlp_args,
+        vec!["--cookies-from-browser".to_string(), "firefox".to_string()]
+    );
+    assert_eq!(cli.yt_dlp_timeout_seconds, Some(30));
+    assert_eq!(cli.yt_dlp_cookies_from_browser.as_deref(), Some("brave"));
+    assert_eq!(cli.yt_dlp_retries, Some(4));
+    assert_eq!(cli.yt_dlp_fragment_retries, Some(5));
+    assert_eq!(cli.yt_dlp_sleep_interval_seconds, Some(1.5));
 }
 
 #[test]
