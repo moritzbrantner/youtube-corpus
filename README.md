@@ -24,7 +24,7 @@ repositories as siblings at the pinned revisions used by CI:
 
 ```bash
 git clone https://github.com/moritzbrantner/nlp-stack.git
-git -C nlp-stack checkout b720d5ee0afad26b439a77ee4f6ffa0ea9e8f868
+git -C nlp-stack checkout 057689ca1df031d677f4afd9d65eed181c6fca06
 git clone https://github.com/moritzbrantner/moenarch-foundation.git
 git -C moenarch-foundation checkout ead588f27d130d775524db31189b734a224843d5
 git clone https://github.com/moritzbrantner/visual-analysis.git
