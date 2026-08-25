@@ -29,6 +29,12 @@ jobs:
       cargo_cache_dependency_path: Cargo.lock
       pre_command: |
         set -euo pipefail
+        git clone https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
+        git -C ../nlp-stack checkout b720d5ee0afad26b439a77ee4f6ffa0ea9e8f868
+        git clone https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
+        git -C ../moenarch-foundation checkout ead588f27d130d775524db31189b734a224843d5
+        git clone https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
+        git -C ../visual-analysis checkout d341c668f1baa14cd3d4e99c8ce8f5d39e43a974
         rustup toolchain install stable --profile minimal --component rustfmt
         rustup default stable
       format_command: |
@@ -54,6 +60,12 @@ jobs:
       cargo_cache_dependency_path: Cargo.lock
       pre_command: |
         set -euo pipefail
+        git clone https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
+        git -C ../nlp-stack checkout b720d5ee0afad26b439a77ee4f6ffa0ea9e8f868
+        git clone https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
+        git -C ../moenarch-foundation checkout ead588f27d130d775524db31189b734a224843d5
+        git clone https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
+        git -C ../visual-analysis checkout d341c668f1baa14cd3d4e99c8ce8f5d39e43a974
         rustup toolchain install stable --profile minimal
         rustup default stable
       integration_command: bun run verify:postgres

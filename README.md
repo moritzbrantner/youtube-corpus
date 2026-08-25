@@ -16,23 +16,28 @@ search plus `pgvector` for semantic search.
 - `yt-dlp`, for YouTube discovery, metadata, captions, and media downloads
 - Optional `whisper` command, for local ASR fallback
 
-Binary release users do not need to clone `rust-packages`; the downloadable
-archives include the CLI binary and embedded browser UI.
+Binary release users only need the downloadable CLI archive with its embedded
+browser UI.
 
-Source builds currently use local path dependencies from the sibling
-`moritzbrantner/rust-packages` repository. Check out both repositories into the
-same parent directory:
+Source builds consume the extracted package owners directly. Check out these
+repositories as siblings at the pinned revisions used by CI:
 
 ```bash
-mkdir youtube-corpus-release-src
-cd youtube-corpus-release-src
-git clone https://github.com/moritzbrantner/rust-packages.git
+git clone https://github.com/moritzbrantner/nlp-stack.git
+git -C nlp-stack checkout b720d5ee0afad26b439a77ee4f6ffa0ea9e8f868
+git clone https://github.com/moritzbrantner/moenarch-foundation.git
+git -C moenarch-foundation checkout ead588f27d130d775524db31189b734a224843d5
+git clone https://github.com/moritzbrantner/visual-analysis.git
+git -C visual-analysis checkout d341c668f1baa14cd3d4e99c8ce8f5d39e43a974
 git clone https://github.com/moritzbrantner/youtube-corpus.git
 cd youtube-corpus
 bun install --frozen-lockfile
 bun run build
 cargo build --release
 ```
+
+This source graph does not depend on `rust-packages` or on publishing a new
+crate version before ordinary development can proceed.
 
 ## Quick Start
 

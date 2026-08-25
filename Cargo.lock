@@ -1062,107 +1062,107 @@ dependencies = [
 ]
 
 [[package]]
-name = "moritzbrantner-audio-analysis-core"
+name = "moenarch-audio-analysis-core"
 version = "0.1.0"
 dependencies = [
- "moritzbrantner-math-signal-core",
- "moritzbrantner-runtime-core",
- "moritzbrantner-tensor-data",
- "moritzbrantner-video-analysis-core",
+ "moenarch-math-signal-core",
+ "moenarch-runtime-core",
+ "moenarch-tensor-data",
+ "moenarch-video-analysis-core",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "moritzbrantner-jobs-core"
-version = "0.1.1"
+name = "moenarch-jobs-core"
+version = "0.1.2"
 dependencies = [
  "chrono",
- "moritzbrantner-runtime-core",
+ "moenarch-runtime-core",
  "serde",
  "serde_json",
  "sha2",
 ]
 
 [[package]]
-name = "moritzbrantner-math-linear"
-version = "0.1.0"
+name = "moenarch-math-linear"
+version = "0.1.1"
 dependencies = [
- "moritzbrantner-runtime-core",
- "moritzbrantner-tensor-data",
- "moritzbrantner-vector-analysis-core",
- "moritzbrantner-video-analysis-core",
+ "moenarch-runtime-core",
+ "moenarch-tensor-data",
+ "moenarch-vector-analysis-core",
+ "moenarch-video-analysis-core",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "moritzbrantner-math-signal-core"
+name = "moenarch-math-signal-core"
 version = "0.1.0"
 dependencies = [
- "moritzbrantner-numbers-core",
- "moritzbrantner-runtime-core",
- "moritzbrantner-video-analysis-core",
+ "moenarch-numbers-core",
+ "moenarch-runtime-core",
+ "moenarch-video-analysis-core",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "moritzbrantner-math-sparse-data"
-version = "0.1.0"
+name = "moenarch-math-sparse-data"
+version = "0.1.1"
 dependencies = [
- "moritzbrantner-math-linear",
- "moritzbrantner-numbers-core",
- "moritzbrantner-runtime-core",
- "moritzbrantner-vector-analysis-core",
- "moritzbrantner-video-analysis-core",
+ "moenarch-math-linear",
+ "moenarch-numbers-core",
+ "moenarch-runtime-core",
+ "moenarch-vector-analysis-core",
+ "moenarch-video-analysis-core",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "moritzbrantner-numbers-core"
-version = "0.1.0"
+name = "moenarch-numbers-core"
+version = "0.1.1"
 dependencies = [
- "moritzbrantner-runtime-core",
- "moritzbrantner-video-analysis-core",
+ "moenarch-runtime-core",
+ "moenarch-video-analysis-core",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "moritzbrantner-runtime-core"
-version = "0.1.0"
+name = "moenarch-runtime-core"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "moritzbrantner-runtime-onnx"
-version = "0.1.0"
+name = "moenarch-runtime-onnx"
+version = "0.1.1"
 dependencies = [
  "serde",
  "thiserror",
 ]
 
 [[package]]
-name = "moritzbrantner-tensor-data"
-version = "0.1.0"
+name = "moenarch-tensor-data"
+version = "0.1.1"
 dependencies = [
- "moritzbrantner-runtime-core",
- "moritzbrantner-video-analysis-core",
+ "moenarch-runtime-core",
+ "moenarch-video-analysis-core",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "moritzbrantner-text-core"
-version = "0.1.0"
+name = "moenarch-text-core"
+version = "0.1.1"
 dependencies = [
- "moritzbrantner-jobs-core",
- "moritzbrantner-runtime-core",
- "moritzbrantner-video-analysis-core",
+ "moenarch-jobs-core",
+ "moenarch-runtime-core",
+ "moenarch-video-analysis-core",
  "serde",
  "serde_json",
  "unicode-normalization",
@@ -1170,87 +1170,87 @@ dependencies = [
 ]
 
 [[package]]
-name = "moritzbrantner-text-embeddings"
-version = "0.1.0"
+name = "moenarch-text-embeddings"
+version = "0.1.1"
 dependencies = [
- "moritzbrantner-math-sparse-data",
- "moritzbrantner-runtime-core",
- "moritzbrantner-runtime-onnx",
- "moritzbrantner-text-core",
- "moritzbrantner-text-lexical",
- "moritzbrantner-text-model-runtime",
- "moritzbrantner-vector-analysis-core",
- "moritzbrantner-vector-analysis-index",
- "moritzbrantner-video-analysis-core",
+ "moenarch-math-sparse-data",
+ "moenarch-runtime-core",
+ "moenarch-runtime-onnx",
+ "moenarch-text-core",
+ "moenarch-text-lexical",
+ "moenarch-text-model-runtime",
+ "moenarch-vector-analysis-core",
+ "moenarch-vector-analysis-index",
+ "moenarch-video-analysis-core",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "moritzbrantner-text-lexical"
-version = "0.1.0"
+name = "moenarch-text-lexical"
+version = "0.1.1"
 dependencies = [
- "moritzbrantner-math-sparse-data",
- "moritzbrantner-runtime-core",
- "moritzbrantner-text-core",
- "moritzbrantner-video-analysis-core",
+ "moenarch-math-sparse-data",
+ "moenarch-runtime-core",
+ "moenarch-text-core",
+ "moenarch-video-analysis-core",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "moritzbrantner-text-model-runtime"
-version = "0.1.0"
+name = "moenarch-text-model-runtime"
+version = "0.1.1"
 dependencies = [
- "moritzbrantner-runtime-core",
- "moritzbrantner-runtime-onnx",
- "moritzbrantner-video-analysis-core",
+ "moenarch-runtime-core",
+ "moenarch-runtime-onnx",
+ "moenarch-video-analysis-core",
  "serde",
  "serde_json",
 ]
 
 [[package]]
-name = "moritzbrantner-text-transcripts"
-version = "0.1.0"
+name = "moenarch-text-transcripts"
+version = "0.1.3"
 dependencies = [
  "cmake",
  "hound",
- "moritzbrantner-audio-analysis-core",
- "moritzbrantner-runtime-core",
- "moritzbrantner-text-core",
- "moritzbrantner-video-analysis-core",
- "moritzbrantner-video-analysis-ingest",
+ "moenarch-audio-analysis-core",
+ "moenarch-runtime-core",
+ "moenarch-text-core",
+ "moenarch-video-analysis-core",
+ "moenarch-video-analysis-ingest",
  "serde",
  "serde_json",
  "thiserror",
 ]
 
 [[package]]
-name = "moritzbrantner-vector-analysis-core"
-version = "0.1.0"
-dependencies = [
- "moritzbrantner-runtime-core",
- "moritzbrantner-video-analysis-core",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "moritzbrantner-vector-analysis-index"
-version = "0.1.0"
-dependencies = [
- "moritzbrantner-runtime-core",
- "moritzbrantner-vector-analysis-core",
- "moritzbrantner-video-analysis-core",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "moritzbrantner-video-analysis-core"
+name = "moenarch-vector-analysis-core"
 version = "0.1.1"
 dependencies = [
- "moritzbrantner-runtime-core",
+ "moenarch-runtime-core",
+ "moenarch-video-analysis-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "moenarch-vector-analysis-index"
+version = "0.1.1"
+dependencies = [
+ "moenarch-runtime-core",
+ "moenarch-vector-analysis-core",
+ "moenarch-video-analysis-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "moenarch-video-analysis-core"
+version = "0.1.3"
+dependencies = [
+ "moenarch-runtime-core",
  "num-rational",
  "num-traits",
  "serde",
@@ -1259,23 +1259,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "moritzbrantner-video-analysis-ffmpeg"
-version = "0.1.0"
+name = "moenarch-video-analysis-ffmpeg"
+version = "0.1.1"
 dependencies = [
- "moritzbrantner-runtime-core",
- "moritzbrantner-video-analysis-core",
- "moritzbrantner-video-analysis-ingest",
+ "moenarch-runtime-core",
+ "moenarch-video-analysis-core",
+ "moenarch-video-analysis-ingest",
  "num-rational",
  "serde_json",
  "thiserror",
 ]
 
 [[package]]
-name = "moritzbrantner-video-analysis-ingest"
+name = "moenarch-video-analysis-ingest"
 version = "0.1.0"
 dependencies = [
- "moritzbrantner-runtime-core",
- "moritzbrantner-video-analysis-core",
+ "moenarch-runtime-core",
+ "moenarch-video-analysis-core",
  "num-rational",
  "serde_json",
 ]
@@ -2977,14 +2977,14 @@ dependencies = [
  "chrono",
  "clap",
  "mime_guess",
- "moritzbrantner-jobs-core",
- "moritzbrantner-runtime-core",
- "moritzbrantner-text-core",
- "moritzbrantner-text-embeddings",
- "moritzbrantner-text-lexical",
- "moritzbrantner-text-transcripts",
- "moritzbrantner-video-analysis-ffmpeg",
- "moritzbrantner-video-analysis-ingest",
+ "moenarch-jobs-core",
+ "moenarch-runtime-core",
+ "moenarch-text-core",
+ "moenarch-text-embeddings",
+ "moenarch-text-lexical",
+ "moenarch-text-transcripts",
+ "moenarch-video-analysis-ffmpeg",
+ "moenarch-video-analysis-ingest",
  "open",
  "rust-embed",
  "serde",
