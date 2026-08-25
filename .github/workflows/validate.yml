@@ -20,6 +20,8 @@ jobs:
     permissions:
       contents: read
       packages: read
+    secrets:
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     with:
       node_version: ""
       bun_version: "1.3.14"
@@ -29,11 +31,12 @@ jobs:
       cargo_cache_dependency_path: Cargo.lock
       pre_command: |
         set -euo pipefail
-        git clone https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
+        auth="$(printf 'x-access-token:%s' "$GH_PACKAGES_TOKEN" | base64 -w0)"
+        git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
         git -C ../nlp-stack checkout b720d5ee0afad26b439a77ee4f6ffa0ea9e8f868
-        git clone https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
+        git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
         git -C ../moenarch-foundation checkout ead588f27d130d775524db31189b734a224843d5
-        git clone https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
+        git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
         git -C ../visual-analysis checkout d341c668f1baa14cd3d4e99c8ce8f5d39e43a974
         rustup toolchain install stable --profile minimal --component rustfmt
         rustup default stable
@@ -51,6 +54,8 @@ jobs:
     permissions:
       contents: read
       packages: read
+    secrets:
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     with:
       node_version: ""
       bun_version: "1.3.14"
@@ -60,11 +65,12 @@ jobs:
       cargo_cache_dependency_path: Cargo.lock
       pre_command: |
         set -euo pipefail
-        git clone https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
+        auth="$(printf 'x-access-token:%s' "$GH_PACKAGES_TOKEN" | base64 -w0)"
+        git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
         git -C ../nlp-stack checkout b720d5ee0afad26b439a77ee4f6ffa0ea9e8f868
-        git clone https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
+        git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
         git -C ../moenarch-foundation checkout ead588f27d130d775524db31189b734a224843d5
-        git clone https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
+        git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
         git -C ../visual-analysis checkout d341c668f1baa14cd3d4e99c8ce8f5d39e43a974
         rustup toolchain install stable --profile minimal
         rustup default stable
@@ -76,6 +82,8 @@ jobs:
     permissions:
       contents: read
       packages: read
+    secrets:
+      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
     with:
       node_version: ""
       bun_version: "1.3.14"
