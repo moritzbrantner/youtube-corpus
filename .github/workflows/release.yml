@@ -77,6 +77,7 @@ jobs:
           repository: moritzbrantner/nlp-stack
           ref: b720d5ee0afad26b439a77ee4f6ffa0ea9e8f868
           path: nlp-stack
+          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Check out moenarch-foundation
         uses: actions/checkout@v4
@@ -84,6 +85,7 @@ jobs:
           repository: moritzbrantner/moenarch-foundation
           ref: ead588f27d130d775524db31189b734a224843d5
           path: moenarch-foundation
+          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Check out visual-analysis
         uses: actions/checkout@v4
@@ -91,6 +93,7 @@ jobs:
           repository: moritzbrantner/visual-analysis
           ref: d341c668f1baa14cd3d4e99c8ce8f5d39e43a974
           path: visual-analysis
+          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
