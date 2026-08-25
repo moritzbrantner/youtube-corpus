@@ -33,7 +33,7 @@ jobs:
         set -euo pipefail
         auth="$(printf 'x-access-token:%s' "$GH_PACKAGES_TOKEN" | base64 -w0)"
         git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
-        git -C ../nlp-stack checkout b720d5ee0afad26b439a77ee4f6ffa0ea9e8f868
+        git -C ../nlp-stack checkout 057689ca1df031d677f4afd9d65eed181c6fca06
         git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
         git -C ../moenarch-foundation checkout ead588f27d130d775524db31189b734a224843d5
         git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
@@ -67,7 +67,7 @@ jobs:
         set -euo pipefail
         auth="$(printf 'x-access-token:%s' "$GH_PACKAGES_TOKEN" | base64 -w0)"
         git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
-        git -C ../nlp-stack checkout b720d5ee0afad26b439a77ee4f6ffa0ea9e8f868
+        git -C ../nlp-stack checkout 057689ca1df031d677f4afd9d65eed181c6fca06
         git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
         git -C ../moenarch-foundation checkout ead588f27d130d775524db31189b734a224843d5
         git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
