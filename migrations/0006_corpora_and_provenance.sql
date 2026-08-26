@@ -54,6 +54,10 @@ SELECT '00000000-0000-5000-8000-000000000001', id, 'legacy'
 FROM videos
 ON CONFLICT DO NOTHING;
 
+ALTER TABLE corpus_subscriptions
+  ADD COLUMN IF NOT EXISTS last_check_status text,
+  ADD COLUMN IF NOT EXISTS last_check_message text;
+
 ALTER TABLE transcript_streams
   ADD COLUMN IF NOT EXISTS retrieved_at timestamptz NOT NULL DEFAULT now(),
   ADD COLUMN IF NOT EXISTS processor text NOT NULL DEFAULT 'youtube-corpus',
