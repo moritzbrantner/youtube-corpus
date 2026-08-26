@@ -1,7 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import * as React from "react";
 
-import { Badge, LoadingState, StateView, StateViewDescription, StateViewTitle } from "@moritzbrantner/ui";
+import {
+  Badge,
+  ErrorState,
+  LoadingState,
+  StateViewDescription,
+  StateViewTitle,
+} from "@moritzbrantner/ui";
 import {
   Navbar,
   PageActions,
@@ -38,13 +44,15 @@ export function CorpusWorkspace() {
     queryKey: corpusKeys.all,
     queryFn: listCorpora,
   });
-  const selectedCorpus = corporaQuery.data?.find((corpus) => corpus.id === state.corpusId) ?? null;
+  const selectedCorpus =
+    corporaQuery.data?.find((corpus) => corpus.id === state.corpusId) ?? null;
 
   React.useEffect(() => {
     if (!corporaQuery.data?.length || selectedCorpus) {
       return;
     }
-    const fallback = corporaQuery.data.find((corpus) => corpus.isDefault) ?? corporaQuery.data[0];
+    const fallback =
+      corporaQuery.data.find((corpus) => corpus.isDefault) ?? corporaQuery.data[0];
     if (fallback) {
       update({ corpusId: fallback.id });
     }
@@ -62,12 +70,15 @@ export function CorpusWorkspace() {
         <div className="grid min-w-0 gap-2">
           <PageTitle>{selectedCorpus?.name ?? "Research corpora"}</PageTitle>
           <PageDescription>
-            Organize channels into named corpora, keep them current, search their transcripts, and reprocess individual videos reproducibly.
+            Organize channels into named corpora, keep them current, search their transcripts, and
+            reprocess individual videos reproducibly.
           </PageDescription>
         </div>
         <PageActions>
           {selectedCorpus ? <Badge variant="outline">{selectedCorpus.slug}</Badge> : null}
-          {selectedCorpus?.isDefault ? <Badge variant="secondary">Default corpus</Badge> : null}
+          {selectedCorpus?.isDefault ? (
+            <Badge variant="secondary">Default corpus</Badge>
+          ) : null}
         </PageActions>
       </PageHeader>
 
@@ -78,12 +89,13 @@ export function CorpusWorkspace() {
       ) : null}
       {corporaQuery.error ? (
         <PageContent>
-          <StateView variant="error">
+          <ErrorState>
             <StateViewTitle>Corpora unavailable</StateViewTitle>
             <StateViewDescription>
-              {String(corporaQuery.error)} Run the latest database migrations before opening this workspace.
+              {String(corporaQuery.error)} Run the latest database migrations before opening this
+              workspace.
             </StateViewDescription>
-          </StateView>
+          </ErrorState>
         </PageContent>
       ) : null}
       {corporaQuery.data ? (
