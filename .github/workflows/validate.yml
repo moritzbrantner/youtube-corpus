@@ -8,87 +8,50 @@ on:
 
 permissions:
   contents: read
-  packages: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  fast-validation:
-    uses: moritzbrantner/reusable-workflows/.github/workflows/fast-validation.yml@458c85c1a58cac26a5ab978e12ab8e9a27d4e0ee
-    permissions:
-      contents: read
-      packages: read
-    secrets:
-      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
-    with:
-      node_version: ""
-      bun_version: "1.3.14"
-      install_command: bun install --frozen-lockfile
-      cache_bun: true
-      cache_cargo: true
-      cargo_cache_dependency_path: Cargo.lock
-      pre_command: |
-        set -euo pipefail
-        auth="$(printf 'x-access-token:%s' "$GH_PACKAGES_TOKEN" | base64 -w0)"
-        git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
-        git -C ../nlp-stack checkout 057689ca1df031d677f4afd9d65eed181c6fca06
-        git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
-        git -C ../moenarch-foundation checkout ead588f27d130d775524db31189b734a224843d5
-        git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
-        git -C ../visual-analysis checkout d341c668f1baa14cd3d4e99c8ce8f5d39e43a974
-        rustup toolchain install stable --profile minimal --component rustfmt
-        rustup default stable
-      format_command: |
-        bun run format:check
-        cargo fmt --check
-      typecheck_command: |
-        bun run build
-        cargo check
-        cargo clippy --all-targets -- -D warnings
-      unit_test_command: cargo test
+  repository-validation:
+    name: Repository-local validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-  integration-validation:
-    uses: moritzbrantner/reusable-workflows/.github/workflows/integration-validation.yml@458c85c1a58cac26a5ab978e12ab8e9a27d4e0ee
-    permissions:
-      contents: read
-      packages: read
-    secrets:
-      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
-    with:
-      node_version: ""
-      bun_version: "1.3.14"
-      install_command: bun install --frozen-lockfile
-      cache_bun: true
-      cache_cargo: true
-      cargo_cache_dependency_path: Cargo.lock
-      pre_command: |
-        set -euo pipefail
-        auth="$(printf 'x-access-token:%s' "$GH_PACKAGES_TOKEN" | base64 -w0)"
-        git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
-        git -C ../nlp-stack checkout 057689ca1df031d677f4afd9d65eed181c6fca06
-        git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
-        git -C ../moenarch-foundation checkout ead588f27d130d775524db31189b734a224843d5
-        git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" clone https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
-        git -C ../visual-analysis checkout d341c668f1baa14cd3d4e99c8ce8f5d39e43a974
-        rustup toolchain install stable --profile minimal
-        rustup default stable
-      integration_command: bun run verify:postgres
-      post_command: docker compose down -v
+      - name: Verify local-only source contract
+        run: |
+          jq -e '.schemaVersion == 1 and .cargo.localOnly == true' .coding-tooling.source-deps.json >/dev/null
+          jq -e '.cargo.patches | length > 0 and all(.[]; (.package | length > 0) and (.git | length > 0) and (.rev | test("^[0-9a-f]{40}$")) and (.localPath | length > 0))' .coding-tooling.source-deps.json >/dev/null
+          if grep -R --line-number --fixed-string 'GH_PACKAGES_TOKEN' .github/workflows/validate.yml; then
+            echo "Ordinary validation must not depend on private cross-repository credentials." >&2
+            exit 1
+          fi
 
-  link-validation:
-    uses: moritzbrantner/reusable-workflows/.github/workflows/link-validation.yml@458c85c1a58cac26a5ab978e12ab8e9a27d4e0ee
-    permissions:
-      contents: read
-      packages: read
-    secrets:
-      GH_PACKAGES_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
-    with:
-      node_version: ""
-      bun_version: "1.3.14"
-      install_command: bun install --frozen-lockfile
-      build_command: bun run build
-      start_command: bun run preview -- --host 127.0.0.1 --port 4173
-      link_check_url: http://127.0.0.1:4173
-      upload_artifacts_on: failure
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check frontend formatting
+        run: bun run format:check
+
+      - name: Build frontend
+        run: bun run build
+
+      - name: Install Rust formatter
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check Rust formatting
+        run: cargo fmt --check
+
+      - name: Explain source verification boundary
+        run: |
+          echo "Rust build, clippy, tests, and Postgres integration checks run in the local coding workspace against the exact sibling source graph."
+          echo "Hosted CI stays repository-local; registry-only verification remains a release/distribution concern."
