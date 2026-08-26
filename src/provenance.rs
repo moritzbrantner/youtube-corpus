@@ -95,6 +95,16 @@ async fn record_video_provenance(
     .bind(processing_config)
     .execute(pool)
     .await?;
+
+    sqlx::query(
+        "INSERT INTO corpus_video_memberships (corpus_id, video_id, membership_kind)
+         VALUES ($1, $2, 'legacy')
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(crate::corpora::DEFAULT_CORPUS_ID)
+    .bind(video_id)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
