@@ -104,13 +104,7 @@ export type AddCorpusSourceReport = {
   check: SubscriptionCheckReport | null;
 };
 
-export type ReprocessStage =
-  | "metadata"
-  | "captions"
-  | "asr"
-  | "segments"
-  | "embeddings"
-  | "all";
+export type ReprocessStage = "metadata" | "captions" | "asr" | "segments" | "embeddings" | "all";
 
 export type ReprocessReport = {
   videoId: string;
@@ -161,11 +155,7 @@ export function checkCorpusSource(corpusId: string, sourceId: string) {
   );
 }
 
-export function setCorpusSourceEnabled(
-  corpusId: string,
-  sourceId: string,
-  enabled: boolean,
-) {
+export function setCorpusSourceEnabled(corpusId: string, sourceId: string, enabled: boolean) {
   return jsonPost<void>(`/api/corpora/${corpusId}/sources/${sourceId}/enabled`, { enabled });
 }
 
@@ -183,10 +173,7 @@ export function reprocessCorpusVideo(
   videoId: string,
   input: ReprocessVideoInput,
 ) {
-  return jsonPost<ReprocessReport>(
-    `/api/corpora/${corpusId}/videos/${videoId}/reprocess`,
-    input,
-  );
+  return jsonPost<ReprocessReport>(`/api/corpora/${corpusId}/videos/${videoId}/reprocess`, input);
 }
 
 export function loadTranscriptContext(segmentId: string): Promise<TranscriptContextReport> {
