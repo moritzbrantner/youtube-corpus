@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   Badge,
   Button,
+  ErrorState,
   Input,
   LoadingState,
   NativeSelect,
@@ -119,7 +120,9 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
               <span className="text-sm font-medium">Source type</span>
               <NativeSelect
                 value={sourceKind}
-                onChange={(event) => setSourceKind(event.target.value as "channel" | "playlist")}
+                onChange={(event) =>
+                  setSourceKind(event.target.value as "channel" | "playlist")
+                }
               >
                 <option value="channel">Channel</option>
                 <option value="playlist">Playlist</option>
@@ -184,7 +187,11 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
             type="submit"
             disabled={!sourceUrl.trim() || (!monitor && !ingestNow) || addMutation.isPending}
           >
-            {addMutation.isPending ? "Adding source..." : monitor ? "Add monitored source" : "Ingest once"}
+            {addMutation.isPending
+              ? "Adding source..."
+              : monitor
+                ? "Add monitored source"
+                : "Ingest once"}
           </Button>
         </form>
 
@@ -195,10 +202,10 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
           </div>
           {sourcesQuery.isPending ? <LoadingState label="Loading sources" /> : null}
           {sourcesQuery.error ? (
-            <StateView variant="error">
+            <ErrorState>
               <StateViewTitle>Sources unavailable</StateViewTitle>
               <StateViewDescription>{String(sourcesQuery.error)}</StateViewDescription>
-            </StateView>
+            </ErrorState>
           ) : null}
           {sourcesQuery.data?.length === 0 ? (
             <StateView variant="empty">
@@ -209,13 +216,22 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
             </StateView>
           ) : null}
           {sourcesQuery.data?.map((source) => (
-            <article key={source.id} className="grid gap-3 rounded-md border border-border px-4 py-4">
+            <article
+              key={source.id}
+              className="grid gap-3 rounded-md border border-border px-4 py-4"
+            >
               <div className="flex min-w-0 flex-wrap items-start gap-3">
                 <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-sm font-semibold">{source.name ?? source.sourceUrl}</h3>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">{source.sourceUrl}</p>
+                  <h3 className="truncate text-sm font-semibold">
+                    {source.name ?? source.sourceUrl}
+                  </h3>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    {source.sourceUrl}
+                  </p>
                 </div>
-                <Badge variant={source.lastCheckStatus === "failed" ? "destructive" : "outline"}>
+                <Badge
+                  variant={source.lastCheckStatus === "failed" ? "destructive" : "outline"}
+                >
                   {source.lastCheckStatus ?? "not checked"}
                 </Badge>
               </div>
@@ -223,7 +239,9 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
                 <span>{source.itemsSeen} seen</span>
                 <span>{source.itemsIndexed} indexed</span>
                 {source.itemsFailed > 0 ? <span>{source.itemsFailed} failed</span> : null}
-                {source.lastCheckedAt ? <span>checked {formatDate(source.lastCheckedAt)}</span> : null}
+                {source.lastCheckedAt ? (
+                  <span>checked {formatDate(source.lastCheckedAt)}</span>
+                ) : null}
               </div>
               {source.lastCheckMessage ? (
                 <p className="text-sm text-destructive">{source.lastCheckMessage}</p>
