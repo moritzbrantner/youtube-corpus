@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   Badge,
   Button,
+  ErrorState,
   LoadingState,
   NativeSelect,
   StateView,
@@ -47,10 +48,10 @@ export function CorpusVideos({ corpusId }: CorpusVideosProps) {
       <SurfaceContent className="grid gap-3">
         {videosQuery.isPending ? <LoadingState label="Loading corpus videos" /> : null}
         {videosQuery.error ? (
-          <StateView variant="error">
+          <ErrorState>
             <StateViewTitle>Videos unavailable</StateViewTitle>
             <StateViewDescription>{String(videosQuery.error)}</StateViewDescription>
-          </StateView>
+          </ErrorState>
         ) : null}
         {videosQuery.data?.length === 0 ? (
           <StateView variant="empty">
@@ -118,7 +119,9 @@ function CorpusVideoRow({ corpusId, video }: CorpusVideoRowProps) {
         <span>{video.uploadDate ? `Uploaded ${video.uploadDate}` : "Upload date unknown"}</span>
         <span>{formatDuration(video.durationSeconds)}</span>
         <span>
-          {video.lastRetrievedAt ? `Retrieved ${formatDate(video.lastRetrievedAt)}` : "No provenance yet"}
+          {video.lastRetrievedAt
+            ? `Retrieved ${formatDate(video.lastRetrievedAt)}`
+            : "No provenance yet"}
         </span>
       </div>
 
@@ -132,6 +135,7 @@ function CorpusVideoRow({ corpusId, video }: CorpusVideoRowProps) {
           <option value="metadata">Refresh metadata</option>
           <option value="captions">Redownload captions</option>
           <option value="asr">Rerun ASR</option>
+          <option value="segments">Re-segment local captions</option>
           <option value="embeddings">Re-embed transcript</option>
           <option value="all">Reprocess all</option>
         </NativeSelect>
@@ -146,15 +150,27 @@ function CorpusVideoRow({ corpusId, video }: CorpusVideoRowProps) {
         </Button>
         {mutation.data ? (
           <span className="text-xs text-muted-foreground">
-            {mutation.data.segmentsReembedded > 0
-              ? `${mutation.data.segmentsReembedded} segments re-embedded`
-              : `revision ${mutation.data.metadataProcessingRevision}`}
+            {reprocessSummary(mutation.data)}
           </span>
         ) : null}
       </div>
       {mutation.error ? <p className="text-sm text-destructive">{String(mutation.error)}</p> : null}
     </article>
   );
+}
+
+function reprocessSummary(report: {
+  segmentsResegmented: number;
+  segmentsReembedded: number;
+  metadataProcessingRevision: number;
+}) {
+  if (report.segmentsResegmented > 0) {
+    return `${report.segmentsResegmented} segments rebuilt`;
+  }
+  if (report.segmentsReembedded > 0) {
+    return `${report.segmentsReembedded} segments re-embedded`;
+  }
+  return `metadata revision ${report.metadataProcessingRevision}`;
 }
 
 function formatDuration(seconds: number | null) {
