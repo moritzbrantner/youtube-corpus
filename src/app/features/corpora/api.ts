@@ -104,12 +104,19 @@ export type AddCorpusSourceReport = {
   check: SubscriptionCheckReport | null;
 };
 
-export type ReprocessStage = "metadata" | "captions" | "asr" | "embeddings" | "all";
+export type ReprocessStage =
+  | "metadata"
+  | "captions"
+  | "asr"
+  | "segments"
+  | "embeddings"
+  | "all";
 
 export type ReprocessReport = {
   videoId: string;
   stage: ReprocessStage;
   ingest: IngestReport | null;
+  segmentsResegmented: number;
   segmentsReembedded: number;
   metadataProcessingRevision: number;
   streamProcessingRevision: number | null;
