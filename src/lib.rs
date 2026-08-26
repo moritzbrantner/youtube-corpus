@@ -9,6 +9,7 @@ pub mod corpora;
 pub mod db;
 pub mod diagnostics;
 pub mod ingest;
+pub mod provenance;
 pub mod reprocessing;
 pub mod research_web;
 pub mod search;
