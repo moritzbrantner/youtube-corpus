@@ -90,9 +90,7 @@ function CorpusVideoRow({ corpusId, video }: CorpusVideoRowProps) {
     <article className="grid gap-3 rounded-md border border-border px-4 py-4">
       <div className="flex min-w-0 flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold">
-            {video.title ?? video.sourceUrl}
-          </h3>
+          <h3 className="truncate text-sm font-semibold">{video.title ?? video.sourceUrl}</h3>
           <p className="mt-1 truncate text-xs text-muted-foreground">
             {video.channel ?? video.sourceUrl}
           </p>
@@ -118,9 +116,7 @@ function CorpusVideoRow({ corpusId, video }: CorpusVideoRowProps) {
       </div>
 
       <div className="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
-        <span>
-          {video.uploadDate ? `Uploaded ${video.uploadDate}` : "Upload date unknown"}
-        </span>
+        <span>{video.uploadDate ? `Uploaded ${video.uploadDate}` : "Upload date unknown"}</span>
         <span>{formatDuration(video.durationSeconds)}</span>
         <span>
           {video.lastRetrievedAt
@@ -153,14 +149,10 @@ function CorpusVideoRow({ corpusId, video }: CorpusVideoRowProps) {
           {mutation.isPending ? "Reprocessing..." : "Run"}
         </Button>
         {mutation.data ? (
-          <span className="text-xs text-muted-foreground">
-            {reprocessSummary(mutation.data)}
-          </span>
+          <span className="text-xs text-muted-foreground">{reprocessSummary(mutation.data)}</span>
         ) : null}
       </div>
-      {mutation.error ? (
-        <p className="text-sm text-destructive">{String(mutation.error)}</p>
-      ) : null}
+      {mutation.error ? <p className="text-sm text-destructive">{String(mutation.error)}</p> : null}
     </article>
   );
 }
