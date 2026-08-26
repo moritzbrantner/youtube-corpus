@@ -120,9 +120,7 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
               <span className="text-sm font-medium">Source type</span>
               <NativeSelect
                 value={sourceKind}
-                onChange={(event) =>
-                  setSourceKind(event.target.value as "channel" | "playlist")
-                }
+                onChange={(event) => setSourceKind(event.target.value as "channel" | "playlist")}
               >
                 <option value="channel">Channel</option>
                 <option value="playlist">Playlist</option>
@@ -225,13 +223,9 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
                   <h3 className="truncate text-sm font-semibold">
                     {source.name ?? source.sourceUrl}
                   </h3>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">
-                    {source.sourceUrl}
-                  </p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">{source.sourceUrl}</p>
                 </div>
-                <Badge
-                  variant={source.lastCheckStatus === "failed" ? "destructive" : "outline"}
-                >
+                <Badge variant={source.lastCheckStatus === "failed" ? "destructive" : "outline"}>
                   {source.lastCheckStatus ?? "not checked"}
                 </Badge>
               </div>
