@@ -41,7 +41,6 @@ jobs:
             exit 1
           fi
 
-
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag_name=v$version" >> "$GITHUB_OUTPUT"
 
@@ -122,9 +121,6 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --check
-
-      - name: Refresh source dependency lock
-        run: cargo check
 
       - name: Check Rust
         run: cargo check --locked
