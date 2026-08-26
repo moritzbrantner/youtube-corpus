@@ -172,7 +172,7 @@ pub fn package_surface() -> PackageSurface {
             surface_operation(
                 "corpus.collections.videos.reprocess",
                 "Reprocess corpus video",
-                "Refreshes metadata, captions, ASR, embeddings, or the complete processing pipeline for one corpus video.",
+                "Refreshes metadata, captions, ASR, local segmentation, embeddings, or the complete processing pipeline for one corpus video.",
                 serde_json::json!({
                     "corpusId": "00000000-0000-0000-0000-000000000000",
                     "videoId": "00000000-0000-0000-0000-000000000000",
@@ -223,7 +223,7 @@ pub fn typescript_declarations() -> &'static str {
 export type SourceKind = "caption_manual" | "caption_auto" | "asr";
 export type AddSourceKind = "video" | "channel" | "playlist";
 export type JobStatus = "queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
-export type ReprocessStage = "metadata" | "captions" | "asr" | "embeddings" | "all";
+export type ReprocessStage = "metadata" | "captions" | "asr" | "segments" | "embeddings" | "all";
 
 export type IngestItemReport = {
   videoId: string | null;
@@ -308,6 +308,7 @@ export type ReprocessReport = {
   videoId: string;
   stage: ReprocessStage;
   ingest: IngestReport | null;
+  segmentsResegmented: number;
   segmentsReembedded: number;
   metadataProcessingRevision: number;
   streamProcessingRevision: number | null;
