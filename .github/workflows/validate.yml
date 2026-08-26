@@ -34,12 +34,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Check frontend formatting
-        run: |
-          if ! bun run format:check; then
-            bun run format
-            git diff -- src/app/features/corpora
-            exit 1
-          fi
+        run: bun run format:check
 
       - name: Build frontend
         run: bun run build
