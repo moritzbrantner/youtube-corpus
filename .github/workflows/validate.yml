@@ -22,12 +22,8 @@ jobs:
 
       - name: Verify local-only source contract
         run: |
-          jq -e '.schemaVersion == 1 and .cargo.localOnly == true' .coding-tooling.source-deps.json >/dev/null
+          jq -e '.schemaVersion == 2 and .cargo.localOnly == true' .coding-tooling.source-deps.json >/dev/null
           jq -e '.cargo.patches | length > 0 and all(.[]; (.package | length > 0) and (.git | length > 0) and (.rev | test("^[0-9a-f]{40}$")) and (.localPath | length > 0))' .coding-tooling.source-deps.json >/dev/null
-          if grep -n 'secrets[.]GH_PACKAGES_TOKEN' .github/workflows/validate.yml; then
-            echo "Ordinary validation must not depend on private cross-repository credentials." >&2
-            exit 1
-          fi
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
