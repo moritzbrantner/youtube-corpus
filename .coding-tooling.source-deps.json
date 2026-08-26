@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 2,
+  "cargo": {
+    "localOnly": true,
+    "patches": [
+      {
+        "package": "moenarch-text-core",
+        "git": "https://github.com/moritzbrantner/nlp-stack",
+        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
+        "localPath": "../nlp-stack/crates/text/text-core"
+      },
+      {
+        "package": "moenarch-text-embeddings",
+        "git": "https://github.com/moritzbrantner/nlp-stack",
+        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
+        "localPath": "../nlp-stack/crates/text/text-embeddings"
+      },
+      {
+        "package": "moenarch-text-lexical",
+        "git": "https://github.com/moritzbrantner/nlp-stack",
+        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
+        "localPath": "../nlp-stack/crates/text/text-lexical"
+      },
+      {
+        "package": "moenarch-text-transcripts",
+        "git": "https://github.com/moritzbrantner/nlp-stack",
+        "rev": "057689ca1df031d677f4afd9d65eed181c6fca06",
+        "localPath": "../nlp-stack/crates/text/text-transcripts"
+      },
+      {
+        "package": "moenarch-runtime-core",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "ead588f27d130d775524db31189b734a224843d5",
+        "localPath": "../moenarch-foundation/crates/runtime/runtime-core"
+      },
+      {
+        "package": "moenarch-jobs-core",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "ead588f27d130d775524db31189b734a224843d5",
+        "localPath": "../moenarch-foundation/crates/jobs/jobs-core"
+      },
+      {
+        "package": "moenarch-video-analysis-ffmpeg",
+        "git": "https://github.com/moritzbrantner/visual-analysis",
+        "rev": "d341c668f1baa14cd3d4e99c8ce8f5d39e43a974",
+        "localPath": "../visual-analysis/crates/video/video-analysis-ffmpeg"
+      },
+      {
+        "package": "moenarch-video-analysis-ingest",
+        "git": "https://github.com/moritzbrantner/visual-analysis",
+        "rev": "d341c668f1baa14cd3d4e99c8ce8f5d39e43a974",
+        "localPath": "../visual-analysis/crates/video/video-analysis-ingest"
+      }
+    ]
+  }
+}

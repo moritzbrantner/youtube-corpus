@@ -6,9 +6,6 @@ on:
       version:
         required: true
         default: "0.1.0"
-      rust_packages_ref:
-        required: true
-        description: "Commit SHA or tag in moritzbrantner/rust-packages"
   push:
     tags:
       - "v*"
@@ -27,7 +24,6 @@ jobs:
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       tag_name: ${{ steps.resolve.outputs.tag_name }}
-      rust_packages_ref: ${{ steps.resolve.outputs.rust_packages_ref }}
     steps:
       - name: Resolve inputs
         id: resolve
@@ -36,10 +32,8 @@ jobs:
           set -euo pipefail
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             version="${{ inputs.version }}"
-            rust_packages_ref="${{ inputs.rust_packages_ref }}"
           else
             version="${GITHUB_REF_NAME#v}"
-            rust_packages_ref="${{ vars.RUST_PACKAGES_RELEASE_REF }}"
           fi
 
           if [[ -z "$version" ]]; then
@@ -47,14 +41,8 @@ jobs:
             exit 1
           fi
 
-          if [[ -z "$rust_packages_ref" ]]; then
-            echo "RUST_PACKAGES_RELEASE_REF repository variable is required for tag builds." >&2
-            exit 1
-          fi
-
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag_name=v$version" >> "$GITHUB_OUTPUT"
-          echo "rust_packages_ref=$rust_packages_ref" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.target }}
@@ -82,12 +70,29 @@ jobs:
         with:
           path: youtube-corpus
 
-      - name: Check out rust-packages
+      - name: Check out nlp-stack
         uses: actions/checkout@v4
         with:
-          repository: moritzbrantner/rust-packages
-          ref: ${{ needs.prepare.outputs.rust_packages_ref }}
-          path: rust-packages
+          repository: moritzbrantner/nlp-stack
+          ref: 057689ca1df031d677f4afd9d65eed181c6fca06
+          path: nlp-stack
+          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
+
+      - name: Check out moenarch-foundation
+        uses: actions/checkout@v4
+        with:
+          repository: moritzbrantner/moenarch-foundation
+          ref: ead588f27d130d775524db31189b734a224843d5
+          path: moenarch-foundation
+          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
+
+      - name: Check out visual-analysis
+        uses: actions/checkout@v4
+        with:
+          repository: moritzbrantner/visual-analysis
+          ref: d341c668f1baa14cd3d4e99c8ce8f5d39e43a974
+          path: visual-analysis
+          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
@@ -215,4 +220,4 @@ jobs:
 
             ## Notes
 
-            The release binaries include the browser UI. Source builds require `youtube-corpus` and `rust-packages` checked out as sibling directories.
+            The release binaries include the browser UI. Source builds use pinned sibling checkouts of `nlp-stack`, `moenarch-foundation`, and `visual-analysis`.

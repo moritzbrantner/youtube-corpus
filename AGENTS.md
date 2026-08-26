@@ -4,8 +4,8 @@
 
 This repository is a Rust CLI for building a searchable YouTube transcript
 corpus in Postgres. Running the binary with no subcommand starts a local browser
-UI served by the Rust process. It uses pinned `moritzbrantner` Rust git
-dependencies for transcript parsing and deterministic text embeddings.
+UI served by the Rust process. It uses exact sibling source checkouts from `nlp-stack`, `moenarch-foundation`,
+and `visual-analysis` for transcript parsing, embeddings, runtime, and ingest.
 
 ## Local Services
 
