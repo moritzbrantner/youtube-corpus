@@ -74,6 +74,13 @@ pub struct ReprocessReport {
     pub stream_processing_revision: Option<u64>,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum StreamScope {
+    All,
+    Captions,
+    Asr,
+}
+
 pub async fn reprocess_video(request: ReprocessRequest) -> anyhow::Result<ReprocessReport> {
     let pool = crate::db::connect(&request.database_url).await?;
     let row = sqlx::query(
@@ -96,15 +103,15 @@ pub async fn reprocess_video(request: ReprocessRequest) -> anyhow::Result<Reproc
             "stage": request.stage.as_str(),
             "captions": {
                 "enabled": request.stage.includes_captions(),
-                "languages": request.caption_languages,
+                "languages": &request.caption_languages,
             },
             "asr": {
                 "enabled": request.stage.includes_asr(),
-                "command": request.transcriber_command,
-                "args": request.transcriber_args,
+                "command": &request.transcriber_command,
+                "args": &request.transcriber_args,
                 "timeoutSeconds": request.transcriber_timeout_seconds,
             },
-            "ytDlp": request.yt_dlp,
+            "ytDlp": &request.yt_dlp,
         });
         let report = ingest_corpus(IngestRequest {
             run_id: Some(Uuid::new_v4()),
@@ -147,7 +154,7 @@ pub async fn reprocess_video(request: ReprocessRequest) -> anyhow::Result<Reproc
             "embedder": "hashed-text-embedder",
             "dimensions": 128,
         });
-        stamp_stream_provenance(&pool, request.video_id, None, &config).await?;
+        stamp_stream_provenance(&pool, request.video_id, StreamScope::All, &config).await?;
         count
     } else {
         0
@@ -214,19 +221,13 @@ async fn stamp_processing_provenance(
 
     match stage {
         ReprocessStage::Captions => {
-            stamp_stream_provenance(
-                pool,
-                video_id,
-                Some(&["caption_manual", "caption_auto"]),
-                config,
-            )
-            .await?;
+            stamp_stream_provenance(pool, video_id, StreamScope::Captions, config).await?;
         }
         ReprocessStage::Asr => {
-            stamp_stream_provenance(pool, video_id, Some(&["asr"]), config).await?;
+            stamp_stream_provenance(pool, video_id, StreamScope::Asr, config).await?;
         }
         ReprocessStage::All => {
-            stamp_stream_provenance(pool, video_id, None, config).await?;
+            stamp_stream_provenance(pool, video_id, StreamScope::All, config).await?;
         }
         ReprocessStage::Metadata | ReprocessStage::Embeddings => {}
     }
@@ -236,39 +237,43 @@ async fn stamp_processing_provenance(
 async fn stamp_stream_provenance(
     pool: &sqlx::PgPool,
     video_id: Uuid,
-    source_kinds: Option<&[&str]>,
+    scope: StreamScope,
     config: &serde_json::Value,
 ) -> anyhow::Result<()> {
-    if let Some(source_kinds) = source_kinds {
-        sqlx::query(
-            "UPDATE transcript_streams
-             SET processor = 'youtube-corpus',
-                 processor_version = $3,
-                 processing_config = $4,
-                 retrieved_at = now()
-             WHERE video_id = $1 AND source_kind = ANY($2)",
-        )
-        .bind(video_id)
-        .bind(source_kinds)
-        .bind(env!("CARGO_PKG_VERSION"))
-        .bind(config)
-        .execute(pool)
-        .await?;
-    } else {
-        sqlx::query(
+    let sql = match scope {
+        StreamScope::All => {
             "UPDATE transcript_streams
              SET processor = 'youtube-corpus',
                  processor_version = $2,
                  processing_config = $3,
                  retrieved_at = now()
-             WHERE video_id = $1",
-        )
+             WHERE video_id = $1"
+        }
+        StreamScope::Captions => {
+            "UPDATE transcript_streams
+             SET processor = 'youtube-corpus',
+                 processor_version = $2,
+                 processing_config = $3,
+                 retrieved_at = now()
+             WHERE video_id = $1
+               AND source_kind IN ('caption_manual', 'caption_auto')"
+        }
+        StreamScope::Asr => {
+            "UPDATE transcript_streams
+             SET processor = 'youtube-corpus',
+                 processor_version = $2,
+                 processing_config = $3,
+                 retrieved_at = now()
+             WHERE video_id = $1 AND source_kind = 'asr'"
+        }
+    };
+
+    sqlx::query(sql)
         .bind(video_id)
         .bind(env!("CARGO_PKG_VERSION"))
         .bind(config)
         .execute(pool)
         .await?;
-    }
     Ok(())
 }
 
