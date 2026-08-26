@@ -416,10 +416,11 @@ pub async fn corpus_video_ids(pool: &PgPool, corpus_id: Uuid) -> anyhow::Result<
 }
 
 async fn require_corpus(pool: &PgPool, id: Uuid) -> anyhow::Result<()> {
-    let exists = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM corpora WHERE id = $1)")
-        .bind(id)
-        .fetch_one(pool)
-        .await?;
+    let exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM corpora WHERE id = $1)")
+            .bind(id)
+            .fetch_one(pool)
+            .await?;
     if !exists {
         anyhow::bail!("corpus not found");
     }
@@ -451,8 +452,14 @@ mod tests {
 
     #[test]
     fn normalizes_shareable_corpus_slugs() {
-        assert_eq!(normalize_slug(" Church History ").unwrap(), "church-history");
-        assert_eq!(normalize_slug("rust__media---tools").unwrap(), "rust-media-tools");
+        assert_eq!(
+            normalize_slug(" Church History ").unwrap(),
+            "church-history"
+        );
+        assert_eq!(
+            normalize_slug("rust__media---tools").unwrap(),
+            "rust-media-tools"
+        );
     }
 
     #[test]

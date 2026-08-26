@@ -145,13 +145,8 @@ pub async fn reprocess_video(request: ReprocessRequest) -> anyhow::Result<Reproc
         })
         .await?;
 
-        stamp_processing_provenance(
-            &pool,
-            request.video_id,
-            request.stage,
-            &processing_config,
-        )
-        .await?;
+        stamp_processing_provenance(&pool, request.video_id, request.stage, &processing_config)
+            .await?;
         ingest = Some(report);
     }
 
@@ -166,13 +161,7 @@ pub async fn reprocess_video(request: ReprocessRequest) -> anyhow::Result<Reproc
                 "dimensions": 128,
             },
         });
-        stamp_stream_provenance(
-            &pool,
-            request.video_id,
-            StreamScope::Captions,
-            &config,
-        )
-        .await?;
+        stamp_stream_provenance(&pool, request.video_id, StreamScope::Captions, &config).await?;
         count
     } else {
         0
@@ -345,14 +334,7 @@ async fn resegment_video(
     let mut tx = pool.begin().await?;
     let mut indexed = 0_u64;
     for stream in streams {
-        indexed += resegment_stream(
-            &mut tx,
-            video_id,
-            source_url,
-            &stream,
-            &embedder,
-        )
-        .await?;
+        indexed += resegment_stream(&mut tx, video_id, source_url, &stream, &embedder).await?;
     }
     tx.commit().await?;
     Ok(indexed)

@@ -182,7 +182,9 @@ fn database_url(state: &ResearchState) -> Result<String, ResearchError> {
         .ok_or_else(|| ResearchError::bad_request("DATABASE_URL is required."))
 }
 
-async fn list_corpora(State(state): State<ResearchState>) -> Result<Json<Vec<Corpus>>, ResearchError> {
+async fn list_corpora(
+    State(state): State<ResearchState>,
+) -> Result<Json<Vec<Corpus>>, ResearchError> {
     let pool = pool(&state).await?;
     crate::corpora::list_corpora(&pool)
         .await
@@ -374,7 +376,9 @@ async fn check_source(
         .await
         .map_err(ResearchError::internal)?
     {
-        return Err(ResearchError::not_found("Source is not part of this corpus."));
+        return Err(ResearchError::not_found(
+            "Source is not part of this corpus.",
+        ));
     }
     let report = check_subscriptions(CheckSubscriptionsRequest {
         database_url: database_url(&state)?,
@@ -471,7 +475,9 @@ async fn reprocess_video(
         .await
         .map_err(map_corpus_error)?;
     if !allowed_video_ids.contains(&video_id) {
-        return Err(ResearchError::not_found("Video is not part of this corpus."));
+        return Err(ResearchError::not_found(
+            "Video is not part of this corpus.",
+        ));
     }
     crate::reprocessing::reprocess_video(ReprocessRequest {
         database_url: database_url(&state)?,
@@ -499,7 +505,10 @@ async fn persist_check_outcome(
     subscription_id: Uuid,
     report: &CheckSubscriptionsReport,
 ) -> Result<(), ResearchError> {
-    let item = report.items.iter().find(|item| item.subscription.id == subscription_id);
+    let item = report
+        .items
+        .iter()
+        .find(|item| item.subscription.id == subscription_id);
     let status = item.map(|item| item.status.as_str()).unwrap_or("completed");
     let message = item.and_then(|item| item.message.as_deref());
     crate::corpora::record_check_outcome(pool, subscription_id, status, message)
@@ -549,6 +558,9 @@ mod tests {
             normalized_languages(Some(vec![" EN ".to_string(), "de".to_string()])),
             vec!["en".to_string(), "de".to_string()]
         );
-        assert_eq!(normalized_languages(Some(Vec::new())), vec!["en".to_string()]);
+        assert_eq!(
+            normalized_languages(Some(Vec::new())),
+            vec!["en".to_string()]
+        );
     }
 }
