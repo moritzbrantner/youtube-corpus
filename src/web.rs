@@ -1,4 +1,4 @@
-include!("web_legacy.rs");
+include!("web/core.rs");
 
 fn app_with_research(state: AppState) -> Router {
     let research = crate::research_web::router(state.database_url.clone(), state.yt_dlp.clone());
