@@ -2,16 +2,27 @@
 
 ## Setup
 
-Source builds currently expect `youtube-corpus` and `rust-packages` to be
-checked out as sibling repositories:
+Cross-repository Rust development uses exact sibling source repositories. Keep the repositories next to one another so `scripts/source-deps` can validate the declared local-only source graph:
 
 ```bash
-mkdir youtube-corpus-release-src
-cd youtube-corpus-release-src
-git clone https://github.com/moritzbrantner/rust-packages.git
+mkdir youtube-corpus-src
+cd youtube-corpus-src
 git clone https://github.com/moritzbrantner/youtube-corpus.git
+git clone https://github.com/moritzbrantner/nlp-stack.git
+git clone https://github.com/moritzbrantner/moenarch-foundation.git
+git clone https://github.com/moritzbrantner/visual-analysis.git
+git clone https://github.com/moritzbrantner/coding-tooling.git
 cd youtube-corpus
 ```
+
+The outer coding workspace or agent loop should place each sibling repository at the exact revision declared in `.coding-tooling.source-deps.json`. Activate the graph with:
+
+```bash
+bash scripts/source-deps activate
+bash scripts/source-deps status
+```
+
+Local-only source mode fails if a required sibling checkout is missing or at a different revision. It never falls back to authenticated Git and ordinary development does not require package publication or `GH_PACKAGES_TOKEN`.
 
 ```bash
 bun install --frozen-lockfile
@@ -19,8 +30,7 @@ docker compose up -d postgres
 cp .env.example .env
 ```
 
-Binary release users do not need to clone `rust-packages`; release archives
-include the CLI binary and embedded browser UI.
+Binary release users do not need sibling source repositories; release archives include the CLI binary and embedded browser UI.
 
 The default local database URL is:
 
@@ -30,7 +40,7 @@ postgres://postgres:postgres@localhost:5432/youtube_corpus
 
 ## Backend CLI Development
 
-Run command-line workflows directly with Cargo:
+Run command-line workflows directly with Cargo after source-mode activation:
 
 ```bash
 cargo run -- migrate
@@ -76,7 +86,7 @@ bun run build
 cargo check
 ```
 
-CI enforces this order.
+Hosted CI keeps only repository-local checks. Exact cross-repository Rust build/test evidence comes from the local source workspace.
 
 ## Integration Tests
 
@@ -96,24 +106,24 @@ skip when tools or environment variables are missing.
 
 ## Dependency Updates
 
-The `moritzbrantner` runtime, jobs, text, and video crates are local path
-dependencies from the sibling `rust-packages` checkout. To update them:
+The exact source-development owners are `nlp-stack`, `moenarch-foundation`, and `visual-analysis`.
 
-1. Update the sibling `rust-packages` checkout to the intended commit.
-2. Run `bun run build`.
-3. Run `cargo update` for the affected `moritzbrantner-*` packages when lockfile
-   metadata changes.
-4. Run `cargo check` and `cargo test`.
+1. Move the relevant sibling repository to the intended reviewed commit.
+2. Update its exact `rev` in `.coding-tooling.source-deps.json`.
+3. Run `bash scripts/source-deps activate`; it verifies every local checkout before writing the Cargo patch config.
+4. Run `bun run build`, the relevant Cargo checks/tests, and Postgres integration checks when affected.
+5. Commit application changes and the reviewed source revision pin, but never the generated `.cargo/config.toml`.
 
-For release builds, the GitHub workflow checks out `youtube-corpus` and
-`rust-packages` as siblings and pins `rust-packages` through the workflow input
-or `RUST_PACKAGES_RELEASE_REF` repository variable.
+Do not publish upstream packages simply to unblock this workflow. Registry-only or release-binary proof is a separate explicit distribution concern.
+
+The GitHub release workflow is intentionally separate from ordinary development. It uses exact release inputs and must keep every Cargo invocation locked; source-development credentials or source graph changes are not authorization to mutate release dependency resolution.
 
 ## Validation
 
-Canonical validation:
+Canonical local source validation:
 
 ```bash
+bash scripts/source-deps activate
 bun run verify
 ```
 
@@ -126,6 +136,12 @@ cargo check --locked
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 bun run verify:postgres
+```
+
+When finished with source development:
+
+```bash
+bash scripts/source-deps deactivate
 ```
 
 For a faster loop without Docker, use `bun run verify:fast`. Network-backed
