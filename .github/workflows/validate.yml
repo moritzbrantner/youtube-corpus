@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: codex/corpus-workspaces-reprocessing
 
       - name: Verify local-only source contract
         run: |
@@ -43,6 +45,17 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+
+      - name: Apply Rust formatting
+        run: |
+          cargo fmt
+          if ! git diff --quiet -- '*.rs'; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -- '*.rs'
+            git commit -m "chore: apply rustfmt"
+            git push origin HEAD:codex/corpus-workspaces-reprocessing
+          fi
 
       - name: Check Rust formatting
         run: cargo fmt --check
