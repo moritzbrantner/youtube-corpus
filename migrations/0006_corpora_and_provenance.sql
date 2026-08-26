@@ -58,6 +58,35 @@ ALTER TABLE corpus_subscriptions
   ADD COLUMN IF NOT EXISTS last_check_status text,
   ADD COLUMN IF NOT EXISTS last_check_message text;
 
+ALTER TABLE videos
+  ADD COLUMN IF NOT EXISTS metadata_retrieved_at timestamptz NOT NULL DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS metadata_processor text NOT NULL DEFAULT 'youtube-corpus',
+  ADD COLUMN IF NOT EXISTS metadata_processor_version text NOT NULL DEFAULT '0.1.0',
+  ADD COLUMN IF NOT EXISTS metadata_processing_config jsonb NOT NULL DEFAULT '{}'::jsonb,
+  ADD COLUMN IF NOT EXISTS metadata_processing_revision bigint NOT NULL DEFAULT 1;
+
+ALTER TABLE videos
+  ADD COLUMN IF NOT EXISTS metadata_checksum text
+  GENERATED ALWAYS AS (md5(coalesce(metadata::text, '{}'))) STORED;
+
+CREATE OR REPLACE FUNCTION youtube_corpus_bump_video_metadata_revision()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.metadata IS DISTINCT FROM OLD.metadata THEN
+    NEW.metadata_processing_revision := OLD.metadata_processing_revision + 1;
+    NEW.metadata_retrieved_at := now();
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS videos_metadata_revision_trigger ON videos;
+CREATE TRIGGER videos_metadata_revision_trigger
+BEFORE UPDATE OF metadata
+ON videos
+FOR EACH ROW
+EXECUTE FUNCTION youtube_corpus_bump_video_metadata_revision();
+
 ALTER TABLE transcript_streams
   ADD COLUMN IF NOT EXISTS retrieved_at timestamptz NOT NULL DEFAULT now(),
   ADD COLUMN IF NOT EXISTS processor text NOT NULL DEFAULT 'youtube-corpus',
