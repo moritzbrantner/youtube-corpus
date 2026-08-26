@@ -2,6 +2,7 @@
 node_modules/
 dist/
 /.env
+/.cargo/config.toml
 /youtube-corpus.conf
 /use-case-output/
 /.sqlx/
