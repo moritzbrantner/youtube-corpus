@@ -94,6 +94,92 @@ pub fn package_surface() -> PackageSurface {
                     "id": "00000000-0000-0000-0000-000000000000"
                 }),
             ),
+            surface_operation(
+                "corpus.collections.list",
+                "List research corpora",
+                "Lists named research corpora and their source/video counts.",
+                serde_json::json!({}),
+            ),
+            surface_operation(
+                "corpus.collections.create",
+                "Create research corpus",
+                "Creates a named corpus used to scope sources, videos, search, and reprocessing.",
+                serde_json::json!({
+                    "name": "Church history research",
+                    "description": "Primary sources and lectures"
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.sources.list",
+                "List corpus sources",
+                "Lists monitored channel and playlist sources attached to a named corpus.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000"
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.sources.add",
+                "Add corpus source",
+                "Adds a channel or playlist to a corpus for one-time ingestion or ongoing monitoring.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "sourceKind": "channel",
+                    "sourceUrl": "https://www.youtube.com/@Distinguo/videos",
+                    "monitor": true,
+                    "ingestNow": true,
+                    "captionLanguages": ["en"]
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.sources.check",
+                "Check corpus source",
+                "Checks one monitored source for newly published videos and ingests eligible additions.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "sourceId": "00000000-0000-0000-0000-000000000000"
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.sources.enabled",
+                "Set corpus source enabled state",
+                "Enables or disables future checks for a monitored source.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "sourceId": "00000000-0000-0000-0000-000000000000",
+                    "enabled": true
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.videos.list",
+                "List corpus videos",
+                "Lists videos attached directly or through monitored sources, including transcript provenance.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "limit": 100
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.search",
+                "Search a research corpus",
+                "Searches transcript passages while returning only videos belonging to the selected corpus.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "query": "church history",
+                    "mode": "hybrid",
+                    "topK": 10
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.videos.reprocess",
+                "Reprocess corpus video",
+                "Refreshes metadata, captions, ASR, embeddings, or the complete processing pipeline for one corpus video.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "videoId": "00000000-0000-0000-0000-000000000000",
+                    "stage": "captions",
+                    "captionLanguages": ["en"]
+                }),
+            ),
         ],
     }
 }
@@ -137,8 +223,9 @@ pub fn typescript_declarations() -> &'static str {
 export type SourceKind = "caption_manual" | "caption_auto" | "asr";
 export type AddSourceKind = "video" | "channel" | "playlist";
 export type JobStatus = "queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
+export type ReprocessStage = "metadata" | "captions" | "asr" | "embeddings" | "all";
 
-export interface IngestItemReport {
+export type IngestItemReport = {
   videoId: string | null;
   sourceUrl: string;
   title: string | null;
@@ -146,29 +233,29 @@ export interface IngestItemReport {
   streamsIndexed: number;
   segmentsIndexed: number;
   message: string | null;
-}
+};
 
-export interface IngestReport {
+export type IngestReport = {
   workflow: string;
   runId: string;
   videosSeen: number;
   videosIndexed: number;
   segmentsIndexed: number;
   items: IngestItemReport[];
-}
+};
 
-export interface JobProgress {
+export type JobProgress = {
   completed: number;
   total: number | null;
   unit: string;
   message: string | null;
-}
+};
 
-export interface JobFailure {
+export type JobFailure = {
   message: string;
-}
+};
 
-export interface IngestJob {
+export type IngestJob = {
   id: string;
   status: JobStatus;
   progress: JobProgress | null;
@@ -176,9 +263,9 @@ export interface IngestJob {
   ingest: IngestReport | null;
   sourceUrl: string | null;
   createdAt: string;
-}
+};
 
-export interface IngestRunStatus {
+export type IngestRunStatus = {
   id: string;
   sourceUrl: string | null;
   status: string;
@@ -188,6 +275,42 @@ export interface IngestRunStatus {
   report: Record<string, unknown>;
   createdAt: string;
   job: IngestJob | null;
-}
+};
+
+export type Corpus = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  isDefault: boolean;
+  videoCount: number;
+  sourceCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CorpusSource = {
+  id: string;
+  sourceKind: "channel" | "playlist";
+  sourceUrl: string;
+  name: string | null;
+  enabled: boolean;
+  lastCheckedAt: string | null;
+  lastIngestedAt: string | null;
+  lastCheckStatus: string | null;
+  lastCheckMessage: string | null;
+  itemsSeen: number;
+  itemsIndexed: number;
+  itemsFailed: number;
+};
+
+export type ReprocessReport = {
+  videoId: string;
+  stage: ReprocessStage;
+  ingest: IngestReport | null;
+  segmentsReembedded: number;
+  metadataProcessingRevision: number;
+  streamProcessingRevision: number | null;
+};
 "#
 }
