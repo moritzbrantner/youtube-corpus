@@ -4,6 +4,7 @@ import * as React from "react";
 import {
   Badge,
   Button,
+  ErrorState,
   Input,
   LoadingState,
   NativeSelect,
@@ -33,7 +34,7 @@ type CorpusSearchProps = {
 
 export function CorpusSearch({
   corpusId,
-  submittedQuery,
+ submittedQuery,
   selectedSegmentId,
   onSubmitQuery,
   onSelectSegment,
@@ -74,7 +75,10 @@ export function CorpusSearch({
           </SurfaceDescription>
         </SurfaceHeader>
         <SurfaceContent className="grid gap-4">
-          <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_auto]" onSubmit={submit}>
+          <form
+            className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_auto]"
+            onSubmit={submit}
+          >
             <Input
               aria-label="Search corpus"
               value={draft}
@@ -103,25 +107,34 @@ export function CorpusSearch({
               </StateViewDescription>
             </StateView>
           ) : null}
-          {searchQuery.isPending && submittedQuery ? <LoadingState label="Searching transcripts" /> : null}
+          {searchQuery.isPending && submittedQuery ? (
+            <LoadingState label="Searching transcripts" />
+          ) : null}
           {searchQuery.error ? (
-            <StateView variant="error">
+            <ErrorState>
               <StateViewTitle>Search failed</StateViewTitle>
               <StateViewDescription>{String(searchQuery.error)}</StateViewDescription>
-            </StateView>
+            </ErrorState>
           ) : null}
           {searchQuery.data?.results.length === 0 ? (
             <StateView variant="empty">
               <StateViewTitle>No matching passages</StateViewTitle>
-              <StateViewDescription>Try a broader query or another retrieval mode.</StateViewDescription>
+              <StateViewDescription>
+                Try a broader query or another retrieval mode.
+              </StateViewDescription>
             </StateView>
           ) : null}
           <div className="grid gap-3">
             {searchQuery.data?.results.map((result) => (
-              <article key={result.segmentId} className="grid gap-3 rounded-md border border-border px-4 py-4">
+              <article
+                key={result.segmentId}
+                className="grid gap-3 rounded-md border border-border px-4 py-4"
+              >
                 <div className="flex min-w-0 flex-wrap items-start gap-3">
                   <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-sm font-semibold">{result.title ?? result.sourceUrl}</h3>
+                    <h3 className="truncate text-sm font-semibold">
+                      {result.title ?? result.sourceUrl}
+                    </h3>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {formatTimestamp(result.startSeconds)} · {result.sourceKind}
                     </p>
@@ -144,7 +157,9 @@ export function CorpusSearch({
                     variant={selectedSegmentId === result.segmentId ? "default" : "ghost"}
                     size="sm"
                     onClick={() =>
-                      onSelectSegment(selectedSegmentId === result.segmentId ? null : result.segmentId)
+                      onSelectSegment(
+                        selectedSegmentId === result.segmentId ? null : result.segmentId,
+                      )
                     }
                   >
                     Transcript context
@@ -167,15 +182,19 @@ export function CorpusSearch({
           {!selectedSegmentId ? (
             <StateView variant="empty">
               <StateViewTitle>No passage selected</StateViewTitle>
-              <StateViewDescription>Choose transcript context from a search result.</StateViewDescription>
+              <StateViewDescription>
+                Choose transcript context from a search result.
+              </StateViewDescription>
             </StateView>
           ) : null}
-          {contextQuery.isPending && selectedSegmentId ? <LoadingState label="Loading transcript context" /> : null}
+          {contextQuery.isPending && selectedSegmentId ? (
+            <LoadingState label="Loading transcript context" />
+          ) : null}
           {contextQuery.error ? (
-            <StateView variant="error">
+            <ErrorState>
               <StateViewTitle>Context unavailable</StateViewTitle>
               <StateViewDescription>{String(contextQuery.error)}</StateViewDescription>
-            </StateView>
+            </ErrorState>
           ) : null}
           {contextQuery.data ? (
             <>
