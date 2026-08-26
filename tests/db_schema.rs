@@ -25,4 +25,37 @@ async fn migrations_run_against_postgres() {
     .await
     .unwrap();
     assert_eq!(transcriber_timeout_columns, 1);
+
+    let corpus_tables: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+         FROM information_schema.tables
+         WHERE table_name IN ('corpora', 'corpus_source_memberships', 'corpus_video_memberships')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(corpus_tables, 3);
+
+    let provenance_columns: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+         FROM information_schema.columns
+         WHERE (table_name = 'videos' AND column_name IN (
+                  'metadata_checksum', 'metadata_retrieved_at', 'metadata_processing_revision'
+                ))
+            OR (table_name = 'transcript_streams' AND column_name IN (
+                  'content_checksum', 'retrieved_at', 'processing_revision', 'processing_config'
+                ))",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(provenance_columns, 7);
+
+    let default_corpus: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM corpora WHERE slug = 'default' AND is_default = true",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(default_corpus, 1);
 }

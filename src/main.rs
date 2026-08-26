@@ -23,7 +23,7 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         None => {
-            youtube_corpus::web::serve(WebServerConfig {
+            youtube_corpus::web::serve_with_research(WebServerConfig {
                 database_url,
                 host,
                 port,
@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
             .await?;
         }
         Some(Command::Serve(args)) => {
-            youtube_corpus::web::serve(WebServerConfig {
+            youtube_corpus::web::serve_with_research(WebServerConfig {
                 database_url,
                 host,
                 port,
