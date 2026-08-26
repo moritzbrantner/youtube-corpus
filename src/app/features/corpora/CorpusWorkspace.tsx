@@ -44,15 +44,13 @@ export function CorpusWorkspace() {
     queryKey: corpusKeys.all,
     queryFn: listCorpora,
   });
-  const selectedCorpus =
-    corporaQuery.data?.find((corpus) => corpus.id === state.corpusId) ?? null;
+  const selectedCorpus = corporaQuery.data?.find((corpus) => corpus.id === state.corpusId) ?? null;
 
   React.useEffect(() => {
     if (!corporaQuery.data?.length || selectedCorpus) {
       return;
     }
-    const fallback =
-      corporaQuery.data.find((corpus) => corpus.isDefault) ?? corporaQuery.data[0];
+    const fallback = corporaQuery.data.find((corpus) => corpus.isDefault) ?? corporaQuery.data[0];
     if (fallback) {
       update({ corpusId: fallback.id });
     }
@@ -76,9 +74,7 @@ export function CorpusWorkspace() {
         </div>
         <PageActions>
           {selectedCorpus ? <Badge variant="outline">{selectedCorpus.slug}</Badge> : null}
-          {selectedCorpus?.isDefault ? (
-            <Badge variant="secondary">Default corpus</Badge>
-          ) : null}
+          {selectedCorpus?.isDefault ? <Badge variant="secondary">Default corpus</Badge> : null}
         </PageActions>
       </PageHeader>
 
