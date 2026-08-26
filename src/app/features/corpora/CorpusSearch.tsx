@@ -34,7 +34,7 @@ type CorpusSearchProps = {
 
 export function CorpusSearch({
   corpusId,
- submittedQuery,
+  submittedQuery,
   selectedSegmentId,
   onSubmitQuery,
   onSelectSegment,
@@ -75,10 +75,7 @@ export function CorpusSearch({
           </SurfaceDescription>
         </SurfaceHeader>
         <SurfaceContent className="grid gap-4">
-          <form
-            className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_auto]"
-            onSubmit={submit}
-          >
+          <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_auto]" onSubmit={submit}>
             <Input
               aria-label="Search corpus"
               value={draft}
@@ -103,7 +100,8 @@ export function CorpusSearch({
             <StateView variant="empty">
               <StateViewTitle>Search a transcript corpus</StateViewTitle>
               <StateViewDescription>
-                Results link to the exact YouTube timestamp and can open surrounding transcript context.
+                Results link to the exact YouTube timestamp and can open surrounding transcript
+                context.
               </StateViewDescription>
             </StateView>
           ) : null}
