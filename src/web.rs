@@ -2,7 +2,8 @@ include!("web/core.rs");
 
 fn app_with_research(state: AppState) -> Router {
     let research = crate::research_web::router(state.database_url.clone(), state.yt_dlp.clone());
-    app(state).merge(research)
+    let research_quality = crate::research_quality_web::router(state.database_url.clone());
+    app(state).merge(research).merge(research_quality)
 }
 
 pub async fn serve_with_research(config: WebServerConfig) -> anyhow::Result<()> {
