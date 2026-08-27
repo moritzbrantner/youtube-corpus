@@ -51,6 +51,34 @@ async fn migrations_run_against_postgres() {
     .unwrap();
     assert_eq!(provenance_columns, 7);
 
+    let research_quality_tables: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+         FROM information_schema.tables
+         WHERE table_name IN (
+           'transcript_stream_quality',
+           'preferred_transcript_streams',
+           'research_annotations',
+           'retrieval_evaluation_cases',
+           'retrieval_evaluation_targets',
+           'retrieval_evaluation_runs'
+         )",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(research_quality_tables, 6);
+
+    let annotation_checksum: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+         FROM information_schema.columns
+         WHERE table_name = 'research_annotations'
+           AND column_name = 'content_checksum'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(annotation_checksum, 1);
+
     let default_corpus: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM corpora WHERE slug = 'default' AND is_default = true",
     )
