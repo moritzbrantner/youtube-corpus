@@ -82,9 +82,7 @@ pub fn package_surface() -> PackageSurface {
                 "corpus.ingestRuns.list",
                 "List ingest runs",
                 "Lists recent background ingest runs.",
-                serde_json::json!({
-                    "limit": 20
-                }),
+                serde_json::json!({ "limit": 20 }),
             ),
             surface_operation(
                 "corpus.ingestRuns.get",
@@ -170,6 +168,84 @@ pub fn package_surface() -> PackageSurface {
                 }),
             ),
             surface_operation(
+                "corpus.collections.searchPreferred",
+                "Search preferred transcripts",
+                "Searches the corpus while keeping only the selected highest-quality transcript stream for each video.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "query": "church history",
+                    "mode": "hybrid",
+                    "topK": 10
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.transcriptQuality.list",
+                "List transcript quality",
+                "Lists deterministic stream quality measurements and the preferred stream for each corpus video.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000"
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.transcriptQuality.refresh",
+                "Refresh transcript quality",
+                "Recomputes transcript quality from source type, text presence, timestamp density, and duration coverage.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000"
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.annotations.list",
+                "List research annotations",
+                "Lists provenance-aware user or processor annotations scoped to a research corpus.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "kind": "claim",
+                    "limit": 100
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.annotations.create",
+                "Create research annotation",
+                "Creates an open-kind annotation anchored to a video, transcript stream, segment, or timestamp range.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "videoId": "00000000-0000-0000-0000-000000000000",
+                    "segmentId": "00000000-0000-0000-0000-000000000000",
+                    "kind": "claim",
+                    "text": "Research note"
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.evaluation.cases",
+                "List retrieval evaluation cases",
+                "Lists durable search queries and relevance judgments used for retrieval evaluation.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000"
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.evaluation.judgments.record",
+                "Record retrieval relevance",
+                "Records a relevant segment or timestamp target for a corpus query and retrieval mode.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "query": "church history",
+                    "mode": "hybrid",
+                    "topK": 10,
+                    "segmentId": "00000000-0000-0000-0000-000000000000",
+                    "relevance": 3
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.evaluation.run",
+                "Run retrieval evaluation",
+                "Runs the recorded relevance set and persists Recall@K, MRR, NDCG@K, and mean latency.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000"
+                }),
+            ),
+            surface_operation(
                 "corpus.collections.videos.reprocess",
                 "Reprocess corpus video",
                 "Refreshes metadata, captions, ASR, local segmentation, embeddings, or the complete processing pipeline for one corpus video.",
@@ -224,6 +300,7 @@ export type SourceKind = "caption_manual" | "caption_auto" | "asr";
 export type AddSourceKind = "video" | "channel" | "playlist";
 export type JobStatus = "queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
 export type ReprocessStage = "metadata" | "captions" | "asr" | "segments" | "embeddings" | "all";
+export type AnnotationSourceKind = "user" | "processor";
 
 export type IngestItemReport = {
   videoId: string | null;
@@ -312,6 +389,78 @@ export type ReprocessReport = {
   segmentsReembedded: number;
   metadataProcessingRevision: number;
   streamProcessingRevision: number | null;
+};
+
+export type TranscriptQuality = {
+  streamId: string;
+  videoId: string;
+  sourceKind: SourceKind;
+  language: string | null;
+  score: number;
+  sourcePriority: number;
+  coverageRatio: number;
+  timedSegmentRatio: number;
+  textCharacters: number;
+  segmentCount: number;
+  reasons: Record<string, unknown>;
+  isPreferred: boolean;
+  evaluatedAt: string;
+};
+
+export type ResearchAnnotation = {
+  id: string;
+  corpusId: string;
+  videoId: string;
+  streamId: string | null;
+  segmentId: string | null;
+  kind: string;
+  startSeconds: number | null;
+  endSeconds: number | null;
+  label: string | null;
+  text: string | null;
+  payload: Record<string, unknown>;
+  sourceKind: AnnotationSourceKind;
+  processor: string | null;
+  processorVersion: string | null;
+  processingConfig: Record<string, unknown>;
+  revision: number;
+  contentChecksum: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type EvaluationTarget = {
+  id: string;
+  videoId: string | null;
+  segmentId: string | null;
+  sourceUrl: string | null;
+  startSeconds: number | null;
+  endSeconds: number | null;
+  relevance: number;
+  notes: string | null;
+};
+
+export type EvaluationCase = {
+  id: string;
+  corpusId: string;
+  query: string;
+  mode: SearchMode;
+  topK: number;
+  notes: string | null;
+  targets: EvaluationTarget[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type EvaluationRunReport = {
+  id: string;
+  corpusId: string;
+  casesCount: number;
+  recallAtK: number;
+  meanReciprocalRank: number;
+  ndcgAtK: number;
+  meanLatencyMs: number;
+  createdAt: string;
 };
 "#
 }
