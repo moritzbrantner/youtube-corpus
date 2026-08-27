@@ -19,6 +19,7 @@ import {
 } from "@moritzbrantner/ui/shell";
 
 import { listCorpora } from "./api";
+import { CorpusAnnotations } from "./CorpusAnnotations";
 import { CorpusEvaluation } from "./CorpusEvaluation";
 import { CorpusPicker } from "./CorpusPicker";
 import { CorpusSearch } from "./CorpusSearch";
@@ -116,7 +117,10 @@ export function CorpusWorkspace() {
                 onSubmitQuery={(query) => update({ query })}
                 onSelectSegment={(segmentId) => update({ segmentId })}
               />
-              <CorpusEvaluation corpusId={selectedCorpus.id} />
+              <div className="grid gap-4 xl:grid-cols-2">
+                <CorpusEvaluation corpusId={selectedCorpus.id} />
+                <CorpusAnnotations corpusId={selectedCorpus.id} />
+              </div>
               <CorpusVideos corpusId={selectedCorpus.id} />
             </>
           ) : null}
