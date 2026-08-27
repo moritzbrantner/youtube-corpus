@@ -21,9 +21,12 @@ import {
 
 import {
   listCorpusVideos,
+  listTranscriptQuality,
+  refreshTranscriptQuality,
   reprocessCorpusVideo,
   type CorpusVideo,
   type ReprocessStage,
+  type TranscriptQuality,
 } from "./api";
 import { corpusKeys } from "./query-keys";
 
@@ -32,25 +35,73 @@ type CorpusVideosProps = {
 };
 
 export function CorpusVideos({ corpusId }: CorpusVideosProps) {
+  const queryClient = useQueryClient();
   const videosQuery = useQuery({
     queryKey: corpusKeys.videos(corpusId, 100),
     queryFn: () => listCorpusVideos(corpusId, 100),
   });
+  const qualityQuery = useQuery({
+    queryKey: corpusKeys.quality(corpusId),
+    queryFn: () => listTranscriptQuality(corpusId),
+  });
+  const refreshMutation = useMutation({
+    mutationFn: () => refreshTranscriptQuality(corpusId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: corpusKeys.quality(corpusId) }),
+        queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "search"] }),
+      ]);
+    },
+  });
+  const qualityByVideo = React.useMemo(() => {
+    const grouped = new Map<string, TranscriptQuality[]>();
+    for (const quality of qualityQuery.data ?? []) {
+      const items = grouped.get(quality.videoId) ?? [];
+      items.push(quality);
+      grouped.set(quality.videoId, items);
+    }
+    return grouped;
+  }, [qualityQuery.data]);
 
   return (
     <Surface>
       <SurfaceHeader>
         <SurfaceTitle>Videos</SurfaceTitle>
         <SurfaceDescription>
-          Browse corpus contents and selectively refresh metadata, transcripts, ASR, or embeddings.
+          Browse corpus contents, inspect the selected research transcript, and selectively
+          reprocess metadata, transcripts, ASR, or embeddings.
         </SurfaceDescription>
       </SurfaceHeader>
       <SurfaceContent className="grid gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">
+            Search defaults to the highest-quality transcript stream for each video while retaining
+            every original stream.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={refreshMutation.isPending}
+            onClick={() => refreshMutation.mutate()}
+          >
+            {refreshMutation.isPending ? "Scoring transcripts..." : "Refresh transcript quality"}
+          </Button>
+        </div>
+        {refreshMutation.error ? (
+          <p className="text-sm text-destructive">{String(refreshMutation.error)}</p>
+        ) : null}
         {videosQuery.isPending ? <LoadingState label="Loading corpus videos" /> : null}
         {videosQuery.error ? (
           <ErrorState>
             <StateViewTitle>Videos unavailable</StateViewTitle>
             <StateViewDescription>{String(videosQuery.error)}</StateViewDescription>
+          </ErrorState>
+        ) : null}
+        {qualityQuery.error ? (
+          <ErrorState>
+            <StateViewTitle>Transcript quality unavailable</StateViewTitle>
+            <StateViewDescription>{String(qualityQuery.error)}</StateViewDescription>
           </ErrorState>
         ) : null}
         {videosQuery.data?.length === 0 ? (
@@ -60,7 +111,12 @@ export function CorpusVideos({ corpusId }: CorpusVideosProps) {
           </StateView>
         ) : null}
         {videosQuery.data?.map((video) => (
-          <CorpusVideoRow key={video.id} corpusId={corpusId} video={video} />
+          <CorpusVideoRow
+            key={video.id}
+            corpusId={corpusId}
+            video={video}
+            quality={qualityByVideo.get(video.id) ?? []}
+          />
         ))}
       </SurfaceContent>
     </Surface>
@@ -70,17 +126,24 @@ export function CorpusVideos({ corpusId }: CorpusVideosProps) {
 type CorpusVideoRowProps = {
   corpusId: string;
   video: CorpusVideo;
+  quality: TranscriptQuality[];
 };
 
-function CorpusVideoRow({ corpusId, video }: CorpusVideoRowProps) {
+function CorpusVideoRow({ corpusId, video, quality }: CorpusVideoRowProps) {
   const queryClient = useQueryClient();
   const [stage, setStage] = React.useState<ReprocessStage>("metadata");
+  const preferred = quality.find((item) => item.isPreferred) ?? null;
   const mutation = useMutation({
-    mutationFn: () => reprocessCorpusVideo(corpusId, video.id, { stage }),
+    mutationFn: async () => {
+      const report = await reprocessCorpusVideo(corpusId, video.id, { stage });
+      await refreshTranscriptQuality(corpusId);
+      return report;
+    },
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: corpusKeys.all }),
         queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "videos"] }),
+        queryClient.invalidateQueries({ queryKey: corpusKeys.quality(corpusId) }),
         queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "search"] }),
       ]);
     },
@@ -110,6 +173,15 @@ function CorpusVideoRow({ corpusId, video }: CorpusVideoRowProps) {
             {kind}
           </Badge>
         ))}
+        {preferred ? (
+          <>
+            <Badge variant="secondary">preferred: {preferred.sourceKind}</Badge>
+            <Badge variant="outline">quality {formatPercent(preferred.score)}</Badge>
+            <Badge variant="outline">coverage {formatPercent(preferred.coverageRatio)}</Badge>
+          </>
+        ) : (
+          <Badge variant="outline">no preferred transcript</Badge>
+        )}
         {video.processingRevision !== null ? (
           <Badge variant="outline">revision {video.processingRevision}</Badge>
         ) : null}
@@ -169,6 +241,10 @@ function reprocessSummary(report: {
     return `${report.segmentsReembedded} segments re-embedded`;
   }
   return `metadata revision ${report.metadataProcessingRevision}`;
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 }
 
 function formatDuration(seconds: number | null) {

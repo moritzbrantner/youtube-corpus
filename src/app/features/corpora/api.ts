@@ -1,8 +1,10 @@
 import {
   apiFetch,
   type IngestReport,
+  type SearchMode,
   type SearchReport,
   type SearchTranscriptsInput,
+  type SourceKind,
   type TranscriptContextReport,
   getTranscriptContext,
 } from "../../api";
@@ -49,6 +51,123 @@ export type CorpusVideo = {
   processingRevision: number | null;
   lastRetrievedAt: string | null;
   updatedAt: string;
+};
+
+export type TranscriptQuality = {
+  streamId: string;
+  videoId: string;
+  sourceKind: SourceKind;
+  language: string | null;
+  score: number;
+  sourcePriority: number;
+  coverageRatio: number;
+  timedSegmentRatio: number;
+  textCharacters: number;
+  segmentCount: number;
+  reasons: Record<string, unknown>;
+  isPreferred: boolean;
+  evaluatedAt: string;
+};
+
+export type AnnotationSourceKind = "user" | "processor";
+
+export type ResearchAnnotation = {
+  id: string;
+  corpusId: string;
+  videoId: string;
+  streamId: string | null;
+  segmentId: string | null;
+  kind: string;
+  startSeconds: number | null;
+  endSeconds: number | null;
+  label: string | null;
+  text: string | null;
+  payload: Record<string, unknown>;
+  sourceKind: AnnotationSourceKind;
+  processor: string | null;
+  processorVersion: string | null;
+  processingConfig: Record<string, unknown>;
+  revision: number;
+  contentChecksum: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CreateAnnotationInput = {
+  videoId: string;
+  streamId?: string | null;
+  segmentId?: string | null;
+  kind: string;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
+  label?: string | null;
+  text?: string | null;
+  payload?: Record<string, unknown>;
+  sourceKind?: AnnotationSourceKind;
+  processor?: string | null;
+  processorVersion?: string | null;
+  processingConfig?: Record<string, unknown>;
+};
+
+export type EvaluationTarget = {
+  id: string;
+  videoId: string | null;
+  segmentId: string | null;
+  sourceUrl: string | null;
+  startSeconds: number | null;
+  endSeconds: number | null;
+  relevance: number;
+  notes: string | null;
+};
+
+export type EvaluationCase = {
+  id: string;
+  corpusId: string;
+  query: string;
+  mode: SearchMode;
+  topK: number;
+  notes: string | null;
+  targets: EvaluationTarget[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RecordEvaluationJudgmentInput = {
+  query: string;
+  mode: SearchMode;
+  topK: number;
+  videoId?: string | null;
+  segmentId?: string | null;
+  sourceUrl?: string | null;
+  startSeconds?: number | null;
+  endSeconds?: number | null;
+  relevance?: number;
+  notes?: string | null;
+};
+
+export type EvaluationCaseReport = {
+  caseId: string;
+  query: string;
+  topK: number;
+  relevantTargets: number;
+  hits: number;
+  recallAtK: number;
+  reciprocalRank: number;
+  ndcgAtK: number;
+  latencyMs: number;
+  returnedSegmentIds: string[];
+};
+
+export type EvaluationRunReport = {
+  id: string;
+  corpusId: string;
+  casesCount: number;
+  recallAtK: number;
+  meanReciprocalRank: number;
+  ndcgAtK: number;
+  meanLatencyMs: number;
+  cases: EvaluationCaseReport[];
+  createdAt: string;
 };
 
 export type CreateCorpusInput = {
@@ -164,8 +283,16 @@ export function listCorpusVideos(corpusId: string, limit = 100) {
   return apiFetch<CorpusVideo[]>(`/api/corpora/${corpusId}/videos?${query}`);
 }
 
+export function listTranscriptQuality(corpusId: string) {
+  return apiFetch<TranscriptQuality[]>(`/api/corpora/${corpusId}/transcript-quality`);
+}
+
+export function refreshTranscriptQuality(corpusId: string) {
+  return jsonPost<TranscriptQuality[]>(`/api/corpora/${corpusId}/transcript-quality/refresh`, {});
+}
+
 export function searchWithinCorpus(corpusId: string, input: SearchTranscriptsInput) {
-  return jsonPost<SearchReport>(`/api/corpora/${corpusId}/search`, input);
+  return jsonPost<SearchReport>(`/api/corpora/${corpusId}/preferred-search`, input);
 }
 
 export function reprocessCorpusVideo(
@@ -174,6 +301,34 @@ export function reprocessCorpusVideo(
   input: ReprocessVideoInput,
 ) {
   return jsonPost<ReprocessReport>(`/api/corpora/${corpusId}/videos/${videoId}/reprocess`, input);
+}
+
+export function listAnnotations(
+  corpusId: string,
+  options: { kind?: string; videoId?: string; limit?: number } = {},
+) {
+  const query = new URLSearchParams();
+  if (options.kind) query.set("kind", options.kind);
+  if (options.videoId) query.set("videoId", options.videoId);
+  if (options.limit) query.set("limit", String(options.limit));
+  const suffix = query.size > 0 ? `?${query}` : "";
+  return apiFetch<ResearchAnnotation[]>(`/api/corpora/${corpusId}/annotations${suffix}`);
+}
+
+export function createAnnotation(corpusId: string, input: CreateAnnotationInput) {
+  return jsonPost<ResearchAnnotation>(`/api/corpora/${corpusId}/annotations`, input);
+}
+
+export function listEvaluationCases(corpusId: string) {
+  return apiFetch<EvaluationCase[]>(`/api/corpora/${corpusId}/evaluation/cases`);
+}
+
+export function recordEvaluationJudgment(corpusId: string, input: RecordEvaluationJudgmentInput) {
+  return jsonPost<EvaluationCase>(`/api/corpora/${corpusId}/evaluation/judgments`, input);
+}
+
+export function runEvaluation(corpusId: string) {
+  return jsonPost<EvaluationRunReport>(`/api/corpora/${corpusId}/evaluation/run`, {});
 }
 
 export function loadTranscriptContext(segmentId: string): Promise<TranscriptContextReport> {
