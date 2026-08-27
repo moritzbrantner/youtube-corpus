@@ -33,7 +33,8 @@ export function CorpusEvaluation({ corpusId }: CorpusEvaluationProps) {
     mutationFn: () => runEvaluation(corpusId),
   });
   const targetCount =
-    casesQuery.data?.reduce((total, evaluationCase) => total + evaluationCase.targets.length, 0) ?? 0;
+    casesQuery.data?.reduce((total, evaluationCase) => total + evaluationCase.targets.length, 0) ??
+    0;
 
   return (
     <Surface>
@@ -103,7 +104,10 @@ export function CorpusEvaluation({ corpusId }: CorpusEvaluationProps) {
             <Metric label="Recall@K" value={formatMetric(runMutation.data.recallAtK)} />
             <Metric label="MRR" value={formatMetric(runMutation.data.meanReciprocalRank)} />
             <Metric label="NDCG@K" value={formatMetric(runMutation.data.ndcgAtK)} />
-            <Metric label="Mean latency" value={`${Math.round(runMutation.data.meanLatencyMs)} ms`} />
+            <Metric
+              label="Mean latency"
+              value={`${Math.round(runMutation.data.meanLatencyMs)} ms`}
+            />
           </div>
         ) : null}
         {runMutation.error ? (
