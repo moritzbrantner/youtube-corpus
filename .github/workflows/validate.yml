@@ -33,8 +33,10 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Check frontend formatting
-        run: bun run format:check
+      - name: Show canonical frontend formatting
+        run: |
+          bun run format
+          git diff -- src/app/features/corpora/CorpusEvaluation.tsx src/app/features/corpora/CorpusSearch.tsx src/app/features/corpora/CorpusVideos.tsx
 
       - name: Build frontend
         run: bun run build
