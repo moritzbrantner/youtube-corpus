@@ -109,10 +109,7 @@ pub async fn record_judgment(
         &Uuid::NAMESPACE_URL,
         format!(
             "youtube-corpus:evaluation:{}:{}:{}:{}",
-            request.corpus_id,
-            mode,
-            request.top_k,
-            query.to_lowercase()
+            request.corpus_id, mode, request.top_k, query
         )
         .as_bytes(),
     );
