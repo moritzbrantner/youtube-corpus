@@ -19,6 +19,7 @@ import {
 } from "@moritzbrantner/ui/shell";
 
 import { listCorpora } from "./api";
+import { CorpusEvaluation } from "./CorpusEvaluation";
 import { CorpusPicker } from "./CorpusPicker";
 import { CorpusSearch } from "./CorpusSearch";
 import { CorpusSources } from "./CorpusSources";
@@ -68,8 +69,8 @@ export function CorpusWorkspace() {
         <div className="grid min-w-0 gap-2">
           <PageTitle>{selectedCorpus?.name ?? "Research corpora"}</PageTitle>
           <PageDescription>
-            Organize channels into named corpora, keep them current, search their transcripts, and
-            reprocess individual videos reproducibly.
+            Organize sources, select trustworthy transcript streams, evaluate retrieval quality,
+            annotate findings, and reprocess corpus material reproducibly.
           </PageDescription>
         </div>
         <PageActions>
@@ -115,6 +116,7 @@ export function CorpusWorkspace() {
                 onSubmitQuery={(query) => update({ query })}
                 onSelectSegment={(segmentId) => update({ segmentId })}
               />
+              <CorpusEvaluation corpusId={selectedCorpus.id} />
               <CorpusVideos corpusId={selectedCorpus.id} />
             </>
           ) : null}
