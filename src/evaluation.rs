@@ -254,7 +254,11 @@ pub async fn run_evaluation(
         anyhow::bail!("evaluation cases exist but none contain relevance judgments");
     }
     let divisor = case_reports.len() as f64;
-    let recall_at_k = case_reports.iter().map(|case| case.recall_at_k).sum::<f64>() / divisor;
+    let recall_at_k = case_reports
+        .iter()
+        .map(|case| case.recall_at_k)
+        .sum::<f64>()
+        / divisor;
     let mean_reciprocal_rank = case_reports
         .iter()
         .map(|case| case.reciprocal_rank)
@@ -389,7 +393,11 @@ fn score_case(
     ideal.sort_unstable_by(|left, right| right.cmp(left));
     ideal.truncate(results.len());
     let ideal_dcg = discounted_gain(&ideal);
-    let ndcg_at_k = if ideal_dcg == 0.0 { 0.0 } else { dcg / ideal_dcg };
+    let ndcg_at_k = if ideal_dcg == 0.0 {
+        0.0
+    } else {
+        dcg / ideal_dcg
+    };
     EvaluationCaseReport {
         case_id: case.id,
         query: case.query.clone(),
@@ -419,7 +427,11 @@ fn target_matches(target: &EvaluationTarget, result: &SearchResult) -> bool {
         return false;
     }
     if let Some(start) = target.start_seconds {
-        if result.end_seconds.unwrap_or(result.start_seconds.unwrap_or(0.0)) < start {
+        if result
+            .end_seconds
+            .unwrap_or(result.start_seconds.unwrap_or(0.0))
+            < start
+        {
             return false;
         }
     }

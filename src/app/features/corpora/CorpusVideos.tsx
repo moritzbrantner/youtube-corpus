@@ -68,8 +68,8 @@ export function CorpusVideos({ corpusId }: CorpusVideosProps) {
       <SurfaceHeader>
         <SurfaceTitle>Videos</SurfaceTitle>
         <SurfaceDescription>
-          Browse corpus contents, inspect the selected research transcript, and selectively reprocess
-          metadata, transcripts, ASR, or embeddings.
+          Browse corpus contents, inspect the selected research transcript, and selectively
+          reprocess metadata, transcripts, ASR, or embeddings.
         </SurfaceDescription>
       </SurfaceHeader>
       <SurfaceContent className="grid gap-3">

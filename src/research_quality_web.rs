@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::annotations::{
-    AnnotationSourceKind, CreateAnnotationRequest, ResearchAnnotation,
-};
+use crate::annotations::{AnnotationSourceKind, CreateAnnotationRequest, ResearchAnnotation};
 use crate::api_types::SearchTranscriptsInput;
 use crate::evaluation::{EvaluationCase, EvaluationRunReport, RecordJudgmentRequest};
 use crate::search::{SearchReport, SearchRequest};

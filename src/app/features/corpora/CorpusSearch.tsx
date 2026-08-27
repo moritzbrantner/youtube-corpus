@@ -173,9 +173,11 @@ export function CorpusSearch({
           <div className="grid gap-3">
             {searchQuery.data?.results.map((result) => {
               const judgmentPending =
-                judgmentMutation.isPending && judgmentMutation.variables?.segmentId === result.segmentId;
+                judgmentMutation.isPending &&
+                judgmentMutation.variables?.segmentId === result.segmentId;
               const judgmentSaved =
-                judgmentMutation.isSuccess && judgmentMutation.variables?.segmentId === result.segmentId;
+                judgmentMutation.isSuccess &&
+                judgmentMutation.variables?.segmentId === result.segmentId;
               return (
                 <article
                   key={result.segmentId}
@@ -222,7 +224,11 @@ export function CorpusSearch({
                       disabled={judgmentPending}
                       onClick={() => judgmentMutation.mutate(result)}
                     >
-                      {judgmentPending ? "Saving judgment..." : judgmentSaved ? "Relevant saved" : "Mark relevant"}
+                      {judgmentPending
+                        ? "Saving judgment..."
+                        : judgmentSaved
+                          ? "Relevant saved"
+                          : "Mark relevant"}
                     </Button>
                   </div>
                 </article>
@@ -247,7 +253,9 @@ export function CorpusSearch({
           {!selectedSegmentId ? (
             <StateView variant="empty">
               <StateViewTitle>No passage selected</StateViewTitle>
-              <StateViewDescription>Choose transcript context from a search result.</StateViewDescription>
+              <StateViewDescription>
+                Choose transcript context from a search result.
+              </StateViewDescription>
             </StateView>
           ) : null}
           {contextQuery.isPending && selectedSegmentId ? (
@@ -325,7 +333,9 @@ export function CorpusSearch({
                     {annotationMutation.isPending ? "Saving annotation..." : "Save annotation"}
                   </Button>
                   {annotationMutation.isSuccess ? (
-                    <span className="text-xs text-muted-foreground">Annotation saved with provenance.</span>
+                    <span className="text-xs text-muted-foreground">
+                      Annotation saved with provenance.
+                    </span>
                   ) : null}
                 </div>
                 {annotationMutation.error ? (
