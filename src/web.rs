@@ -1,5 +1,3 @@
-include!("web/core.rs");
-
 fn app_with_research(state: AppState) -> Router {
     let research = crate::research_web::router(state.database_url.clone(), state.yt_dlp.clone());
     let research_quality = crate::research_quality_web::router(state.database_url.clone());
@@ -36,3 +34,5 @@ pub async fn serve_with_research(config: WebServerConfig) -> anyhow::Result<()> 
 pub fn app_for_tests_with_research(database_url: Option<String>) -> Router {
     app_with_research(AppState::new(database_url, YtDlpConfig::default()))
 }
+
+include!("web/core.rs");
