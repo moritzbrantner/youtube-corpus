@@ -68,6 +68,31 @@ async fn migrations_run_against_postgres() {
     .unwrap();
     assert_eq!(research_quality_tables, 6);
 
+    let multimodal_tables: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+         FROM information_schema.tables
+         WHERE table_name IN (
+           'media_processing_runs',
+           'face_observations',
+           'face_tracks',
+           'face_track_observations',
+           'voice_observations',
+           'voice_tracks',
+           'voice_track_observations',
+           'face_clusters',
+           'face_cluster_members',
+           'voice_clusters',
+           'voice_cluster_members',
+           'people',
+           'person_face_clusters',
+           'person_voice_clusters'
+         )",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(multimodal_tables, 14);
+
     let annotation_checksum: i64 = sqlx::query_scalar(
         "SELECT count(*)
          FROM information_schema.columns
