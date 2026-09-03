@@ -178,13 +178,12 @@ async fn multimodal_results_are_idempotent_and_video_scoped() {
     assert_eq!(faces[0].embedding_dimensions, Some(3));
     assert_eq!(voices[0].embedding_dimensions, Some(2));
 
-    let face_links: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM face_track_observations WHERE track_id = $1",
-    )
-    .bind(face_track.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let face_links: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM face_track_observations WHERE track_id = $1")
+            .bind(face_track.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(face_links, 1);
 
     sqlx::query("DELETE FROM videos WHERE id = $1")
