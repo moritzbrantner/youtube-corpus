@@ -34,14 +34,7 @@ pub async fn transcribe_with_command(
         tokio::fs::remove_file(&output_path).await?;
     }
 
-    run_whisper_command(
-        &command,
-        media_path,
-        &output_dir,
-        args,
-        timeout_seconds,
-    )
-    .await?;
+    run_whisper_command(&command, media_path, &output_dir, args, timeout_seconds).await?;
 
     let bytes = tokio::fs::read(&output_path).await.with_context(|| {
         format!(
@@ -85,9 +78,12 @@ async fn run_whisper_command(
         .spawn()
         .with_context(|| format!("failed to start transcriber {}", command.display()))?;
     let output = if let Some(timeout_seconds) = timeout_seconds {
-        tokio::time::timeout(Duration::from_secs(timeout_seconds), child.wait_with_output())
-            .await
-            .with_context(|| format!("transcriber timed out after {timeout_seconds} seconds"))??
+        tokio::time::timeout(
+            Duration::from_secs(timeout_seconds),
+            child.wait_with_output(),
+        )
+        .await
+        .with_context(|| format!("transcriber timed out after {timeout_seconds} seconds"))??
     } else {
         child.wait_with_output().await?
     };
@@ -132,8 +128,11 @@ mod tests {
 
     #[test]
     fn whisper_json_path_uses_media_file_stem() {
-        let path = whisper_json_path(Path::new("/media/lecture.audio.wav"), Path::new("/work/asr"))
-            .unwrap();
+        let path = whisper_json_path(
+            Path::new("/media/lecture.audio.wav"),
+            Path::new("/work/asr"),
+        )
+        .unwrap();
         assert_eq!(path, Path::new("/work/asr/lecture.audio.json"));
     }
 
