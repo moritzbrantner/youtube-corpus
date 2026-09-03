@@ -277,7 +277,8 @@ pub async fn upsert_face_track(
     validate_run(pool, request.run_id, request.video_id, MediaModality::Face).await?;
     validate_key("track key", &request.track_key)?;
     validate_range(request.start_seconds, request.end_seconds)?;
-    let (embedding, embedding_dimensions) = prepare_embedding(request.representative_embedding.as_deref())?;
+    let (embedding, embedding_dimensions) =
+        prepare_embedding(request.representative_embedding.as_deref())?;
     let id = Uuid::new_v4();
     let row = sqlx::query(
         "INSERT INTO face_tracks (
@@ -411,7 +412,8 @@ pub async fn upsert_voice_track(
     validate_run(pool, request.run_id, request.video_id, MediaModality::Voice).await?;
     validate_key("track key", &request.track_key)?;
     validate_range(request.start_seconds, request.end_seconds)?;
-    let (embedding, embedding_dimensions) = prepare_embedding(request.representative_embedding.as_deref())?;
+    let (embedding, embedding_dimensions) =
+        prepare_embedding(request.representative_embedding.as_deref())?;
     let id = Uuid::new_v4();
     let row = sqlx::query(
         "INSERT INTO voice_tracks (
@@ -652,7 +654,10 @@ struct TrackRow {
     updated_at: DateTime<Utc>,
 }
 
-fn track_from_row(row: sqlx::postgres::PgRow, _modality: MediaModality) -> anyhow::Result<TrackRow> {
+fn track_from_row(
+    row: sqlx::postgres::PgRow,
+    _modality: MediaModality,
+) -> anyhow::Result<TrackRow> {
     let embedding_dimensions: Option<i32> = row.try_get("embedding_dimensions")?;
     Ok(TrackRow {
         id: row.try_get("id")?,
@@ -717,7 +722,9 @@ fn validate_region(region: BoundingBox) -> anyhow::Result<()> {
         || region.width <= 0.0
         || region.height <= 0.0
     {
-        anyhow::bail!("face bounding box must contain finite non-negative coordinates and positive size");
+        anyhow::bail!(
+            "face bounding box must contain finite non-negative coordinates and positive size"
+        );
     }
     Ok(())
 }
@@ -755,9 +762,7 @@ fn prepare_embedding(embedding: Option<&[f32]>) -> anyhow::Result<(Option<String
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        prepare_embedding, validate_probability, validate_region, BoundingBox,
-    };
+    use super::{prepare_embedding, validate_probability, validate_region, BoundingBox};
 
     #[test]
     fn embeddings_are_dimension_neutral_and_reject_non_finite_values() {
