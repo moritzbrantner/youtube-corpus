@@ -107,9 +107,9 @@ fn whisper_json_path(media_path: &Path, output_dir: &Path) -> anyhow::Result<Pat
             media_path.display()
         )
     })?;
-    let mut output_path = output_dir.join(file_stem);
-    output_path.set_extension("json");
-    Ok(output_path)
+    let mut output_name = file_stem.to_os_string();
+    output_name.push(".json");
+    Ok(output_dir.join(output_name))
 }
 
 fn resolve_command(command: &str) -> Option<PathBuf> {
