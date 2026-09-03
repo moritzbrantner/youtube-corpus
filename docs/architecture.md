@@ -25,6 +25,7 @@ serves embedded Vite assets from `dist/`, and exposes JSON endpoints under
 - `src/config.rs`: shared source, caption, search, and external tool config
 - `src/db.rs`: Postgres connection and migration entrypoints
 - `src/ingest.rs`: corpus ingest orchestration and database writes
+- `src/multimodal.rs`: face/voice processing provenance, observations, tracks, and persistence
 - `src/search.rs`: full-text, semantic, and hybrid search queries
 - `src/status.rs`: corpus status and video listing queries
 - `src/subscriptions.rs`: saved channel/playlist subscription management
@@ -89,6 +90,41 @@ nested `job` object using `jobs-core` lifecycle values such as `running`,
 Generated media, captions, metadata, and transcripts should stay under
 `use-case-output/`.
 
+## Multimodal Analysis Boundary
+
+Face and voice results are derived evidence attached to corpus videos. They do
+not change the source video, transcript stream, or transcript segment records.
+
+`youtube-corpus` owns:
+
+- idempotent processing-run provenance keyed by video, modality, model, input,
+  and configuration
+- persisted face and voice observations
+- temporal face and voice tracks
+- cross-video face/voice clusters and optional corpus-local `people` links
+- transcript-segment links for voice observations
+- later retrieval and browser inspection of those records
+
+Detection and embedding implementations remain outside this repository.
+`visual-analysis` owns face detection and face embeddings. `audio-analysis`
+owns voice activity detection, speaker embeddings, diarization, and transcript
+speaker assignment. This repository stores their typed outputs instead of
+copying model/runtime implementations.
+
+A face or voice cluster means only that observations are similar according to a
+versioned algorithm. `people` records are optional corpus-local entities; a
+cluster is never automatically treated as a verified real-world identity.
+
+Embeddings are stored in dimension-neutral `pgvector` columns together with
+model/version provenance. No approximate-nearest-neighbor index is created in
+the initial schema because different backends can produce different dimensions.
+Index-backed scaling should be introduced only when the active embedding model
+and retrieval contract are explicit.
+
+Face and voice embeddings are biometric-derived data. They should remain in the
+local corpus database and should not be copied into committed fixtures,
+repository history, or generated documentation.
+
 ## Search Flow
 
 1. CLI or `/api/search` builds a `SearchRequest`.
@@ -119,5 +155,6 @@ Do not commit:
 - downloaded videos or audio
 - caption files
 - generated transcripts
+- face crops, voice clips, or biometric embeddings
 - temporary JSON output
 - build output in `dist/`, `target/`, or `node_modules/`
