@@ -11,6 +11,7 @@ pub mod db;
 pub mod diagnostics;
 pub mod evaluation;
 pub mod ingest;
+pub mod multimodal;
 pub mod provenance;
 pub mod reprocessing;
 pub mod research_quality_web;
@@ -36,6 +37,14 @@ pub use evaluation::{
     EvaluationRunReport, EvaluationTarget, RecordJudgmentRequest,
 };
 pub use ingest::{ingest_corpus, IngestReport};
+pub use multimodal::{
+    begin_processing_run, link_face_observation_to_track, link_voice_observation_to_track,
+    list_face_observations, list_voice_observations, upsert_face_observation, upsert_face_track,
+    upsert_voice_observation, upsert_voice_track, BeginProcessingRunRequest, BoundingBox,
+    FaceObservation, FaceTrack, MediaModality, MediaProcessingRun, ProcessingProvenance,
+    UpsertFaceObservationRequest, UpsertFaceTrackRequest, UpsertVoiceObservationRequest,
+    UpsertVoiceTrackRequest, VoiceObservation, VoiceTrack,
+};
 pub use reprocessing::{reprocess_video, ReprocessReport, ReprocessRequest, ReprocessStage};
 pub use search::{search_corpus, SearchReport, SearchRequest};
 pub use status::{corpus_status, list_videos, CorpusStatusReport, VideoStatus};
