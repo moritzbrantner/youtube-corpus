@@ -15,8 +15,7 @@ use crate::visual_timeline::{
 };
 
 /// Exact visual-analysis revision consumed by this source-first integration.
-pub const VISUAL_ANALYSIS_SCENE_REVISION: &str =
-    "a25d3e540d2ed90f1001fe76704ebc11815bc9db";
+pub const VISUAL_ANALYSIS_SCENE_REVISION: &str = "a25d3e540d2ed90f1001fe76704ebc11815bc9db";
 const SCENE_MODEL: &str = "scenedetect-core:content";
 const SCENE_MODEL_VERSION: &str = "0.1.0";
 const DEFAULT_CONTENT_THRESHOLD: f32 = 27.0;
@@ -106,8 +105,8 @@ pub async fn analyze_and_persist_scenes(
 
     let mut scenes = Vec::with_capacity(result.scenes.len());
     for (index, scene) in result.scenes.into_iter().enumerate() {
-        let scene_index = u64::try_from(index)
-            .map_err(|_| anyhow::anyhow!("scene index exceeds u64 range"))?;
+        let scene_index =
+            u64::try_from(index).map_err(|_| anyhow::anyhow!("scene index exceeds u64 range"))?;
         scenes.push(
             upsert_video_scene(
                 pool,
