@@ -6,7 +6,7 @@ on:
       - feat/multimodal-analysis-adapters
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: temporary-face-adapter-${{ github.ref }}
@@ -94,6 +94,17 @@ jobs:
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
+
+      - name: Resolve and commit lockfile delta
+        run: |
+          cargo metadata --format-version 1 >/dev/null
+          if ! git diff --quiet -- Cargo.lock; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add Cargo.lock
+            git commit -m "Refresh lockfile for face analysis"
+            git push origin HEAD:feat/multimodal-analysis-adapters
+          fi
 
       - name: Verify locked source graph
         run: cargo check --locked
