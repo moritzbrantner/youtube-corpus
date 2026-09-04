@@ -84,14 +84,11 @@ jobs:
           git clone --filter=blob:none https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
           git -C ../visual-analysis checkout a25d3e540d2ed90f1001fe76704ebc11815bc9db
 
-      - name: Activate exact source patches
+      - name: Activate exact source overrides
         run: |
           set -euo pipefail
           mkdir -p .cargo
-          {
-            echo '[patch.crates-io]'
-            jq -r --arg root "$PWD" '.cargo.patches[] | "\"\(.package)\" = { path = \"\($root)/\(.localPath)\" }"' .coding-tooling.source-deps.json
-          } > .cargo/config.toml
+          jq -r --arg root "$PWD" '[.cargo.patches[].localPath | ($root + "/" + .)] | "paths = [\n" + (map("  \"" + . + "\"") | join(",\n")) + "\n]"' .coding-tooling.source-deps.json > .cargo/config.toml
           cat .cargo/config.toml
 
       - name: Install Rust toolchain
