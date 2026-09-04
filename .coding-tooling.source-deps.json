@@ -40,16 +40,40 @@
         "localPath": "../moenarch-foundation/crates/jobs/jobs-core"
       },
       {
+        "package": "moenarch-video-analysis-core",
+        "git": "https://github.com/moritzbrantner/visual-analysis",
+        "rev": "223b4eca141ee0a23f10d8170ca8d16db1918a7c",
+        "localPath": "../visual-analysis/crates/video/video-analysis-core"
+      },
+      {
         "package": "moenarch-video-analysis-ffmpeg",
         "git": "https://github.com/moritzbrantner/visual-analysis",
-        "rev": "6f1c3f09c6f01005ea30644377b5e44df9fd1e60",
+        "rev": "223b4eca141ee0a23f10d8170ca8d16db1918a7c",
         "localPath": "../visual-analysis/crates/video/video-analysis-ffmpeg"
       },
       {
         "package": "moenarch-video-analysis-ingest",
         "git": "https://github.com/moritzbrantner/visual-analysis",
-        "rev": "6f1c3f09c6f01005ea30644377b5e44df9fd1e60",
+        "rev": "223b4eca141ee0a23f10d8170ca8d16db1918a7c",
         "localPath": "../visual-analysis/crates/video/video-analysis-ingest"
+      },
+      {
+        "package": "moenarch-image-analysis-detection",
+        "git": "https://github.com/moritzbrantner/visual-analysis",
+        "rev": "223b4eca141ee0a23f10d8170ca8d16db1918a7c",
+        "localPath": "../visual-analysis/crates/image/image-analysis-detection"
+      },
+      {
+        "package": "moenarch-image-analysis-embeddings",
+        "git": "https://github.com/moritzbrantner/visual-analysis",
+        "rev": "223b4eca141ee0a23f10d8170ca8d16db1918a7c",
+        "localPath": "../visual-analysis/crates/image/image-analysis-embeddings"
+      },
+      {
+        "package": "moenarch-audio-analysis-speakers",
+        "git": "https://github.com/moritzbrantner/audio-analysis",
+        "rev": "90ca539d530aa7720c46465618d431e9e17591b8",
+        "localPath": "../audio-analysis/crates/audio/audio-analysis-speakers"
       }
     ]
   }
