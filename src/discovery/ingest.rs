@@ -36,12 +36,8 @@ pub async fn record_ingest_discoveries(
     let Some(seed_candidate) = seed_target(source) else {
         return Ok(());
     };
-    let seed = match find_discovery_target(
-        pool,
-        seed_candidate.kind,
-        &seed_candidate.canonical_key,
-    )
-    .await?
+    let seed = match find_discovery_target(pool, seed_candidate.kind, &seed_candidate.canonical_key)
+        .await?
     {
         Some(existing) if existing.state == DiscoveryState::Claimed => existing,
         _ => {
