@@ -16,6 +16,26 @@ pub async fn discovery_schema_available(pool: &PgPool) -> anyhow::Result<bool> {
     )
 }
 
+pub(crate) async fn find_discovery_target(
+    pool: &PgPool,
+    kind: DiscoveryKind,
+    canonical_key: &str,
+) -> anyhow::Result<Option<DiscoveryTarget>> {
+    let row = sqlx::query(
+        "SELECT id, kind, canonical_key, target_url, state, depth, priority,
+                confidence, relevance, novelty, claimed_by, workflow_run_id,
+                attempt_count, last_error, discovered_at, updated_at, claimed_at,
+                claim_expires_at, completed_at
+         FROM discovery_targets
+         WHERE kind = $1 AND canonical_key = $2",
+    )
+    .bind(kind.as_str())
+    .bind(canonical_key)
+    .fetch_optional(pool)
+    .await?;
+    row.map(target_from_row).transpose()
+}
+
 pub async fn enqueue_discovery(
     pool: &PgPool,
     request: EnqueueDiscoveryRequest,
