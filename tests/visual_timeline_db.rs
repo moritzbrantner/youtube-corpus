@@ -47,7 +47,9 @@ async fn visual_timeline_is_idempotent_scene_linked_and_searchable() {
     let scene_run = begin_visual_processing_run(&pool, scene_request.clone())
         .await
         .unwrap();
-    let scene_rerun = begin_visual_processing_run(&pool, scene_request).await.unwrap();
+    let scene_rerun = begin_visual_processing_run(&pool, scene_request)
+        .await
+        .unwrap();
     assert_eq!(scene_run, scene_rerun);
 
     let scene = upsert_video_scene(
@@ -177,7 +179,9 @@ async fn visual_timeline_is_idempotent_scene_linked_and_searchable() {
     let track = upsert_visual_text_track(&pool, track_request.clone())
         .await
         .unwrap();
-    let track_rerun = upsert_visual_text_track(&pool, track_request).await.unwrap();
+    let track_rerun = upsert_visual_text_track(&pool, track_request)
+        .await
+        .unwrap();
     assert_eq!(track.id, track_rerun.id);
 
     let observation_links: i64 = sqlx::query_scalar(

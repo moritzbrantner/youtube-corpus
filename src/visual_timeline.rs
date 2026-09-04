@@ -216,7 +216,13 @@ pub async fn upsert_video_scene(
     pool: &PgPool,
     request: UpsertVideoSceneRequest,
 ) -> anyhow::Result<VideoScene> {
-    validate_visual_run(pool, request.run_id, request.video_id, VisualProcessingKind::Scene).await?;
+    validate_visual_run(
+        pool,
+        request.run_id,
+        request.video_id,
+        VisualProcessingKind::Scene,
+    )
+    .await?;
     if request.end_frame < request.start_frame {
         anyhow::bail!("scene end frame must be greater than or equal to start frame");
     }
@@ -259,13 +265,22 @@ pub async fn upsert_visual_text_observation(
     pool: &PgPool,
     request: UpsertVisualTextObservationRequest,
 ) -> anyhow::Result<VisualTextObservation> {
-    validate_visual_run(pool, request.run_id, request.video_id, VisualProcessingKind::Ocr).await?;
+    validate_visual_run(
+        pool,
+        request.run_id,
+        request.video_id,
+        VisualProcessingKind::Ocr,
+    )
+    .await?;
     let observation_key = required_text("observation key", request.observation_key)?;
     let text = required_text("OCR observation text", request.text)?;
     validate_optional_time(request.timestamp_seconds, "OCR observation timestamp")?;
     validate_probability(request.confidence)?;
     validate_region(request.region)?;
-    let id = Uuid::new_v5(&request.run_id, format!("observation:{observation_key}").as_bytes());
+    let id = Uuid::new_v5(
+        &request.run_id,
+        format!("observation:{observation_key}").as_bytes(),
+    );
     let (x, y, width, height) = region_columns(request.region);
     let row = sqlx::query(
         "INSERT INTO visual_text_observations (
@@ -315,7 +330,13 @@ pub async fn upsert_visual_text_track(
     pool: &PgPool,
     request: UpsertVisualTextTrackRequest,
 ) -> anyhow::Result<VisualTextTrack> {
-    validate_visual_run(pool, request.run_id, request.video_id, VisualProcessingKind::Ocr).await?;
+    validate_visual_run(
+        pool,
+        request.run_id,
+        request.video_id,
+        VisualProcessingKind::Ocr,
+    )
+    .await?;
     let track_key = required_text("track key", request.track_key)?;
     let text = required_text("visual text track text", request.text)?;
     if request.sample_count == 0 {
@@ -371,8 +392,14 @@ pub async fn upsert_visual_text_track(
     .bind(&text)
     .bind(request.role.as_str())
     .bind(language)
-    .bind(i32::try_from(request.sample_count).map_err(|_| anyhow::anyhow!("sample count exceeds Postgres integer range"))?)
-    .bind(optional_i64(request.start_frame, "visual text start frame")?)
+    .bind(
+        i32::try_from(request.sample_count)
+            .map_err(|_| anyhow::anyhow!("sample count exceeds Postgres integer range"))?,
+    )
+    .bind(optional_i64(
+        request.start_frame,
+        "visual text start frame",
+    )?)
     .bind(optional_i64(request.end_frame, "visual text end frame")?)
     .bind(request.start_seconds)
     .bind(request.end_seconds)
@@ -402,7 +429,10 @@ pub async fn upsert_visual_text_track(
         .execute(&mut *tx)
         .await?;
         if result.rows_affected() != 1 {
-            anyhow::bail!("OCR observation {observation_id} does not belong to video {}", request.video_id);
+            anyhow::bail!(
+                "OCR observation {observation_id} does not belong to video {}",
+                request.video_id
+            );
         }
     }
 
@@ -423,7 +453,10 @@ pub async fn upsert_visual_text_track(
         .execute(&mut *tx)
         .await?;
         if result.rows_affected() != 1 {
-            anyhow::bail!("scene {scene_id} does not belong to video {}", request.video_id);
+            anyhow::bail!(
+                "scene {scene_id} does not belong to video {}",
+                request.video_id
+            );
         }
     }
 
@@ -480,7 +513,9 @@ async fn validate_visual_run(
     .bind(video_id)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| anyhow::anyhow!("processing run {run_id} does not belong to video {video_id}"))?;
+    .ok_or_else(|| {
+        anyhow::anyhow!("processing run {run_id} does not belong to video {video_id}")
+    })?;
     if modality != expected.as_str() {
         anyhow::bail!(
             "processing run {run_id} has modality `{modality}`, expected `{}`",
