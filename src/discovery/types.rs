@@ -194,14 +194,6 @@ pub struct DiscoveryWorkflowInput {
     pub depth: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkflowRunHandoff {
-    pub workflow_id: String,
-    pub input: DiscoveryWorkflowInput,
-    pub context: Value,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct AdmissionDecision {
     pub state: DiscoveryState,
