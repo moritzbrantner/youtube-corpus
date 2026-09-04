@@ -13,8 +13,8 @@ use video_analysis_ingest::VideoFrameSource;
 
 use crate::multimodal::{
     begin_processing_run, link_face_observation_to_track, upsert_face_observation,
-    upsert_face_track, BeginProcessingRunRequest, BoundingBox, MediaModality,
-    ProcessingProvenance, UpsertFaceObservationRequest, UpsertFaceTrackRequest,
+    upsert_face_track, BeginProcessingRunRequest, BoundingBox, MediaModality, ProcessingProvenance,
+    UpsertFaceObservationRequest, UpsertFaceTrackRequest,
 };
 
 const VISUAL_ANALYSIS_REVISION: &str = "223b4eca141ee0a23f10d8170ca8d16db1918a7c";
@@ -125,8 +125,8 @@ async fn analyze_faces(
     let options = FfmpegSourceOptions::recorded()
         .extra_output_arg("-vf")
         .extra_output_arg(filter);
-    let mut source = FfmpegVideoSource::open_path_with_options(media_path, options)
-        .with_context(|| {
+    let mut source =
+        FfmpegVideoSource::open_path_with_options(media_path, options).with_context(|| {
             format!(
                 "failed to decode face-analysis frames from {}",
                 media_path.display()
@@ -145,8 +145,8 @@ async fn analyze_faces(
             "stride": frame.stride,
             "data": frame.data,
         });
-        let detection_response = image_analysis_detection::surface::run_surface_operation(
-            SurfaceRequest {
+        let detection_response =
+            image_analysis_detection::surface::run_surface_operation(SurfaceRequest {
                 operation: OperationId::new("image.detection.detectFaces"),
                 input: json!({
                     "image": image.clone(),
@@ -154,9 +154,8 @@ async fn analyze_faces(
                     "autoDownload": config.model_auto_download,
                     "limit": 64,
                 }),
-            },
-        )
-        .map_err(|error| anyhow::anyhow!("face detection failed: {error}"))?;
+            })
+            .map_err(|error| anyhow::anyhow!("face detection failed: {error}"))?;
         let detections = detection_response
             .value
             .get("detections")
@@ -174,8 +173,8 @@ async fn analyze_faces(
                 .cloned()
                 .ok_or_else(|| anyhow::anyhow!("face detection omitted region"))?;
             let detection_score = detection.get("score").and_then(Value::as_f64);
-            let embedding_response = image_analysis_embeddings::surface::run_surface_operation(
-                SurfaceRequest {
+            let embedding_response =
+                image_analysis_embeddings::surface::run_surface_operation(SurfaceRequest {
                     operation: OperationId::new("image.embeddings.faceEmbed"),
                     input: json!({
                         "image": image.clone(),
@@ -183,9 +182,8 @@ async fn analyze_faces(
                         "region": pixel_region,
                         "autoDownload": config.model_auto_download,
                     }),
-                },
-            )
-            .map_err(|error| anyhow::anyhow!("face embedding failed: {error}"))?;
+                })
+                .map_err(|error| anyhow::anyhow!("face embedding failed: {error}"))?;
             let embedding = parse_embedding(
                 embedding_response
                     .value
@@ -282,10 +280,7 @@ impl FaceTrackState {
             start_seconds: timestamp,
             end_seconds: timestamp,
             last_seen_seconds: timestamp,
-            embedding_sum: embedding
-                .iter()
-                .map(|value| f64::from(*value))
-                .collect(),
+            embedding_sum: embedding.iter().map(|value| f64::from(*value)).collect(),
             embedding_count: 1,
             observation_ids: Vec::new(),
         }
@@ -474,10 +469,7 @@ mod tests {
     #[test]
     fn face_tracking_ignores_stale_tracks() {
         let tracks = vec![FaceTrackState::new(0, 0.0, &[1.0, 0.0])];
-        assert_eq!(
-            best_face_track(&tracks, &[1.0, 0.0], 20.0, 10.0, 0.5),
-            None
-        );
+        assert_eq!(best_face_track(&tracks, &[1.0, 0.0], 20.0, 10.0, 0.5), None);
     }
 
     #[test]
@@ -493,9 +485,6 @@ mod tests {
     #[test]
     fn config_hash_is_deterministic() {
         let value = json!({"a": 1, "b": true});
-        assert_eq!(
-            value_sha256(&value).unwrap(),
-            value_sha256(&value).unwrap()
-        );
+        assert_eq!(value_sha256(&value).unwrap(), value_sha256(&value).unwrap());
     }
 }
