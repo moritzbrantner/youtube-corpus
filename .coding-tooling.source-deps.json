@@ -40,12 +40,6 @@
         "localPath": "../moenarch-foundation/crates/jobs/jobs-core"
       },
       {
-        "package": "moenarch-video-analysis-core",
-        "git": "https://github.com/moritzbrantner/visual-analysis",
-        "rev": "223b4eca141ee0a23f10d8170ca8d16db1918a7c",
-        "localPath": "../visual-analysis/crates/video/video-analysis-core"
-      },
-      {
         "package": "moenarch-video-analysis-ffmpeg",
         "git": "https://github.com/moritzbrantner/visual-analysis",
         "rev": "223b4eca141ee0a23f10d8170ca8d16db1918a7c",
