@@ -89,6 +89,11 @@ jobs:
         with:
           components: clippy,rustfmt
 
+      - name: Verify visual adapters
+        run: |
+          cargo test --manifest-path ../visual-analysis/Cargo.toml -p moenarch-video-analysis-recognition --features ocr
+          cargo test --manifest-path ../visual-analysis/Cargo.toml -p moenarch-video-analysis-ingest
+
       - name: Verify source graph compiles
         run: cargo check --locked
 
