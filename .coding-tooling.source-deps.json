@@ -28,27 +28,105 @@
         "localPath": "../nlp-stack/crates/text/text-transcripts"
       },
       {
-        "package": "moenarch-runtime-core",
+        "package": "moenarch-audio-contracts",
         "git": "https://github.com/moritzbrantner/moenarch-foundation",
-        "rev": "ead588f27d130d775524db31189b734a224843d5",
-        "localPath": "../moenarch-foundation/crates/runtime/runtime-core"
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/audio/audio-contracts"
+      },
+      {
+        "package": "moenarch-data-inversion-core",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/data/data-inversion-core"
       },
       {
         "package": "moenarch-jobs-core",
         "git": "https://github.com/moritzbrantner/moenarch-foundation",
-        "rev": "ead588f27d130d775524db31189b734a224843d5",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
         "localPath": "../moenarch-foundation/crates/jobs/jobs-core"
+      },
+      {
+        "package": "moenarch-math-geometry-2d",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/math/math-geometry-2d"
+      },
+      {
+        "package": "moenarch-math-linear",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/math/math-linear"
+      },
+      {
+        "package": "moenarch-math-sparse-data",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/math/math-sparse-data"
+      },
+      {
+        "package": "moenarch-media-core",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/media/media-core"
+      },
+      {
+        "package": "moenarch-model-runtime",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/runtime/model-runtime"
+      },
+      {
+        "package": "moenarch-numbers-core",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/data/numbers-core"
+      },
+      {
+        "package": "moenarch-runtime-core",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/runtime/runtime-core"
+      },
+      {
+        "package": "moenarch-runtime-onnx",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/runtime/runtime-onnx"
+      },
+      {
+        "package": "moenarch-semantic-core",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/semantic/semantic-core"
+      },
+      {
+        "package": "moenarch-tensor-data",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/data/tensor-data"
+      },
+      {
+        "package": "moenarch-vector-analysis-core",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/vector/vector-analysis-core"
+      },
+      {
+        "package": "moenarch-vector-analysis-index",
+        "git": "https://github.com/moritzbrantner/moenarch-foundation",
+        "rev": "b7533cd02269124deece75b76477ca55a853cd77",
+        "localPath": "../moenarch-foundation/crates/vector/vector-analysis-index"
       },
       {
         "package": "moenarch-video-analysis-ffmpeg",
         "git": "https://github.com/moritzbrantner/visual-analysis",
-        "rev": "6f1c3f09c6f01005ea30644377b5e44df9fd1e60",
+        "rev": "a25d3e540d2ed90f1001fe76704ebc11815bc9db",
         "localPath": "../visual-analysis/crates/video/video-analysis-ffmpeg"
       },
       {
         "package": "moenarch-video-analysis-ingest",
         "git": "https://github.com/moritzbrantner/visual-analysis",
-        "rev": "6f1c3f09c6f01005ea30644377b5e44df9fd1e60",
+        "rev": "a25d3e540d2ed90f1001fe76704ebc11815bc9db",
         "localPath": "../visual-analysis/crates/video/video-analysis-ingest"
       }
     ]

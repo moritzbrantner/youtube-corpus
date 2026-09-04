@@ -49,5 +49,66 @@ jobs:
 
       - name: Explain source verification boundary
         run: |
-          echo "Rust build, clippy, tests, and Postgres integration checks run in the local coding workspace against the exact sibling source graph."
-          echo "Hosted CI stays repository-local; registry-only verification remains a release/distribution concern."
+          echo "Repository-local validation is intentionally independent of sibling source availability."
+          echo "The source-graph job below separately verifies the exact pinned cross-repository graph."
+
+  source-graph-validation:
+    name: Exact source graph
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: youtube_corpus_verify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d youtube_corpus_verify"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/youtube_corpus_verify
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out exact sibling sources
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
+          git -C ../nlp-stack checkout 057689ca1df031d677f4afd9d65eed181c6fca06
+          git clone --filter=blob:none https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
+          git -C ../moenarch-foundation checkout b7533cd02269124deece75b76477ca55a853cd77
+          git clone --filter=blob:none https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
+          git -C ../visual-analysis checkout a25d3e540d2ed90f1001fe76704ebc11815bc9db
+
+      - name: Activate exact source overrides
+        run: |
+          set -euo pipefail
+          mkdir -p .cargo
+          jq -r --arg root "$PWD" '[.cargo.patches[].localPath | ($root + "/" + .)] | "paths = [\n" + (map("  \"" + . + "\"") | join(",\n")) + "\n]"' .coding-tooling.source-deps.json > .cargo/config.toml
+          cat .cargo/config.toml
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - name: Verify visual adapters
+        run: |
+          cargo test --manifest-path ../visual-analysis/Cargo.toml -p moenarch-video-analysis-recognition --features ocr
+          cargo test --manifest-path ../visual-analysis/Cargo.toml -p moenarch-video-analysis-ingest
+
+      - name: Verify source graph compiles
+        run: cargo check --locked
+
+      - name: Verify source graph tests
+        run: cargo test --locked
+
+      - name: Verify source graph lint
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Verify Postgres contracts
+        run: bash scripts/verify-postgres.sh

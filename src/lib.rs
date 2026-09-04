@@ -21,6 +21,7 @@ pub mod search;
 pub mod status;
 pub mod subscriptions;
 pub mod transcript_quality;
+pub mod visual_processing;
 pub mod visual_timeline;
 pub mod web;
 pub mod youtube;
@@ -65,6 +66,10 @@ pub use subscriptions::{
 pub use transcript_quality::{
     list_corpus_quality, list_video_quality, refresh_corpus_quality, refresh_video_quality,
     TranscriptQualitySummary,
+};
+pub use visual_processing::{
+    analyze_and_persist_scenes, analyze_stored_video_scenes, SceneAnalysisReport,
+    SceneAnalysisRequest, VISUAL_ANALYSIS_SCENE_REVISION,
 };
 pub use visual_timeline::{
     begin_visual_processing_run, list_video_scenes, list_visual_text_tracks, upsert_video_scene,
