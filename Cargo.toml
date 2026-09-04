@@ -32,7 +32,14 @@ sqlx = { version = "0.8", default-features = false, features = [
   "macros",
 ] }
 thiserror = "2.0"
-tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "process", "fs", "time", "io-util"] }
+tokio = { version = "1.48", features = [
+  "macros",
+  "rt-multi-thread",
+  "process",
+  "fs",
+  "time",
+  "io-util",
+] }
 tower-http = "0.6.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
@@ -47,8 +54,12 @@ runtime-core = { package = "moenarch-runtime-core", path = "../moenarch-foundati
 jobs-core = { package = "moenarch-jobs-core", path = "../moenarch-foundation/crates/jobs/jobs-core" }
 video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", path = "../visual-analysis/crates/video/video-analysis-ffmpeg" }
 video-analysis-ingest = { package = "moenarch-video-analysis-ingest", path = "../visual-analysis/crates/video/video-analysis-ingest" }
-image-analysis-detection = { package = "moenarch-image-analysis-detection", path = "../visual-analysis/crates/image/image-analysis-detection", features = ["onnx"] }
-image-analysis-embeddings = { package = "moenarch-image-analysis-embeddings", path = "../visual-analysis/crates/image/image-analysis-embeddings", features = ["onnx"] }
+image-analysis-detection = { package = "moenarch-image-analysis-detection", path = "../visual-analysis/crates/image/image-analysis-detection", features = [
+  "onnx",
+] }
+image-analysis-embeddings = { package = "moenarch-image-analysis-embeddings", path = "../visual-analysis/crates/image/image-analysis-embeddings", features = [
+  "onnx",
+] }
 
 [dev-dependencies]
 tempfile = "3.23"
