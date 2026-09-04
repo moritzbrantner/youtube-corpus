@@ -86,6 +86,10 @@ If ingest reaches a terminal error after runner retries, the host calls `fail_di
 
 The engine can trigger this workflow manually, on a cron schedule, or from a later queue-backed trigger. The DAG never recursively creates child nodes; recursion exists only as new durable frontier rows.
 
+## Verification expectations
+
+The Postgres discovery integration test covers duplicate enqueue idempotence, priority claims, expired-lease recovery, stale-attempt fencing, idempotent terminal completion, retry-state preservation, recursive depth preservation, metadata/description expansion, and evidence deduplication. It is intentionally part of the local `verify:postgres` path because Rust verification uses the exact sibling source graph rather than replacing those dependencies with registry artifacts in hosted CI.
+
 ## Progressive processing
 
 This slice reuses the existing ingest path for metadata, captions, optional ASR, persistence, and text indexing. Face/voice and later semantic analysis remain separate derived processing stages. Future workflows can add them after ingest without changing discovery identity or provenance.
