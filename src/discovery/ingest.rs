@@ -7,27 +7,20 @@ use crate::ingest::IngestReport;
 
 use super::store::{
     complete_discovery, discovery_schema_available, enqueue_discovery, fail_discovery,
+    find_discovery_target,
 };
 use super::types::{
     DiscoveredYouTubeTarget, DiscoveryMethod, DiscoveryPolicy, DiscoveryState, DiscoveryTarget,
-    DiscoveryWorkflowInput, EnqueueDiscoveryRequest, WorkflowRunHandoff, DISCOVERY_WORKFLOW_ID,
+    DiscoveryWorkflowInput, EnqueueDiscoveryRequest,
 };
 use super::youtube::{canonicalize_youtube_target, extract_youtube_targets};
 
-pub fn workflow_handoff(target: &DiscoveryTarget) -> WorkflowRunHandoff {
-    WorkflowRunHandoff {
-        workflow_id: DISCOVERY_WORKFLOW_ID.to_string(),
-        input: DiscoveryWorkflowInput {
-            discovery_id: target.id,
-            source_kind: target.kind,
-            source_url: target.target_url.clone(),
-            depth: target.depth,
-        },
-        context: json!({
-            "source": "youtube-corpus",
-            "discoveryTargetId": target.id,
-            "frontierState": target.state,
-        }),
+pub fn workflow_input(target: &DiscoveryTarget) -> DiscoveryWorkflowInput {
+    DiscoveryWorkflowInput {
+        discovery_id: target.id,
+        source_kind: target.kind,
+        source_url: target.target_url.clone(),
+        depth: target.depth,
     }
 }
 
@@ -40,27 +33,38 @@ pub async fn record_ingest_discoveries(
     if !discovery_schema_available(pool).await? {
         return Ok(());
     }
-    let Some(seed) = seed_target(source) else {
+    let Some(seed_candidate) = seed_target(source) else {
         return Ok(());
     };
-    let seed = enqueue_discovery(
+    let seed = match find_discovery_target(
         pool,
-        EnqueueDiscoveryRequest {
-            kind: seed.kind,
-            canonical_key: seed.canonical_key,
-            target_url: seed.target_url,
-            source_video_id: None,
-            parent_target_id: None,
-            method: DiscoveryMethod::Seed,
-            evidence: json!({"ingestRunId": report.run_id}),
-            depth: 0,
-            confidence: 1.0,
-            relevance: 1.0,
-            novelty: 1.0,
-        },
-        policy,
+        seed_candidate.kind,
+        &seed_candidate.canonical_key,
     )
-    .await?;
+    .await?
+    {
+        Some(existing) if existing.state == DiscoveryState::Claimed => existing,
+        _ => {
+            enqueue_discovery(
+                pool,
+                EnqueueDiscoveryRequest {
+                    kind: seed_candidate.kind,
+                    canonical_key: seed_candidate.canonical_key,
+                    target_url: seed_candidate.target_url,
+                    source_video_id: None,
+                    parent_target_id: None,
+                    method: DiscoveryMethod::Seed,
+                    evidence: json!({"ingestRunId": report.run_id}),
+                    depth: 0,
+                    confidence: 1.0,
+                    relevance: 1.0,
+                    novelty: 1.0,
+                },
+                policy,
+            )
+            .await?
+        }
+    };
 
     let ingest_run_id = report.run_id.to_string();
     if report.items.iter().all(|item| item.status == "failed") {
@@ -243,13 +247,11 @@ mod tests {
     use serde_json::to_value;
     use uuid::Uuid;
 
-    use super::workflow_handoff;
-    use crate::discovery::{
-        DiscoveryKind, DiscoveryState, DiscoveryTarget, WorkflowRunHandoff, DISCOVERY_WORKFLOW_ID,
-    };
+    use super::workflow_input;
+    use crate::discovery::{DiscoveryKind, DiscoveryState, DiscoveryTarget};
 
     #[test]
-    fn workflow_handoff_matches_engine_start_run_shape() {
+    fn workflow_input_matches_claim_executor_contract() {
         let now = Utc::now();
         let target = DiscoveryTarget {
             id: Uuid::nil(),
@@ -272,11 +274,11 @@ mod tests {
             claim_expires_at: Some(now),
             completed_at: None,
         };
-        let handoff: WorkflowRunHandoff = workflow_handoff(&target);
-        let value = to_value(handoff).unwrap();
-        assert_eq!(value["workflowId"], DISCOVERY_WORKFLOW_ID);
-        assert_eq!(value["input"]["sourceKind"], "video");
-        assert_eq!(value["input"]["sourceUrl"], target.target_url);
-        assert_eq!(value["context"]["discoveryTargetId"], target.id.to_string());
+        let input = workflow_input(&target);
+        let value = to_value(input).unwrap();
+        assert_eq!(value["sourceKind"], "video");
+        assert_eq!(value["sourceUrl"], target.target_url);
+        assert_eq!(value["discoveryId"], target.id.to_string());
+        assert_eq!(value["depth"], 2);
     }
 }
