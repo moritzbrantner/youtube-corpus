@@ -11,6 +11,7 @@ pub mod db;
 pub mod diagnostics;
 pub mod evaluation;
 pub mod ingest;
+pub mod media_analysis;
 pub mod multimodal;
 pub mod provenance;
 pub mod reprocessing;
@@ -37,6 +38,7 @@ pub use evaluation::{
     EvaluationRunReport, EvaluationTarget, RecordJudgmentRequest,
 };
 pub use ingest::{ingest_corpus, IngestReport};
+pub use media_analysis::{analyze_video, MediaAnalysisConfig, MediaAnalysisReport};
 pub use multimodal::{
     begin_processing_run, link_face_observation_to_track, link_voice_observation_to_track,
     list_face_observations, list_voice_observations, upsert_face_observation, upsert_face_track,
