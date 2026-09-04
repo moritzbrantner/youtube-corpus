@@ -79,5 +79,10 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
+      - name: Show formatter diff
+        run: |
+          bun run format
+          git diff -- Cargo.toml src/media_analysis.rs
+
       - name: Verify source graph and face adapter
         run: bun run verify:fast
