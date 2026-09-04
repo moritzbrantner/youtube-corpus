@@ -77,16 +77,15 @@ async fn fts_search(pool: &PgPool, request: &SearchRequest) -> anyhow::Result<Ve
     let filters = SearchFilterParams::try_from(request)?;
     rows_to_results(
         sqlx::query(
-            "SELECT s.id, s.video_id, s.stream_id, st.source_kind, s.language, s.start_seconds,
+            "SELECT s.id, s.video_id, s.stream_id, s.source_kind, s.language, s.start_seconds,
                     s.end_seconds, s.text, v.source_url, v.title,
                     ts_rank(s.search_vector, plainto_tsquery('simple', $1))::float8 AS fts_score,
                     0::float8 AS semantic_score,
                     ts_rank(s.search_vector, plainto_tsquery('simple', $1))::float8 AS score
-             FROM transcript_segments s
-             JOIN transcript_streams st ON st.id = s.stream_id
+             FROM corpus_search_segments s
              JOIN videos v ON v.id = s.video_id
              WHERE s.search_vector @@ plainto_tsquery('simple', $1)
-               AND ($3::text IS NULL OR st.source_kind = $3)
+               AND ($3::text IS NULL OR s.source_kind = $3)
                AND ($4::uuid IS NULL OR s.video_id = $4)
                AND ($5::text IS NULL OR s.language = $5)
                AND ($6::float8 IS NULL OR s.start_seconds >= $6)
@@ -139,16 +138,15 @@ async fn semantic_search(
     let filters = SearchFilterParams::try_from(request)?;
     rows_to_results(
         sqlx::query(
-            "SELECT s.id, s.video_id, s.stream_id, st.source_kind, s.language, s.start_seconds,
+            "SELECT s.id, s.video_id, s.stream_id, s.source_kind, s.language, s.start_seconds,
                     s.end_seconds, s.text, v.source_url, v.title,
                     0::float8 AS fts_score,
                     (1 - (s.embedding <=> $1::vector))::float8 AS semantic_score,
                     (1 - (s.embedding <=> $1::vector))::float8 AS score
-             FROM transcript_segments s
-             JOIN transcript_streams st ON st.id = s.stream_id
+             FROM corpus_search_segments s
              JOIN videos v ON v.id = s.video_id
              WHERE s.embedding IS NOT NULL
-               AND ($3::text IS NULL OR st.source_kind = $3)
+               AND ($3::text IS NULL OR s.source_kind = $3)
                AND ($4::uuid IS NULL OR s.video_id = $4)
                AND ($5::text IS NULL OR s.language = $5)
                AND ($6::float8 IS NULL OR s.start_seconds >= $6)
@@ -203,11 +201,10 @@ async fn hybrid_search(
         sqlx::query(
             "WITH fts AS (
                 SELECT s.id, ts_rank(s.search_vector, plainto_tsquery('simple', $1))::float8 AS score
-                FROM transcript_segments s
-                JOIN transcript_streams st ON st.id = s.stream_id
+                FROM corpus_search_segments s
                 JOIN videos v ON v.id = s.video_id
                 WHERE s.search_vector @@ plainto_tsquery('simple', $1)
-                  AND ($4::text IS NULL OR st.source_kind = $4)
+                  AND ($4::text IS NULL OR s.source_kind = $4)
                   AND ($5::uuid IS NULL OR s.video_id = $5)
                   AND ($6::text IS NULL OR s.language = $6)
                   AND ($7::float8 IS NULL OR s.start_seconds >= $7)
@@ -246,11 +243,10 @@ async fn hybrid_search(
               ),
               sem AS (
                 SELECT s.id, (1 - (s.embedding <=> $2::vector))::float8 AS score
-                FROM transcript_segments s
-                JOIN transcript_streams st ON st.id = s.stream_id
+                FROM corpus_search_segments s
                 JOIN videos v ON v.id = s.video_id
                 WHERE s.embedding IS NOT NULL
-                  AND ($4::text IS NULL OR st.source_kind = $4)
+                  AND ($4::text IS NULL OR s.source_kind = $4)
                   AND ($5::uuid IS NULL OR s.video_id = $5)
                   AND ($6::text IS NULL OR s.language = $6)
                   AND ($7::float8 IS NULL OR s.start_seconds >= $7)
@@ -293,12 +289,11 @@ async fn hybrid_search(
                        COALESCE(sem.score, 0)::float8 AS semantic_score
                 FROM fts FULL OUTER JOIN sem ON fts.id = sem.id
               )
-              SELECT s.id, s.video_id, s.stream_id, st.source_kind, s.language, s.start_seconds,
+              SELECT s.id, s.video_id, s.stream_id, s.source_kind, s.language, s.start_seconds,
                      s.end_seconds, s.text, v.source_url, v.title, m.fts_score, m.semantic_score,
                      (0.35 * m.fts_score + 0.65 * m.semantic_score)::float8 AS score
               FROM merged m
-              JOIN transcript_segments s ON s.id = m.id
-              JOIN transcript_streams st ON st.id = s.stream_id
+              JOIN corpus_search_segments s ON s.id = m.id
               JOIN videos v ON v.id = s.video_id
               ORDER BY score DESC
               LIMIT $3",
