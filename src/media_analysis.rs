@@ -126,7 +126,12 @@ async fn analyze_faces(
         .extra_output_arg("-vf")
         .extra_output_arg(filter);
     let mut source = FfmpegVideoSource::open_path_with_options(media_path, options)
-        .with_context(|| format!("failed to decode face-analysis frames from {}", media_path.display()))?;
+        .with_context(|| {
+            format!(
+                "failed to decode face-analysis frames from {}",
+                media_path.display()
+            )
+        })?;
 
     let mut tracks = Vec::<FaceTrackState>::new();
     let mut sample_ordinal = 0_u64;
@@ -193,9 +198,7 @@ async fn analyze_faces(
                 UpsertFaceObservationRequest {
                     run_id: run.id,
                     video_id,
-                    observation_key: format!(
-                        "sample:{sample_ordinal}:face:{detection_index}"
-                    ),
+                    observation_key: format!("sample:{sample_ordinal}:face:{detection_index}"),
                     start_seconds: timestamp,
                     end_seconds: None,
                     frame_index: None,
@@ -214,19 +217,19 @@ async fn analyze_faces(
             .await?;
             observation_count += 1;
 
-            let track_index = best_face_track(
+            if let Some(track_index) = best_face_track(
                 &tracks,
                 &embedding,
                 timestamp,
                 config.face_interval_seconds * 2.5,
                 config.face_track_similarity,
-            )
-            .unwrap_or_else(|| {
-                let index = tracks.len();
-                tracks.push(FaceTrackState::new(index, timestamp, &embedding));
-                index
-            });
-            tracks[track_index].observe(timestamp, &embedding, observation.id);
+            ) {
+                tracks[track_index].observe(timestamp, &embedding, observation.id);
+            } else {
+                let mut track = FaceTrackState::new(tracks.len(), timestamp, &embedding);
+                track.observation_ids.push(observation.id);
+                tracks.push(track);
+            }
         }
         sample_ordinal += 1;
     }
@@ -279,7 +282,10 @@ impl FaceTrackState {
             start_seconds: timestamp,
             end_seconds: timestamp,
             last_seen_seconds: timestamp,
-            embedding_sum: embedding.iter().map(|value| f64::from(*value)).collect(),
+            embedding_sum: embedding
+                .iter()
+                .map(|value| f64::from(*value))
+                .collect(),
             embedding_count: 1,
             observation_ids: Vec::new(),
         }
@@ -475,8 +481,21 @@ mod tests {
     }
 
     #[test]
+    fn face_track_counts_first_observation_once() {
+        let observation_id = Uuid::new_v4();
+        let mut track = FaceTrackState::new(0, 1.0, &[1.0, 0.0]);
+        track.observation_ids.push(observation_id);
+        assert_eq!(track.embedding_count, 1);
+        assert_eq!(track.observation_ids, vec![observation_id]);
+        assert_eq!(track.representative_embedding(), vec![1.0, 0.0]);
+    }
+
+    #[test]
     fn config_hash_is_deterministic() {
         let value = json!({"a": 1, "b": true});
-        assert_eq!(value_sha256(&value).unwrap(), value_sha256(&value).unwrap());
+        assert_eq!(
+            value_sha256(&value).unwrap(),
+            value_sha256(&value).unwrap()
+        );
     }
 }
