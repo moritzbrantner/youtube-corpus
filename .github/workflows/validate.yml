@@ -80,9 +80,19 @@ jobs:
           git clone --filter=blob:none https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
           git -C ../nlp-stack checkout 057689ca1df031d677f4afd9d65eed181c6fca06
           git clone --filter=blob:none https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
-          git -C ../moenarch-foundation checkout ead588f27d130d775524db31189b734a224843d5
+          git -C ../moenarch-foundation checkout b7533cd02269124deece75b76477ca55a853cd77
           git clone --filter=blob:none https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
           git -C ../visual-analysis checkout a25d3e540d2ed90f1001fe76704ebc11815bc9db
+
+      - name: Activate exact source patches
+        run: |
+          set -euo pipefail
+          mkdir -p .cargo
+          {
+            echo '[patch.crates-io]'
+            jq -r --arg root "$PWD" '.cargo.patches[] | "\"\(.package)\" = { path = \"\($root)/\(.localPath)\" }"' .coding-tooling.source-deps.json
+          } > .cargo/config.toml
+          cat .cargo/config.toml
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
