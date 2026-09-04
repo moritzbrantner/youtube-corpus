@@ -1,0 +1,83 @@
+name: Temporary Face Adapter Verify
+
+on:
+  push:
+    branches:
+      - feat/multimodal-analysis-adapters
+
+permissions:
+  contents: read
+
+concurrency:
+  group: temporary-face-adapter-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: youtube-corpus
+    steps:
+      - name: Check out youtube-corpus
+        uses: actions/checkout@v4
+        with:
+          path: youtube-corpus
+
+      - name: Check out nlp-stack
+        uses: actions/checkout@v4
+        with:
+          repository: moritzbrantner/nlp-stack
+          ref: 057689ca1df031d677f4afd9d65eed181c6fca06
+          path: nlp-stack
+          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
+
+      - name: Check out moenarch-foundation
+        uses: actions/checkout@v4
+        with:
+          repository: moritzbrantner/moenarch-foundation
+          ref: ead588f27d130d775524db31189b734a224843d5
+          path: moenarch-foundation
+          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
+
+      - name: Check out visual-analysis
+        uses: actions/checkout@v4
+        with:
+          repository: moritzbrantner/visual-analysis
+          ref: 223b4eca141ee0a23f10d8170ca8d16db1918a7c
+          path: visual-analysis
+          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install ONNX Runtime
+        run: |
+          python -m pip install --disable-pip-version-check "onnxruntime==1.26.0"
+          python - <<'PY' >> "$GITHUB_ENV"
+          import onnxruntime
+          from pathlib import Path
+          capi = Path(onnxruntime.__file__).resolve().parent / "capi"
+          candidates = sorted(capi.glob("libonnxruntime.so*"))
+          if not candidates:
+              raise SystemExit(f"ONNX Runtime shared library not found under {capi}")
+          print(f"ORT_DYLIB_PATH={candidates[0]}")
+          PY
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify source graph and face adapter
+        run: bun run verify:fast
