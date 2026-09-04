@@ -6,7 +6,7 @@ use crate::config::CorpusSource;
 use crate::ingest::IngestReport;
 
 use super::store::{
-    complete_discovery, discovery_schema_available, enqueue_discovery, fail_discovery,
+    complete_unclaimed_discovery, discovery_schema_available, enqueue_discovery,
     find_discovery_target,
 };
 use super::types::{
@@ -21,6 +21,7 @@ pub fn workflow_input(target: &DiscoveryTarget) -> DiscoveryWorkflowInput {
         source_kind: target.kind,
         source_url: target.target_url.clone(),
         depth: target.depth,
+        claim_attempt: target.attempt_count,
     }
 }
 
@@ -39,8 +40,8 @@ pub async fn record_ingest_discoveries(
     let seed = match find_discovery_target(pool, seed_candidate.kind, &seed_candidate.canonical_key)
         .await?
     {
-        Some(existing) if existing.state == DiscoveryState::Claimed => existing,
-        _ => {
+        Some(existing) => existing,
+        None => {
             enqueue_discovery(
                 pool,
                 EnqueueDiscoveryRequest {
@@ -62,22 +63,15 @@ pub async fn record_ingest_discoveries(
         }
     };
 
-    let ingest_run_id = report.run_id.to_string();
     if report.items.iter().all(|item| item.status == "failed") {
-        if seed.state == DiscoveryState::Completed {
-            return Ok(());
-        }
-        fail_discovery(
-            pool,
-            seed.id,
-            Some(&ingest_run_id),
-            "ingest failed for every resolved item",
-        )
-        .await?;
         return Ok(());
     }
 
+    let ingest_run_id = report.run_id.to_string();
     for item in &report.items {
+        if item.status == "failed" {
+            continue;
+        }
         let Some(video_id) = item.video_id else {
             continue;
         };
@@ -105,11 +99,14 @@ pub async fn record_ingest_discoveries(
             _ => seed.clone(),
         };
         discover_from_video(pool, video_id, &current, policy).await?;
-        if current.id != seed.id && current.state != DiscoveryState::Claimed {
-            complete_discovery(pool, current.id, Some(&ingest_run_id)).await?;
+        if current.id != seed.id {
+            complete_unclaimed_discovery(pool, current.id, Some(&ingest_run_id)).await?;
         }
     }
-    complete_discovery(pool, seed.id, Some(&ingest_run_id)).await?;
+
+    if seed.state != DiscoveryState::Claimed {
+        complete_unclaimed_discovery(pool, seed.id, Some(&ingest_run_id)).await?;
+    }
     Ok(())
 }
 
@@ -263,7 +260,7 @@ mod tests {
             novelty: 0.7,
             claimed_by: Some("workflow-runner".to_string()),
             workflow_run_id: None,
-            attempt_count: 1,
+            attempt_count: 3,
             last_error: None,
             discovered_at: now,
             updated_at: now,
@@ -277,5 +274,6 @@ mod tests {
         assert_eq!(value["sourceUrl"], target.target_url);
         assert_eq!(value["discoveryId"], target.id.to_string());
         assert_eq!(value["depth"], 2);
+        assert_eq!(value["claimAttempt"], 3);
     }
 }
