@@ -50,7 +50,6 @@ video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", path = "..
 video-analysis-ingest = { package = "moenarch-video-analysis-ingest", path = "../visual-analysis/crates/video/video-analysis-ingest" }
 image-analysis-detection = { package = "moenarch-image-analysis-detection", path = "../visual-analysis/crates/image/image-analysis-detection", features = ["onnx"] }
 image-analysis-embeddings = { package = "moenarch-image-analysis-embeddings", path = "../visual-analysis/crates/image/image-analysis-embeddings", features = ["onnx"] }
-audio-analysis-speakers = { package = "moenarch-audio-analysis-speakers", path = "../audio-analysis/crates/audio/audio-analysis-speakers" }
 
 [dev-dependencies]
 tempfile = "3.23"
