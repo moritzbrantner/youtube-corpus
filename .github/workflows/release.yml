@@ -90,7 +90,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: moritzbrantner/visual-analysis
-          ref: 6f1c3f09c6f01005ea30644377b5e44df9fd1e60
+          ref: 223b4eca141ee0a23f10d8170ca8d16db1918a7c
           path: visual-analysis
           token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
