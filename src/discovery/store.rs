@@ -222,20 +222,31 @@ pub async fn claim_next_discovery_with_lease(
 pub async fn complete_discovery(
     pool: &PgPool,
     id: Uuid,
+    claim_attempt: u32,
     workflow_run_id: Option<&str>,
 ) -> anyhow::Result<DiscoveryTarget> {
-    transition_target(pool, id, DiscoveryState::Completed, workflow_run_id, None).await
+    transition_claimed_target(
+        pool,
+        id,
+        claim_attempt,
+        DiscoveryState::Completed,
+        workflow_run_id,
+        None,
+    )
+    .await
 }
 
 pub async fn fail_discovery(
     pool: &PgPool,
     id: Uuid,
+    claim_attempt: u32,
     workflow_run_id: Option<&str>,
     error: &str,
 ) -> anyhow::Result<DiscoveryTarget> {
-    transition_target(
+    transition_claimed_target(
         pool,
         id,
+        claim_attempt,
         DiscoveryState::Failed,
         workflow_run_id,
         Some(error),
@@ -243,29 +254,69 @@ pub async fn fail_discovery(
     .await
 }
 
-async fn transition_target(
+pub(crate) async fn complete_unclaimed_discovery(
     pool: &PgPool,
     id: Uuid,
-    state: DiscoveryState,
     workflow_run_id: Option<&str>,
-    error: Option<&str>,
-) -> anyhow::Result<DiscoveryTarget> {
-    let completed = state == DiscoveryState::Completed;
+) -> anyhow::Result<Option<DiscoveryTarget>> {
     let row = sqlx::query(
         "UPDATE discovery_targets
-         SET state = $2,
-             workflow_run_id = COALESCE($3, workflow_run_id),
-             last_error = $4,
+         SET state = 'completed',
+             workflow_run_id = CASE
+               WHEN state = 'completed' THEN workflow_run_id
+               ELSE COALESCE($2, workflow_run_id)
+             END,
+             last_error = CASE WHEN state = 'completed' THEN last_error ELSE NULL END,
              claim_expires_at = NULL,
-             completed_at = CASE WHEN $5 THEN now() ELSE completed_at END,
-             updated_at = now()
-         WHERE id = $1
+             completed_at = COALESCE(completed_at, now()),
+             updated_at = CASE WHEN state = 'completed' THEN updated_at ELSE now() END
+         WHERE id = $1 AND state <> 'claimed'
          RETURNING id, kind, canonical_key, target_url, state, depth, priority,
                    confidence, relevance, novelty, claimed_by, workflow_run_id,
                    attempt_count, last_error, discovered_at, updated_at, claimed_at,
                    claim_expires_at, completed_at",
     )
     .bind(id)
+    .bind(workflow_run_id)
+    .fetch_optional(pool)
+    .await?;
+    row.map(target_from_row).transpose()
+}
+
+async fn transition_claimed_target(
+    pool: &PgPool,
+    id: Uuid,
+    claim_attempt: u32,
+    state: DiscoveryState,
+    workflow_run_id: Option<&str>,
+    error: Option<&str>,
+) -> anyhow::Result<DiscoveryTarget> {
+    let claim_attempt = i32::try_from(claim_attempt)?;
+    let completed = state == DiscoveryState::Completed;
+    let row = sqlx::query(
+        "UPDATE discovery_targets
+         SET state = $3,
+             workflow_run_id = CASE
+               WHEN state = 'claimed' THEN COALESCE($4, workflow_run_id)
+               ELSE workflow_run_id
+             END,
+             last_error = CASE WHEN state = 'claimed' THEN $5 ELSE last_error END,
+             claim_expires_at = CASE WHEN state = 'claimed' THEN NULL ELSE claim_expires_at END,
+             completed_at = CASE
+               WHEN state = 'claimed' AND $6 THEN now()
+               ELSE completed_at
+             END,
+             updated_at = CASE WHEN state = 'claimed' THEN now() ELSE updated_at END
+         WHERE id = $1
+           AND attempt_count = $2
+           AND (state = 'claimed' OR state = $3)
+         RETURNING id, kind, canonical_key, target_url, state, depth, priority,
+                   confidence, relevance, novelty, claimed_by, workflow_run_id,
+                   attempt_count, last_error, discovered_at, updated_at, claimed_at,
+                   claim_expires_at, completed_at",
+    )
+    .bind(id)
+    .bind(claim_attempt)
     .bind(state.as_str())
     .bind(workflow_run_id)
     .bind(error)
@@ -273,7 +324,10 @@ async fn transition_target(
     .fetch_optional(pool)
     .await?;
     let Some(row) = row else {
-        anyhow::bail!("discovery target {id} was not found");
+        anyhow::bail!(
+            "discovery target {id} is not owned by claim attempt {claim_attempt} for transition to {}",
+            state.as_str()
+        );
     };
     target_from_row(row)
 }
