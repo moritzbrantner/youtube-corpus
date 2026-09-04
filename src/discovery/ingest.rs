@@ -76,7 +76,6 @@ pub async fn record_ingest_discoveries(
         .await?;
         return Ok(());
     }
-    complete_discovery(pool, seed.id, Some(&ingest_run_id)).await?;
 
     for item in &report.items {
         let Some(video_id) = item.video_id else {
@@ -84,7 +83,7 @@ pub async fn record_ingest_discoveries(
         };
         let current = match canonicalize_youtube_target(&item.source_url) {
             Some(target) if target.canonical_key != seed.canonical_key => {
-                let target = enqueue_discovery(
+                enqueue_discovery(
                     pool,
                     EnqueueDiscoveryRequest {
                         kind: target.kind,
@@ -101,14 +100,16 @@ pub async fn record_ingest_discoveries(
                     },
                     policy,
                 )
-                .await?;
-                complete_discovery(pool, target.id, Some(&ingest_run_id)).await?;
-                target
+                .await?
             }
             _ => seed.clone(),
         };
         discover_from_video(pool, video_id, &current, policy).await?;
+        if current.id != seed.id && current.state != DiscoveryState::Claimed {
+            complete_discovery(pool, current.id, Some(&ingest_run_id)).await?;
+        }
     }
+    complete_discovery(pool, seed.id, Some(&ingest_run_id)).await?;
     Ok(())
 }
 
