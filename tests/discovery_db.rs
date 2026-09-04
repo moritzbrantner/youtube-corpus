@@ -82,15 +82,44 @@ async fn discovery_frontier_is_idempotent_prioritized_and_expands_ingest_evidenc
         .await
         .unwrap();
 
+    let recursive_youtube_id = format!("recursive-{}", Uuid::new_v4());
+    let recursive_source_url = format!(
+        "https://www.youtube.com/watch?v={recursive_youtube_id}"
+    );
+    let recursive = enqueue_discovery(
+        &pool,
+        EnqueueDiscoveryRequest {
+            kind: DiscoveryKind::Video,
+            canonical_key: format!("youtube:video:{recursive_youtube_id}"),
+            target_url: recursive_source_url.clone(),
+            source_video_id: None,
+            parent_target_id: None,
+            method: DiscoveryMethod::Manual,
+            evidence: json!({"fixture": "recursive"}),
+            depth: 2,
+            confidence: 1.0,
+            relevance: 1.0,
+            novelty: 1.0,
+        },
+        &policy,
+    )
+    .await
+    .unwrap();
+    let recursive_claim = claim_next_discovery(&pool, "test-runner", Some("workflow-2"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(recursive_claim.id, recursive.id);
+    assert_eq!(recursive_claim.depth, 2);
+
     let video_id = Uuid::new_v4();
-    let source_url = format!("https://www.youtube.com/watch?v=seed-{video_id}");
     sqlx::query(
         "INSERT INTO videos (id, youtube_id, source_url, title, description, channel_url)
          VALUES ($1, $2, $3, 'Discovery fixture', $4, $5)",
     )
     .bind(video_id)
-    .bind(format!("seed-{video_id}"))
-    .bind(&source_url)
+    .bind(&recursive_youtube_id)
+    .bind(&recursive_source_url)
     .bind("Related: https://youtu.be/child_123")
     .bind("https://www.youtube.com/@FixtureChannel")
     .execute(&pool)
@@ -105,7 +134,7 @@ async fn discovery_frontier_is_idempotent_prioritized_and_expands_ingest_evidenc
         segments_indexed: 0,
         items: vec![IngestItemReport {
             video_id: Some(video_id),
-            source_url: source_url.clone(),
+            source_url: recursive_source_url.clone(),
             title: Some("Discovery fixture".to_string()),
             status: "no_transcript".to_string(),
             streams_indexed: 0,
@@ -115,17 +144,30 @@ async fn discovery_frontier_is_idempotent_prioritized_and_expands_ingest_evidenc
     };
     record_ingest_discoveries(
         &pool,
-        &CorpusSource::YoutubeUrl { url: source_url },
+        &CorpusSource::YoutubeUrl {
+            url: recursive_source_url,
+        },
         &report,
         &policy,
     )
     .await
     .unwrap();
 
+    let preserved_depth: i32 = sqlx::query_scalar(
+        "SELECT depth FROM discovery_targets WHERE id = $1",
+    )
+    .bind(recursive.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(preserved_depth, 2);
+
     let frontier = list_frontier(&pool, 20).await.unwrap();
-    assert!(frontier
+    let child = frontier
         .iter()
-        .any(|target| target.canonical_key == "youtube:video:child_123"));
+        .find(|target| target.canonical_key == "youtube:video:child_123")
+        .expect("description child should enter the frontier");
+    assert_eq!(child.depth, 3);
     assert!(frontier
         .iter()
         .any(|target| target.canonical_key == "youtube:channel:@fixturechannel"));
