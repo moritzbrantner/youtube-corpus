@@ -24,6 +24,31 @@ CREATE TABLE IF NOT EXISTS video_scenes (
 CREATE INDEX IF NOT EXISTS video_scenes_video_time_idx
   ON video_scenes(video_id, start_seconds, end_seconds);
 
+CREATE TABLE IF NOT EXISTS visual_text_observations (
+  id uuid PRIMARY KEY,
+  run_id uuid NOT NULL,
+  video_id uuid NOT NULL,
+  observation_key text NOT NULL,
+  text text NOT NULL CHECK (length(trim(text)) > 0),
+  language text,
+  frame_index bigint CHECK (frame_index IS NULL OR frame_index >= 0),
+  timestamp_seconds double precision CHECK (timestamp_seconds IS NULL OR timestamp_seconds >= 0),
+  scene_index bigint CHECK (scene_index IS NULL OR scene_index >= 0),
+  bbox_x bigint CHECK (bbox_x IS NULL OR bbox_x >= 0),
+  bbox_y bigint CHECK (bbox_y IS NULL OR bbox_y >= 0),
+  bbox_width bigint CHECK (bbox_width IS NULL OR bbox_width > 0),
+  bbox_height bigint CHECK (bbox_height IS NULL OR bbox_height > 0),
+  confidence double precision CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1)),
+  attributes jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (run_id, video_id) REFERENCES media_processing_runs(id, video_id) ON DELETE CASCADE,
+  UNIQUE (run_id, observation_key)
+);
+
+CREATE INDEX IF NOT EXISTS visual_text_observations_video_time_idx
+  ON visual_text_observations(video_id, timestamp_seconds);
+
 CREATE TABLE IF NOT EXISTS visual_text_tracks (
   id uuid PRIMARY KEY,
   run_id uuid NOT NULL,
@@ -59,6 +84,15 @@ CREATE INDEX IF NOT EXISTS visual_text_tracks_video_time_idx
 
 CREATE INDEX IF NOT EXISTS visual_text_tracks_search_idx
   ON visual_text_tracks USING gin(search_vector);
+
+CREATE TABLE IF NOT EXISTS visual_text_track_observations (
+  track_id uuid NOT NULL REFERENCES visual_text_tracks(id) ON DELETE CASCADE,
+  observation_id uuid NOT NULL REFERENCES visual_text_observations(id) ON DELETE CASCADE,
+  PRIMARY KEY (track_id, observation_id)
+);
+
+CREATE INDEX IF NOT EXISTS visual_text_track_observations_observation_idx
+  ON visual_text_track_observations(observation_id);
 
 CREATE TABLE IF NOT EXISTS visual_text_track_scenes (
   track_id uuid NOT NULL REFERENCES visual_text_tracks(id) ON DELETE CASCADE,
