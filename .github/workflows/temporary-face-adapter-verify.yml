@@ -15,9 +15,25 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: youtube_corpus_verify
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d youtube_corpus_verify"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: youtube-corpus
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/youtube_corpus_verify
     steps:
       - name: Check out youtube-corpus
         uses: actions/checkout@v4
@@ -79,5 +95,26 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
+      - name: Verify locked source graph
+        run: cargo check --locked
+
       - name: Verify source graph and face adapter
         run: bun run verify:fast
+
+      - name: Verify Postgres integration
+        run: bun run verify:postgres
+
+      - name: Prepare public face fixture
+        run: |
+          curl --fail --location --retry 3 \
+            https://raw.githubusercontent.com/opencv/opencv/4.x/samples/data/lena.jpg \
+            --output /tmp/lena.jpg
+          ffmpeg -hide_banner -loglevel error -y \
+            -loop 1 -i /tmp/lena.jpg -t 3 -r 1 -pix_fmt yuv420p \
+            /tmp/face-fixture.mp4
+          test -s /tmp/face-fixture.mp4
+
+      - name: Dogfood YuNet and SFace persistence
+        env:
+          FACE_VIDEO_FIXTURE: /tmp/face-fixture.mp4
+        run: cargo test --test face_analysis_db -- --ignored --nocapture
