@@ -54,10 +54,7 @@ pub fn canonicalize_youtube_target(raw_url: &str) -> Option<DiscoveredYouTubeTar
         return playlist_target(&playlist_id);
     }
 
-    if matches!(
-        segments.first().copied(),
-        Some("shorts" | "live" | "embed")
-    ) {
+    if matches!(segments.first().copied(), Some("shorts" | "live" | "embed")) {
         return segments.get(1).and_then(|video_id| video_target(video_id));
     }
 
