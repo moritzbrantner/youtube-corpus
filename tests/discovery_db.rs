@@ -99,26 +99,19 @@ async fn discovery_frontier_is_idempotent_prioritized_and_expands_ingest_evidenc
     );
 
     assert!(
-        complete_discovery(
-            &pool,
-            claimed.id,
-            claimed.attempt_count,
-            Some("workflow-1")
-        )
-        .await
-        .is_err()
+        complete_discovery(&pool, claimed.id, claimed.attempt_count, Some("workflow-1"))
+            .await
+            .is_err()
     );
-    assert!(
-        fail_discovery(
-            &pool,
-            claimed.id,
-            claimed.attempt_count,
-            Some("workflow-1"),
-            "stale worker"
-        )
-        .await
-        .is_err()
-    );
+    assert!(fail_discovery(
+        &pool,
+        claimed.id,
+        claimed.attempt_count,
+        Some("workflow-1"),
+        "stale worker"
+    )
+    .await
+    .is_err());
     let completed = complete_discovery(
         &pool,
         reclaimed.id,
