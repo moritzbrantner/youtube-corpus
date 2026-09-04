@@ -78,14 +78,32 @@ async fn discovery_frontier_is_idempotent_prioritized_and_expands_ingest_evidenc
     assert_eq!(claimed.attempt_count, 1);
     assert_eq!(claimed.workflow_run_id.as_deref(), Some("workflow-1"));
     assert!(claimed.claim_expires_at.is_some());
-    complete_discovery(&pool, claimed.id, Some("workflow-1"))
+
+    sqlx::query(
+        "UPDATE discovery_targets SET claim_expires_at = now() - interval '1 minute' WHERE id = $1",
+    )
+    .bind(claimed.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let reclaimed = claim_next_discovery(&pool, "recovery-runner", Some("workflow-1-retry"))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(reclaimed.id, claimed.id);
+    assert_eq!(reclaimed.attempt_count, 2);
+    assert_eq!(reclaimed.claimed_by.as_deref(), Some("recovery-runner"));
+    assert_eq!(
+        reclaimed.workflow_run_id.as_deref(),
+        Some("workflow-1-retry")
+    );
+    complete_discovery(&pool, reclaimed.id, Some("workflow-1-retry"))
         .await
         .unwrap();
 
     let recursive_youtube_id = format!("recursive-{}", Uuid::new_v4());
-    let recursive_source_url = format!(
-        "https://www.youtube.com/watch?v={recursive_youtube_id}"
-    );
+    let recursive_source_url =
+        format!("https://www.youtube.com/watch?v={recursive_youtube_id}");
     let recursive = enqueue_discovery(
         &pool,
         EnqueueDiscoveryRequest {
@@ -153,13 +171,12 @@ async fn discovery_frontier_is_idempotent_prioritized_and_expands_ingest_evidenc
     .await
     .unwrap();
 
-    let preserved_depth: i32 = sqlx::query_scalar(
-        "SELECT depth FROM discovery_targets WHERE id = $1",
-    )
-    .bind(recursive.id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let preserved_depth: i32 =
+        sqlx::query_scalar("SELECT depth FROM discovery_targets WHERE id = $1")
+            .bind(recursive.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(preserved_depth, 2);
 
     let frontier = list_frontier(&pool, 20).await.unwrap();
