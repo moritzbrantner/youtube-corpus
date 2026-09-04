@@ -68,12 +68,6 @@
         "git": "https://github.com/moritzbrantner/visual-analysis",
         "rev": "223b4eca141ee0a23f10d8170ca8d16db1918a7c",
         "localPath": "../visual-analysis/crates/image/image-analysis-embeddings"
-      },
-      {
-        "package": "moenarch-audio-analysis-speakers",
-        "git": "https://github.com/moritzbrantner/audio-analysis",
-        "rev": "90ca539d530aa7720c46465618d431e9e17591b8",
-        "localPath": "../audio-analysis/crates/audio/audio-analysis-speakers"
       }
     ]
   }
