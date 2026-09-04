@@ -102,8 +102,7 @@ async fn discovery_frontier_is_idempotent_prioritized_and_expands_ingest_evidenc
         .unwrap();
 
     let recursive_youtube_id = format!("recursive-{}", Uuid::new_v4());
-    let recursive_source_url =
-        format!("https://www.youtube.com/watch?v={recursive_youtube_id}");
+    let recursive_source_url = format!("https://www.youtube.com/watch?v={recursive_youtube_id}");
     let recursive = enqueue_discovery(
         &pool,
         EnqueueDiscoveryRequest {
