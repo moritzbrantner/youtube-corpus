@@ -192,6 +192,7 @@ pub struct DiscoveryWorkflowInput {
     pub source_kind: DiscoveryKind,
     pub source_url: String,
     pub depth: u32,
+    pub claim_attempt: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
