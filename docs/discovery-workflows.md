@@ -48,6 +48,8 @@ The `(kind, canonical_key)` uniqueness constraint makes discovery idempotent. `d
 
 Failed or deferred targets can become pending again when later evidence satisfies the admission policy. Completed and currently claimed targets are not reopened by duplicate discoveries.
 
+When a claimed target is ingested by a workflow run, ingest reuses that claimed target rather than treating its URL as a new depth-0 seed. This preserves the actual crawl depth and parent provenance, so the maximum-depth policy remains effective across recursive runs.
+
 ## Admission policy
 
 The first policy is deliberately deterministic and local:
@@ -74,8 +76,8 @@ A composition host registers these three YouTube-specific node executors with `w
 
 Executor contracts:
 
-- `youtube_corpus.frontier.claim`: claim the highest-priority pending target using `FOR UPDATE SKIP LOCKED`; output `{ candidate, found }`.
-- `youtube_corpus.ingest`: convert `candidate.sourceKind` and `candidate.sourceUrl` into a `CorpusSource`, run the existing ingest pipeline, and include `discoveryId` in its result. Ingest automatically records newly found targets.
+- `youtube_corpus.frontier.claim`: claim the highest-priority pending target using `FOR UPDATE SKIP LOCKED`. Convert it with `workflow_input`; output `{ candidate, found }`, where `candidate` has `{ discoveryId, sourceKind, sourceUrl, depth }`.
+- `youtube_corpus.ingest`: convert `candidate.sourceKind` and `candidate.sourceUrl` into a `CorpusSource`, run the existing ingest pipeline, and include `discoveryId` in its result. Ingest automatically records newly found targets while preserving the claimed target's depth.
 - `youtube_corpus.frontier.complete`: mark the `discoveryId` from the ingest result completed and preserve the engine run id in `workflow_run_id`.
 
 If ingest reaches a terminal error after runner retries, the host should call `fail_discovery` before returning the final failure. This keeps failure state corpus-owned while retry policy stays runner-owned.
