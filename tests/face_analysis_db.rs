@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use uuid::Uuid;
 use youtube_corpus::{analyze_video, list_face_observations, MediaAnalysisConfig};
 
@@ -34,10 +36,13 @@ async fn face_analysis_executes_and_persists_evidence() {
         face_track_similarity: 0.65,
         model_auto_download: true,
     };
-    let report = analyze_video(&pool, video_id, media_path.as_ref(), &config)
+    let report = analyze_video(&pool, video_id, Path::new(&media_path), &config)
         .await
         .unwrap();
-    assert!(report.face_observations > 0, "expected at least one detected face");
+    assert!(
+        report.face_observations > 0,
+        "expected at least one detected face"
+    );
     assert!(report.face_tracks > 0, "expected at least one face track");
 
     let observations = list_face_observations(&pool, video_id).await.unwrap();
