@@ -9,11 +9,11 @@ use super::types::{
 };
 
 pub async fn discovery_schema_available(pool: &PgPool) -> anyhow::Result<bool> {
-    Ok(sqlx::query_scalar::<_, bool>(
-        "SELECT to_regclass('public.discovery_targets') IS NOT NULL",
+    Ok(
+        sqlx::query_scalar::<_, bool>("SELECT to_regclass('public.discovery_targets') IS NOT NULL")
+            .fetch_one(pool)
+            .await?,
     )
-    .fetch_one(pool)
-    .await?)
 }
 
 pub async fn enqueue_discovery(
@@ -204,14 +204,7 @@ pub async fn complete_discovery(
     id: Uuid,
     workflow_run_id: Option<&str>,
 ) -> anyhow::Result<DiscoveryTarget> {
-    transition_target(
-        pool,
-        id,
-        DiscoveryState::Completed,
-        workflow_run_id,
-        None,
-    )
-    .await
+    transition_target(pool, id, DiscoveryState::Completed, workflow_run_id, None).await
 }
 
 pub async fn fail_discovery(
