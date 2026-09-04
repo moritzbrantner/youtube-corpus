@@ -72,9 +72,9 @@ pub use visual_processing::{
     SceneAnalysisRequest, VISUAL_ANALYSIS_SCENE_REVISION,
 };
 pub use visual_timeline::{
-    begin_visual_processing_run, list_video_scenes, list_visual_text_tracks,
-    upsert_video_scene, upsert_visual_text_observation, upsert_visual_text_track,
-    BeginVisualProcessingRunRequest, UpsertVideoSceneRequest, UpsertVisualTextObservationRequest,
-    UpsertVisualTextTrackRequest, VideoScene, VisualBoundingBox, VisualProcessingKind,
-    VisualTextObservation, VisualTextRole, VisualTextTrack,
+    begin_visual_processing_run, list_video_scenes, list_visual_text_tracks, upsert_video_scene,
+    upsert_visual_text_observation, upsert_visual_text_track, BeginVisualProcessingRunRequest,
+    UpsertVideoSceneRequest, UpsertVisualTextObservationRequest, UpsertVisualTextTrackRequest,
+    VideoScene, VisualBoundingBox, VisualProcessingKind, VisualTextObservation, VisualTextRole,
+    VisualTextTrack,
 };
