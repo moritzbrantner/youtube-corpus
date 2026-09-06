@@ -1,0 +1,38 @@
+name: Rustfmt once
+
+on:
+  push:
+    branches:
+      - feat/github-pages-video-analyzer
+
+permissions:
+  contents: write
+
+jobs:
+  rustfmt:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Install Rust formatter
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Format Rust
+        run: cargo fmt
+
+      - name: Commit formatter output
+        run: |
+          if git diff --quiet; then
+            echo "Rust sources already formatted."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Format Rust analyzer changes"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
