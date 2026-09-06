@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "surface": "youtube-video-analyzer",
   "delivery": "static-github-pages",
   "input": "youtube-video-url",
@@ -10,8 +10,8 @@
       "privacy-enhanced-preview",
       "youtube-oembed-metadata",
       "user-approved-tab-audio-capture",
-      "in-memory-audio-recording",
-      "audio-analysis-webgpu-transcription",
+      "caller-owned-media-stream-lifecycle",
+      "bounded-audio-analysis-stream-orchestration",
       "in-memory-transcript-normalization",
       "nlp-stack-rust-wasm-analysis",
       "analysis-report-rendering"
@@ -19,7 +19,9 @@
     "doesNotOwn": [
       "youtube-media-download",
       "persistent-corpus-storage",
+      "complete-browser-audio-recording",
       "direct-cross-origin-youtube-media-decoding",
+      "pcm-normalization-semantics",
       "audio-analysis-transcription-semantics",
       "nlp-analysis-semantics"
     ]
@@ -31,20 +33,35 @@
   "transcriptPreference": ["asr"],
   "analysis": {
     "metadata": "direct-youtube-oembed",
-    "transcript": "audio-analysis-whisper-tiny-webgpu-over-user-shared-tab-audio",
+    "transcript": "bounded-audio-analysis-whisper-webgpu-over-user-shared-tab-audio",
     "lexical": "deterministic-nlp-stack-rust-wasm",
     "visualTimeline": "not-produced-by-audio-first-static-analyzer",
     "audioFeatures": "not-produced-beyond-transcription"
   },
+  "capture": {
+    "permissionOwner": "youtube-corpus-browser-ui",
+    "mediaStreamOwner": "youtube-corpus-browser-ui",
+    "pcmAdapterOwner": "audio-analysis",
+    "sampleRateHz": 16000,
+    "channels": 1,
+    "windowSeconds": 29,
+    "strideSeconds": 5,
+    "maxBufferedSeconds": 58,
+    "completeRecordingRetained": false,
+    "backpressure": "fail-closed"
+  },
   "limitations": [
     "A static third-party page cannot read raw audio bytes out of a cross-origin YouTube iframe, so the user must explicitly share a tab and enable tab audio.",
     "Browser transcription requires WebGPU and deliberately has no CPU, Python, or corpus-backend fallback.",
-    "The user stops tab sharing when playback is complete; the captured audio is kept only in memory and discarded after transcription.",
-    "The first browser transcription slice provides timed ASR segments but not alignment, diarization, or translation."
+    "Incremental tab-audio capture requires AudioWorklet and an exact 16 kHz AudioContext; unsupported browsers fail explicitly.",
+    "The user stops tab sharing when playback is complete; audio-analysis keeps only a bounded PCM queue and no complete browser recording is retained.",
+    "Browser transcription provides timed ASR segments but not alignment, diarization, or translation."
   ],
   "privacy": {
     "staticSiteStoresMedia": false,
     "staticSitePersistsTranscript": false,
+    "completeAudioRecordingCreated": false,
+    "maxBufferedPcmSeconds": 58,
     "previewHost": "youtube-nocookie.com",
     "analysisRuntime": "browser-memory",
     "networkRequests": "YouTube preview/oEmbed plus audio-analysis browser runtime and Whisper model assets"
