@@ -119,6 +119,10 @@ export async function analyzeYouTubeAudioInBrowser(
   const captureStartedAt = performance.now();
   let committedSegmentCount = 0;
   let captureFailure: Error | null = null;
+  let rejectCaptureFailure: ((reason?: unknown) => void) | null = null;
+  const captureFailurePromise = new Promise<never>((_, reject) => {
+    rejectCaptureFailure = reject;
+  });
   let transcriptionSession: AudioAnalysisMediaStreamSession | null = null;
   let transcription: AudioAnalysisResult;
   let captureEvidence: CaptureEvidence;
@@ -141,6 +145,8 @@ export async function analyzeYouTubeAudioInBrowser(
         },
         onError: (error) => {
           captureFailure = error;
+          rejectCaptureFailure?.(error);
+          rejectCaptureFailure = null;
           onProgress("transcribing", `Streaming transcription stopped: ${error.message}`);
           stopStream(displayStream);
         },
@@ -152,7 +158,7 @@ export async function analyzeYouTubeAudioInBrowser(
       `Capturing bounded audio locally · at most ${transcriptionSession.plan.maxBufferedSeconds}s of PCM is queued. Stop sharing when playback is finished.`,
     );
 
-    await waitForSharedStreamEnd(displayStream);
+    await Promise.race([waitForSharedStreamEnd(displayStream), captureFailurePromise]);
     if (captureFailure) throw captureFailure;
 
     onProgress(
