@@ -18,10 +18,29 @@ permissions:
 
 jobs:
   validate:
-    name: Validate static analyzer
+    name: Validate browser-only analyzer
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check out pinned nlp-stack source
+        uses: actions/checkout@v4
+        with:
+          repository: moritzbrantner/nlp-stack
+          ref: b0c5ea465aa045fd5a967004d0230310735adf7f
+          path: _deps/nlp-stack
+
+      - name: Set up Rust for browser Wasm
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.95.0"
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked --version 0.14.0
+
+      - name: Build browser NLP runtime
+        run: NLP_STACK_DIR="$GITHUB_WORKSPACE/_deps/nlp-stack" bash scripts/build-browser-wasm.sh
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -41,7 +60,10 @@ jobs:
         run: |
           test -s dist/index.html
           test -s dist/analysis-capabilities.json
+          test -s dist/wasm/moenarch_text_analysis_wasm.js
+          test -s dist/wasm/moenarch_text_analysis_wasm_bg.wasm
           grep -q 'youtube-corpus' dist/index.html
+          grep -q '"requiredForPagesAnalysis": false' dist/analysis-capabilities.json
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
