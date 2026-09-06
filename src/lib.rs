@@ -20,6 +20,7 @@ pub mod search;
 pub mod status;
 pub mod subscriptions;
 pub mod transcript_quality;
+pub mod video_analysis_web;
 pub mod web;
 pub mod youtube;
 pub mod yt_dlp;

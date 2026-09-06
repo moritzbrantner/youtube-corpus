@@ -250,14 +250,61 @@ export interface AddSourceReport {
   ingestRun: IngestRunStatus | null;
 }
 
+export interface VideoAnalysisStream {
+  streamId: string;
+  sourceKind: SourceKind;
+  language: string | null;
+  status: string;
+  segmentCount: number;
+  message: string | null;
+}
+
+export interface VideoAnalysisSegment {
+  segmentId: string;
+  streamId: string;
+  segmentIndex: number;
+  startSeconds: number | null;
+  endSeconds: number | null;
+  text: string;
+  language: string | null;
+}
+
+export interface VideoAnalysisCoverage {
+  metadata: boolean;
+  transcript: boolean;
+  lexical: boolean;
+  mediaRetained: boolean;
+  visualTimeline: boolean;
+  audioFeatures: boolean;
+}
+
+export interface VideoAnalysisReport {
+  video: DownloadedFile;
+  streams: VideoAnalysisStream[];
+  primaryStreamId: string | null;
+  segments: VideoAnalysisSegment[];
+  lexicalAnalysis: Record<string, unknown> | null;
+  coverage: VideoAnalysisCoverage;
+}
+
 interface ApiErrorEnvelope {
   error?: {
     message?: string;
   };
 }
 
+let apiBaseUrl = "";
+
+export function configureApiBaseUrl(value: string | null | undefined) {
+  apiBaseUrl = (value ?? "").trim().replace(/\/+$/, "");
+}
+
+export function getConfiguredApiBaseUrl() {
+  return apiBaseUrl;
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, init);
+  const response = await fetch(resolveApiPath(path), init);
   const contentType = response.headers.get("content-type") ?? "";
   const hasJson = contentType.includes("application/json");
   const data = hasJson ? await response.json() : await response.text();
@@ -271,6 +318,10 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
 
   return data as T;
+}
+
+function resolveApiPath(path: string) {
+  return apiBaseUrl ? `${apiBaseUrl}${path}` : path;
 }
 
 function jsonPost<T>(path: string, body: unknown) {
@@ -322,4 +373,8 @@ export function getIngestRun(id: string) {
 
 export function addSource(input: AddSourceInput) {
   return jsonPost<AddSourceReport>("/api/sources", input);
+}
+
+export function getVideoAnalysis(sourceUrl: string) {
+  return apiFetch<VideoAnalysisReport>(`/api/video-analysis${queryString({ sourceUrl })}`);
 }

@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::config::{SearchMode, SourceKind};
 use crate::ingest::IngestReport;
 use crate::search::SearchResult;
+use crate::status::VideoStatus;
 use crate::subscriptions::Subscription;
 
 #[derive(Debug, Serialize)]
@@ -58,6 +59,57 @@ pub struct ListDownloadedFilesInput {
 #[serde(rename_all = "camelCase")]
 pub struct ListIngestRunsInput {
     pub limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoAnalysisInput {
+    pub source_url: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoAnalysisReport {
+    pub video: VideoStatus,
+    pub streams: Vec<VideoAnalysisStream>,
+    pub primary_stream_id: Option<Uuid>,
+    pub segments: Vec<VideoAnalysisSegment>,
+    pub lexical_analysis: Option<Value>,
+    pub coverage: VideoAnalysisCoverage,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoAnalysisStream {
+    pub stream_id: Uuid,
+    pub source_kind: SourceKind,
+    pub language: Option<String>,
+    pub status: String,
+    pub segment_count: i64,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoAnalysisSegment {
+    pub segment_id: Uuid,
+    pub stream_id: Uuid,
+    pub segment_index: i64,
+    pub start_seconds: Option<f64>,
+    pub end_seconds: Option<f64>,
+    pub text: String,
+    pub language: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoAnalysisCoverage {
+    pub metadata: bool,
+    pub transcript: bool,
+    pub lexical: bool,
+    pub media_retained: bool,
+    pub visual_timeline: bool,
+    pub audio_features: bool,
 }
 
 #[derive(Debug, Deserialize)]
