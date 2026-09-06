@@ -1,13 +1,16 @@
 import * as React from "react";
 
 import type { VideoAnalysisReport } from "../../api";
-import { analyzeYouTubeInBrowser, type BrowserAnalysisStage } from "./browser-analysis";
+import {
+  analyzeYouTubeAudioInBrowser,
+  type AudioBrowserAnalysisStage,
+} from "./audio-browser-analysis";
 import { parseYouTubeVideoUrl } from "./youtube-url";
 
-type Phase = "idle" | "metadata" | "captions" | "analyzing" | "done" | "error";
+type Phase = "idle" | "capture" | "metadata" | "transcribing" | "analyzing" | "done" | "error";
 type JsonRecord = Record<string, unknown>;
 
-export function YouTubeAnalyzer() {
+export function AudioYouTubeAnalyzer() {
   const [sourceUrl, setSourceUrl] = React.useState(initialVideoUrl);
   const [phase, setPhase] = React.useState<Phase>("idle");
   const [progressMessage, setProgressMessage] = React.useState("Paste a YouTube URL to begin.");
@@ -39,15 +42,19 @@ export function YouTubeAnalyzer() {
 
     persistWorkbenchUrl(parsed.canonicalUrl);
     try {
-      setPhase("metadata");
-      setProgressMessage("Reading public YouTube metadata directly in the browser…");
-      const nextReport = await analyzeYouTubeInBrowser(parsed, (stage, message) => {
+      setPhase("capture");
+      setProgressMessage(
+        "Choose the tab playing this video and enable Share tab audio. Stop sharing when the video is finished.",
+      );
+      const nextReport = await analyzeYouTubeAudioInBrowser(parsed, (stage, message) => {
         setPhase(phaseForStage(stage));
         setProgressMessage(message);
       });
       setReport(nextReport);
       setPhase("done");
-      setProgressMessage("Browser analysis complete. Nothing was sent to a corpus backend.");
+      setProgressMessage(
+        "Browser analysis complete. Audio was transcribed locally and nothing was sent to a corpus backend.",
+      );
     } catch (caught) {
       setPhase("error");
       setError(errorMessage(caught));
@@ -58,7 +65,7 @@ export function YouTubeAnalyzer() {
   const preview = report?.video.youtubeId
     ? parseYouTubeVideoUrl(`https://www.youtube.com/watch?v=${report.video.youtubeId}`)
     : parsedUrl;
-  const busy = ["metadata", "captions", "analyzing"].includes(phase);
+  const busy = ["capture", "metadata", "transcribing", "analyzing"].includes(phase);
 
   return (
     <main className="analyzer-shell">
@@ -69,9 +76,10 @@ export function YouTubeAnalyzer() {
           </a>
           <h1>Analyze a YouTube video from one URL</h1>
           <p>
-            Paste a public YouTube URL. GitHub Pages reads available metadata and captions directly
-            from YouTube, normalizes the transcript in memory, and runs deterministic nlp-stack
-            analysis locally in Rust/Wasm. No Postgres or corpus backend is required.
+            Paste a public YouTube URL. GitHub Pages reads public metadata, captures audio from the
+            tab you explicitly share, transcribes it locally with the audio-analysis WebGPU stack,
+            and runs deterministic nlp-stack analysis in Rust/Wasm. No Postgres or corpus backend is
+            required.
           </p>
         </div>
         <nav className="analyzer-nav" aria-label="YouTube Corpus views">
@@ -84,7 +92,8 @@ export function YouTubeAnalyzer() {
         <span className="runtime-dot runtime-dot-ready" aria-hidden="true" />
         <strong>Browser-only GitHub Pages</strong>
         <span>
-          Direct YouTube metadata + captions · local nlp-stack Rust/Wasm · no corpus backend
+          Direct YouTube metadata · shared tab audio · audio-analysis WebGPU ASR · local nlp-stack
+          Rust/Wasm · no corpus backend
         </span>
       </section>
 
@@ -102,12 +111,17 @@ export function YouTubeAnalyzer() {
               onChange={(event) => setSourceUrl(event.target.value)}
             />
             <button type="submit" disabled={busy}>
-              {busy ? "Analyzing…" : "Analyze video"}
+              {busy ? "Analyzing…" : "Share audio & analyze"}
             </button>
           </div>
           {sourceUrl && !parsedUrl ? (
             <p className="field-error">This is not a recognized YouTube video URL.</p>
           ) : null}
+          <p className="muted-label">
+            The browser must grant a user-initiated tab-share. Choose the tab that is playing the
+            video, enable tab audio, then stop sharing when playback is finished. Raw audio stays in
+            memory and is discarded after transcription.
+          </p>
         </form>
       </section>
 
@@ -127,7 +141,11 @@ export function YouTubeAnalyzer() {
             <p>{progressMessage}</p>
             <ol className="pipeline-list">
               <PipelineStep label="URL + preview" active={Boolean(preview)} />
-              <PipelineStep label="Metadata + captions" active={phaseReached(phase, "captions")} />
+              <PipelineStep label="Shared video audio" active={phaseReached(phase, "capture")} />
+              <PipelineStep
+                label="audio-analysis transcription"
+                active={phaseReached(phase, "transcribing")}
+              />
               <PipelineStep
                 label="In-memory transcript"
                 active={Boolean(report?.coverage.transcript)}
@@ -161,12 +179,12 @@ export function YouTubeAnalyzer() {
               <CoverageCard
                 label="Metadata"
                 available={report.coverage.metadata}
-                detail="YouTube oEmbed / player metadata"
+                detail="YouTube oEmbed metadata"
               />
               <CoverageCard
                 label="Transcript"
                 available={report.coverage.transcript}
-                detail={`${formatNumber(report.video.transcriptSegments)} in-memory segments`}
+                detail={`${formatNumber(report.video.transcriptSegments)} audio-analysis ASR segments`}
               />
               <CoverageCard
                 label="NLP"
@@ -174,19 +192,19 @@ export function YouTubeAnalyzer() {
                 detail="nlp-stack Rust/Wasm analysis"
               />
               <CoverageCard
+                label="Audio evidence"
+                available={report.coverage.transcript}
+                detail="user-shared tab audio transcribed locally"
+              />
+              <CoverageCard
                 label="Media retained"
                 available={report.coverage.mediaRetained}
-                detail="not downloaded by the static analyzer"
+                detail="captured audio discarded after transcription"
               />
               <CoverageCard
                 label="Visual timeline"
                 available={report.coverage.visualTimeline}
-                detail="not produced from a cross-origin embed"
-              />
-              <CoverageCard
-                label="Audio evidence"
-                available={report.coverage.audioFeatures}
-                detail="no browser ASR from a cross-origin embed"
+                detail="not produced in this audio-first browser run"
               />
             </div>
           </section>
@@ -199,13 +217,7 @@ export function YouTubeAnalyzer() {
               </div>
             </div>
             <div className="metric-grid">
-              <Metric
-                label="Duration"
-                value={report.video.durationString ?? formatDuration(report.video.durationSeconds)}
-              />
-              <Metric label="Views" value={formatOptionalNumber(report.video.viewCount)} />
-              <Metric label="Likes" value={formatOptionalNumber(report.video.likeCount)} />
-              <Metric label="Comments" value={formatOptionalNumber(report.video.commentCount)} />
+              <Metric label="Transcript segments" value={formatNumber(report.segments.length)} />
               <Metric label="Transcript words" value={valueOrDash(lexicalStats?.words)} />
               <Metric
                 label="Unique terms"
@@ -226,14 +238,9 @@ export function YouTubeAnalyzer() {
             </div>
             <dl className="metadata-list">
               <MetadataRow label="Channel" value={report.video.channel ?? report.video.uploader} />
-              <MetadataRow label="Uploaded" value={report.video.uploadDate} />
               <MetadataRow label="Availability" value={report.video.availability} />
-              <MetadataRow label="Live status" value={report.video.liveStatus} />
-              <MetadataRow label="Categories" value={report.video.categories.join(", ") || null} />
+              <MetadataRow label="Transcript source" value="audio-analysis WebGPU ASR" />
             </dl>
-            {report.video.description ? (
-              <p className="video-description">{report.video.description}</p>
-            ) : null}
           </section>
 
           {report.coverage.lexical ? (
@@ -282,7 +289,7 @@ export function YouTubeAnalyzer() {
             <div className="section-heading">
               <div>
                 <span>Transcript</span>
-                <h2>Timestamped evidence</h2>
+                <h2>Timestamped audio-analysis evidence</h2>
               </div>
               <span className="muted-label">{formatNumber(report.segments.length)} segments</span>
             </div>
@@ -303,9 +310,7 @@ export function YouTubeAnalyzer() {
                 ))}
               </div>
             ) : (
-              <p className="empty-state">
-                No usable caption track was available to the browser for this video.
-              </p>
+              <p className="empty-state">No speech was detected in the shared audio.</p>
             )}
           </section>
 
@@ -321,7 +326,7 @@ export function YouTubeAnalyzer() {
                 <div key={stream.streamId} className="stream-row">
                   <div>
                     <strong>{sourceKindLabel(stream.sourceKind)}</strong>
-                    <span>{stream.language ?? "unknown language"}</span>
+                    <span>{stream.language ?? "language detected by model"}</span>
                   </div>
                   <div>
                     <span>{formatNumber(stream.segmentCount)} segments</span>
@@ -347,8 +352,8 @@ export function YouTubeAnalyzer() {
 
       <footer className="analyzer-footer">
         <span>
-          Static GitHub Pages · browser-owned caption ingest · nlp-stack Rust/Wasm analysis · no
-          corpus backend
+          Static GitHub Pages · browser-owned audio capture · audio-analysis WebGPU transcription ·
+          nlp-stack Rust/Wasm analysis · no corpus backend
         </span>
         <a href="https://github.com/moritzbrantner/youtube-corpus">View source</a>
       </footer>
@@ -432,18 +437,21 @@ function persistWorkbenchUrl(sourceUrl: string) {
   window.history.replaceState(null, "", url);
 }
 
-function phaseForStage(stage: BrowserAnalysisStage): Phase {
+function phaseForStage(stage: AudioBrowserAnalysisStage): Phase {
+  if (stage === "capture") return "capture";
   if (stage === "metadata") return "metadata";
-  if (stage === "captions") return "captions";
+  if (stage === "transcribing") return "transcribing";
   return "analyzing";
 }
 
 function phaseLabel(phase: Phase) {
   switch (phase) {
+    case "capture":
+      return "Audio capture";
     case "metadata":
       return "Metadata";
-    case "captions":
-      return "Captions";
+    case "transcribing":
+      return "Transcribing";
     case "analyzing":
       return "Analyzing";
     case "done":
@@ -455,22 +463,22 @@ function phaseLabel(phase: Phase) {
   }
 }
 
-function phaseReached(phase: Phase, threshold: "captions") {
-  if (threshold === "captions") return ["captions", "analyzing", "done"].includes(phase);
-  return false;
+function phaseReached(phase: Phase, threshold: "capture" | "transcribing") {
+  const order: Phase[] = ["idle", "capture", "metadata", "transcribing", "analyzing", "done"];
+  const currentIndex = order.indexOf(phase);
+  const thresholdIndex = order.indexOf(threshold);
+  return currentIndex >= thresholdIndex && phase !== "error";
 }
 
 function primaryStreamLabel(report: VideoAnalysisReport) {
   const stream = report.streams.find((item) => item.streamId === report.primaryStreamId);
   return stream
-    ? `${sourceKindLabel(stream.sourceKind)} · ${stream.language ?? "unknown language"}`
+    ? `${sourceKindLabel(stream.sourceKind)} · ${stream.language ?? "model-detected language"}`
     : "No transcript";
 }
 
 function sourceKindLabel(sourceKind: string) {
-  if (sourceKind === "caption_manual") return "Manual captions";
-  if (sourceKind === "caption_auto") return "Automatic captions";
-  if (sourceKind === "asr") return "ASR";
+  if (sourceKind === "asr") return "audio-analysis ASR";
   return sourceKind;
 }
 
@@ -535,10 +543,6 @@ function valueOrDash(value: unknown) {
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat().format(value);
-}
-
-function formatOptionalNumber(value: number | null) {
-  return value === null ? "—" : formatNumber(value);
 }
 
 function formatDecimal(value: unknown) {

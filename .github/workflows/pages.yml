@@ -41,6 +41,13 @@ jobs:
           ref: b0c5ea465aa045fd5a967004d0230310735adf7f
           path: _deps/nlp-stack
 
+      - name: Check out pinned audio-analysis browser source
+        uses: actions/checkout@v4
+        with:
+          repository: moritzbrantner/audio-analysis
+          ref: 68982791d1ad7eb196421a988ddccc77af19fb02
+          path: _deps/audio-analysis
+
       - name: Set up Rust for browser Wasm
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -50,8 +57,11 @@ jobs:
       - name: Install wasm-pack
         run: cargo install wasm-pack --locked --version 0.14.0
 
-      - name: Build browser NLP runtime
-        run: NLP_STACK_DIR="$GITHUB_WORKSPACE/_deps/nlp-stack" bash scripts/build-browser-wasm.sh
+      - name: Build browser runtimes
+        run: |
+          NLP_STACK_DIR="$GITHUB_WORKSPACE/_deps/nlp-stack" \
+          AUDIO_ANALYSIS_DIR="$GITHUB_WORKSPACE/_deps/audio-analysis" \
+          bash scripts/build-browser-wasm.sh
 
       - name: Build analyzer
         run: bun run build
@@ -62,7 +72,9 @@ jobs:
           test -s dist/analysis-capabilities.json
           test -s dist/wasm/moenarch_text_analysis_wasm.js
           test -s dist/wasm/moenarch_text_analysis_wasm_bg.wasm
+          test -s dist/audio-analysis/transcription.js
           grep -q 'youtube-corpus' dist/index.html
+          grep -q 'audio-analysis-transformers-js-webgpu' dist/audio-analysis/transcription.js
           grep -q '"requiredForPagesAnalysis": false' dist/analysis-capabilities.json
 
       - name: Configure GitHub Pages
