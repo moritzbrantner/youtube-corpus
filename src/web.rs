@@ -18,6 +18,7 @@ fn pages_cors_layer() -> CorsLayer {
         ))
         .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
         .allow_headers([axum::http::header::CONTENT_TYPE])
+        .allow_private_network(true)
 }
 
 pub async fn serve_with_research(config: WebServerConfig) -> anyhow::Result<()> {
