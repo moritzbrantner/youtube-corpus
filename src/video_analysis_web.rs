@@ -183,7 +183,11 @@ fn analyze_transcript(
     })
     .map_err(AnalysisError::internal)?;
 
-    Ok(Some(response.value))
+    Ok(Some(concrete_operation_result(response.value)))
+}
+
+fn concrete_operation_result(value: serde_json::Value) -> serde_json::Value {
+    value.get("result").cloned().unwrap_or(value)
 }
 
 async fn has_visual_evidence(pool: &PgPool, video_id: Uuid) -> Result<bool, AnalysisError> {
@@ -285,5 +289,27 @@ impl IntoResponse for AnalysisError {
             }),
         )
             .into_response()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::concrete_operation_result;
+
+    #[test]
+    fn returns_domain_result_from_structured_surface_value() {
+        let value = serde_json::json!({
+            "operation": "lexical.analyze",
+            "summary": {"status": "ok"},
+            "keywords": [{"text": "rust"}],
+            "result": {
+                "summary": {"unique_terms": 3},
+                "keywords": [{"text": "rust"}]
+            }
+        });
+
+        let result = concrete_operation_result(value);
+        assert_eq!(result["summary"]["unique_terms"], 3);
+        assert_eq!(result["keywords"][0]["text"], "rust");
     }
 }
