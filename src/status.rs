@@ -109,6 +109,7 @@ pub async fn corpus_status(request: CorpusStatusRequest) -> anyhow::Result<Corpu
         request.downloaded_only,
         request.parsed_only,
         request.limit,
+        None,
     )
     .await?;
 
@@ -128,8 +129,19 @@ pub async fn list_videos(request: ListVideosRequest) -> anyhow::Result<Vec<Video
         request.downloaded_only,
         request.parsed_only,
         request.limit,
+        None,
     )
     .await
+}
+
+pub async fn find_video_by_source_url(
+    pool: &sqlx::PgPool,
+    source_url: &str,
+) -> anyhow::Result<Option<VideoStatus>> {
+    Ok(list_videos_with_pool(pool, false, false, Some(1), Some(source_url))
+        .await?
+        .into_iter()
+        .next())
 }
 
 pub async fn list_monitored_sources(
@@ -185,6 +197,7 @@ async fn list_videos_with_pool(
     downloaded_only: bool,
     parsed_only: bool,
     limit: Option<i64>,
+    source_url: Option<&str>,
 ) -> anyhow::Result<Vec<VideoStatus>> {
     let rows = sqlx::query(
         "SELECT v.id, v.youtube_id, v.source_url, v.title, v.local_video_path,
@@ -225,6 +238,7 @@ async fn list_videos_with_pool(
                WHERE parsed.video_id = v.id
              )
            )
+           AND ($4::text IS NULL OR v.source_url = $4)
          GROUP BY v.id, v.youtube_id, v.source_url, v.title, v.local_video_path,
                   v.duration_seconds, v.upload_date, v.created_at, v.updated_at,
                   v.description, v.channel, v.channel_id, v.channel_url,
@@ -238,6 +252,7 @@ async fn list_videos_with_pool(
     .bind(downloaded_only)
     .bind(parsed_only)
     .bind(limit)
+    .bind(source_url)
     .fetch_all(pool)
     .await?;
 
