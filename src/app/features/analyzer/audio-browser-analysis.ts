@@ -35,16 +35,35 @@ interface AudioAnalysisResult {
   attributes: Record<string, string>;
 }
 
+interface AudioAnalysisWindowPlan {
+  windowSeconds: number;
+  strideSeconds: number;
+  stepSeconds: number;
+  maxBufferedSeconds: number;
+}
+
+interface AudioAnalysisMediaStreamSession {
+  finish: () => Promise<AudioAnalysisResult>;
+  abort: (reason?: unknown) => Promise<void>;
+  readonly bufferedSeconds: number;
+  readonly closed: boolean;
+  readonly error: Error | null;
+  readonly plan: AudioAnalysisWindowPlan;
+  readonly sampleRateHz: number;
+}
+
 interface AudioAnalysisModule {
   browserTranscriptionCapabilities?: () => JsonRecord;
   supportsBrowserTranscription?: () => Promise<boolean>;
-  transcribeAudioBlob?: (
-    source: Blob,
+  createBrowserMediaStreamTranscriptionSession?: (
+    stream: MediaStream,
     options?: {
       source?: string;
       onProgress?: (progress: AudioAnalysisProgress) => void;
+      onSegments?: (segments: AudioAnalysisSegment[]) => void;
+      onError?: (error: Error) => void;
     },
-  ) => Promise<AudioAnalysisResult>;
+  ) => Promise<AudioAnalysisMediaStreamSession>;
 }
 
 interface NlpWasmModule {
@@ -52,10 +71,12 @@ interface NlpWasmModule {
   runOperation?: (request: unknown) => unknown;
 }
 
-interface CapturedAudio {
-  blob: Blob;
+interface CaptureEvidence {
   durationSeconds: number;
-  mimeType: string;
+  sampleRateHz: number;
+  maxBufferedSeconds: number;
+  windowSeconds: number;
+  strideSeconds: number;
 }
 
 let audioAnalysisRuntimePromise: Promise<AudioAnalysisModule> | null = null;
@@ -88,35 +109,91 @@ export async function analyzeYouTubeAudioInBrowser(
       "This browser does not provide WebGPU for audio-analysis transcription. No CPU or backend fallback is used.",
     );
   }
-
-  onProgress(
-    "capture",
-    "Recording shared tab audio in memory. Play the video, then use the browser's Stop sharing control when it ends.",
-  );
-  const captured = await recordSharedAudio(displayStream);
-  const metadata = await metadataPromise;
-
-  if (typeof audioRuntime.transcribeAudioBlob !== "function") {
-    throw new Error("The bundled audio-analysis runtime does not expose transcribeAudioBlob().");
+  if (typeof audioRuntime.createBrowserMediaStreamTranscriptionSession !== "function") {
+    stopStream(displayStream);
+    throw new Error(
+      "The bundled audio-analysis runtime does not expose bounded MediaStream transcription.",
+    );
   }
 
-  onProgress("transcribing", "Preparing captured audio for local audio-analysis transcription…");
-  const transcription = await audioRuntime.transcribeAudioBlob(captured.blob, {
-    source: `youtube-tab-${parsed.videoId}`,
-    onProgress: ({ message }) => {
-      if (message) onProgress("transcribing", message);
-    },
+  const captureStartedAt = performance.now();
+  let committedSegmentCount = 0;
+  let captureFailure: Error | null = null;
+  let rejectCaptureFailure: ((reason?: unknown) => void) | null = null;
+  const captureFailurePromise = new Promise<never>((_, reject) => {
+    rejectCaptureFailure = reject;
   });
+  let transcriptionSession: AudioAnalysisMediaStreamSession | null = null;
+  let transcription: AudioAnalysisResult;
+  let captureEvidence: CaptureEvidence;
 
+  try {
+    transcriptionSession = await audioRuntime.createBrowserMediaStreamTranscriptionSession(
+      displayStream,
+      {
+        source: `youtube-tab-${parsed.videoId}`,
+        onProgress: ({ stage, message }) => {
+          if (!message) return;
+          onProgress(stage === "capture" ? "capture" : "transcribing", message);
+        },
+        onSegments: (segments) => {
+          committedSegmentCount += segments.length;
+          onProgress(
+            "transcribing",
+            `Streaming transcription active · ${committedSegmentCount} committed timed segment${committedSegmentCount === 1 ? "" : "s"}.`,
+          );
+        },
+        onError: (error) => {
+          captureFailure = error;
+          rejectCaptureFailure?.(error);
+          rejectCaptureFailure = null;
+          onProgress("transcribing", `Streaming transcription stopped: ${error.message}`);
+          stopStream(displayStream);
+        },
+      },
+    );
+
+    onProgress(
+      "capture",
+      `Capturing bounded audio locally · at most ${transcriptionSession.plan.maxBufferedSeconds}s of PCM is queued. Stop sharing when playback is finished.`,
+    );
+
+    await Promise.race([waitForSharedStreamEnd(displayStream), captureFailurePromise]);
+    if (captureFailure) throw captureFailure;
+
+    onProgress(
+      "transcribing",
+      "Shared audio ended. Finalizing the remaining bounded transcription window…",
+    );
+    transcription = await transcriptionSession.finish();
+    if (transcriptionSession.error) throw transcriptionSession.error;
+
+    captureEvidence = {
+      durationSeconds: Math.max(0, (performance.now() - captureStartedAt) / 1000),
+      sampleRateHz: transcriptionSession.sampleRateHz,
+      maxBufferedSeconds: transcriptionSession.plan.maxBufferedSeconds,
+      windowSeconds: transcriptionSession.plan.windowSeconds,
+      strideSeconds: transcriptionSession.plan.strideSeconds,
+    };
+  } catch (caught) {
+    if (transcriptionSession && !transcriptionSession.closed) {
+      await transcriptionSession.abort(caught);
+    }
+    throw caught;
+  } finally {
+    stopStream(displayStream);
+  }
+
+  const metadata = await metadataPromise;
   const transcriptText = transcription.text.trim();
   if (!transcriptText) {
     throw new Error(
-      "audio-analysis completed but did not detect transcribable speech in the captured audio.",
+      "audio-analysis completed but did not detect transcribable speech in the shared audio.",
     );
   }
 
   const streamId = `browser-asr-${parsed.videoId}`;
-  const segments = toVideoSegments(streamId, transcription, captured.durationSeconds);
+  const segments = toVideoSegments(streamId, transcription, captureEvidence.durationSeconds);
 
   onProgress("analyzing", "Running deterministic nlp-stack analysis locally in Rust/Wasm…");
   const lexicalAnalysis = await analyzeTranscriptWithWasm(parsed.videoId, transcriptText);
@@ -128,7 +205,8 @@ export async function analyzeYouTubeAudioInBrowser(
     language: transcription.language,
     status: "ready",
     segmentCount: segments.length,
-    message: "Captured and transcribed locally in the browser; raw audio was not persisted.",
+    message:
+      "Captured incrementally and transcribed locally in the browser; no complete audio recording was retained.",
   };
 
   return {
@@ -177,9 +255,13 @@ export async function analyzeYouTubeAudioInBrowser(
           capabilities: runtimeCapabilities,
         },
         capture: {
-          durationSeconds: captured.durationSeconds,
-          mimeType: captured.mimeType,
-          bytes: captured.blob.size,
+          mode: "bounded-media-stream-pcm",
+          durationSeconds: captureEvidence.durationSeconds,
+          sampleRateHz: captureEvidence.sampleRateHz,
+          maxBufferedSeconds: captureEvidence.maxBufferedSeconds,
+          windowSeconds: captureEvidence.windowSeconds,
+          strideSeconds: captureEvidence.strideSeconds,
+          completeRecordingRetained: false,
           retained: false,
         },
         oembed: metadata,
@@ -224,59 +306,31 @@ async function requestDisplayAudio() {
   return stream;
 }
 
-async function recordSharedAudio(stream: MediaStream): Promise<CapturedAudio> {
-  if (typeof MediaRecorder === "undefined") {
-    stopStream(stream);
-    throw new Error("This browser cannot record the shared audio stream with MediaRecorder.");
+function waitForSharedStreamEnd(stream: MediaStream): Promise<void> {
+  if (stream.getTracks().some((track) => track.readyState === "ended")) {
+    return Promise.resolve();
   }
 
-  const audioTrack = stream.getAudioTracks()[0];
-  if (!audioTrack) {
-    stopStream(stream);
-    throw new Error("The shared display stream contains no audio track.");
-  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const cleanup = () => {
+      stream.removeEventListener("inactive", finish);
+      for (const track of stream.getTracks()) {
+        track.removeEventListener("ended", finish);
+      }
+    };
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve();
+    };
 
-  const audioStream = new MediaStream([audioTrack]);
-  const mimeType = preferredRecorderMimeType();
-  const recorder = mimeType
-    ? new MediaRecorder(audioStream, { mimeType })
-    : new MediaRecorder(audioStream);
-  const chunks: BlobPart[] = [];
-  const startedAt = performance.now();
-
-  const stopped = new Promise<void>((resolve, reject) => {
-    recorder.addEventListener("dataavailable", (event) => {
-      if (event.data.size > 0) chunks.push(event.data);
-    });
-    recorder.addEventListener("error", () => reject(new Error("Browser audio recording failed.")));
-    recorder.addEventListener("stop", () => resolve(), { once: true });
+    stream.addEventListener("inactive", finish, { once: true });
+    for (const track of stream.getTracks()) {
+      track.addEventListener("ended", finish, { once: true });
+    }
   });
-
-  const stopRecorder = () => {
-    if (recorder.state !== "inactive") recorder.stop();
-  };
-  for (const track of stream.getTracks()) {
-    track.addEventListener("ended", stopRecorder, { once: true });
-  }
-
-  recorder.start(1000);
-  try {
-    await stopped;
-  } finally {
-    stopStream(stream);
-  }
-
-  const durationSeconds = Math.max(0, (performance.now() - startedAt) / 1000);
-  const blob = new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" });
-  if (blob.size === 0) {
-    throw new Error("The shared tab audio recording was empty.");
-  }
-  return { blob, durationSeconds, mimeType: blob.type };
-}
-
-function preferredRecorderMimeType() {
-  const candidates = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/webm"];
-  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "";
 }
 
 function stopStream(stream: MediaStream) {
