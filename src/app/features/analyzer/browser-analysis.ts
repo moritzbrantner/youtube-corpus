@@ -119,7 +119,8 @@ export async function analyzeYouTubeInBrowser(
   const lexicalAnalysis = await analyzeTranscriptWithWasm(parsed.videoId, transcriptText);
   const now = new Date().toISOString();
   const videoData = playerEvidence.videoData;
-  const sourceKind: SourceKind = captionResult.track.kind === "asr" ? "caption_auto" : "caption_manual";
+  const sourceKind: SourceKind =
+    captionResult.track.kind === "asr" ? "caption_auto" : "caption_manual";
   const stream: VideoAnalysisStream = {
     streamId,
     sourceKind,
@@ -342,7 +343,11 @@ export function selectCaptionTrack(
 ): CaptionTrack | null {
   if (tracks.length === 0) return null;
   const preferred = preferredLanguages.map(normalizeLanguage).filter(Boolean);
-  return [...tracks].sort((left, right) => scoreTrack(right, preferred) - scoreTrack(left, preferred))[0] ?? null;
+  return (
+    [...tracks].sort(
+      (left, right) => scoreTrack(right, preferred) - scoreTrack(left, preferred),
+    )[0] ?? null
+  );
 }
 
 function scoreTrack(track: CaptionTrack, preferred: string[]) {
@@ -452,13 +457,15 @@ async function listTimedTextTracks(videoId: string): Promise<CaptionTrack[]> {
   if (!xml.trim()) return [];
   const document = new DOMParser().parseFromString(xml, "application/xml");
   if (document.querySelector("parsererror")) return [];
-  return Array.from(document.querySelectorAll("track")).map((element) => ({
-    languageCode: element.getAttribute("lang_code") ?? element.getAttribute("lang") ?? "",
-    kind: element.getAttribute("kind"),
-    name: element.getAttribute("name"),
-    baseUrl: null,
-    isTranslatable: element.getAttribute("cantran") === "true",
-  })).filter((track) => Boolean(track.languageCode));
+  return Array.from(document.querySelectorAll("track"))
+    .map((element) => ({
+      languageCode: element.getAttribute("lang_code") ?? element.getAttribute("lang") ?? "",
+      kind: element.getAttribute("kind"),
+      name: element.getAttribute("name"),
+      baseUrl: null,
+      isTranslatable: element.getAttribute("cantran") === "true",
+    }))
+    .filter((track) => Boolean(track.languageCode));
 }
 
 async function fetchCaptionDocument(url: string): Promise<CaptionSegment[]> {
@@ -505,11 +512,13 @@ export function parseTimedTextXml(xml: string): CaptionSegment[] {
     const duration = Number(element.getAttribute("dur"));
     const text = cleanCaptionText(element.textContent ?? "");
     if (!Number.isFinite(start) || !text) return [];
-    return [{
-      startSeconds: start,
-      endSeconds: Number.isFinite(duration) ? start + duration : null,
-      text,
-    }];
+    return [
+      {
+        startSeconds: start,
+        endSeconds: Number.isFinite(duration) ? start + duration : null,
+        text,
+      },
+    ];
   });
   return coalesceCaptionSegments(segments);
 }
@@ -587,9 +596,7 @@ async function loadNlpRuntime(): Promise<NlpWasmModule> {
     try {
       runtime = (await import(/* @vite-ignore */ moduleUrl)) as NlpWasmModule;
     } catch (caught) {
-      throw new Error(
-        `Unable to load the bundled nlp-stack Wasm runtime. ${errorMessage(caught)}`,
-      );
+      throw new Error(`Unable to load the bundled nlp-stack Wasm runtime. ${errorMessage(caught)}`);
     }
     if (typeof runtime.default === "function") await runtime.default();
     return runtime;
@@ -604,7 +611,10 @@ function loadYouTubeIframeApi(): Promise<YouTubeApi> {
 
   iframeApiPromise = new Promise<YouTubeApi>((resolve, reject) => {
     const previousReady = browser.onYouTubeIframeAPIReady;
-    const timeout = window.setTimeout(() => reject(new Error("YouTube iframe API timed out.")), 12000);
+    const timeout = window.setTimeout(
+      () => reject(new Error("YouTube iframe API timed out.")),
+      12000,
+    );
     browser.onYouTubeIframeAPIReady = () => {
       try {
         previousReady?.();
@@ -630,11 +640,7 @@ function loadYouTubeIframeApi(): Promise<YouTubeApi> {
 }
 
 function browserLanguages() {
-  return uniqueLanguages([
-    ...(navigator.languages ?? []),
-    navigator.language,
-    "en",
-  ]);
+  return uniqueLanguages([...(navigator.languages ?? []), navigator.language, "en"]);
 }
 
 function uniqueLanguages(values: string[]) {
@@ -677,7 +683,10 @@ function captionName(value: unknown): string | null {
 }
 
 function cleanCaptionText(value: string) {
-  return value.replace(/[\u200b\u200e\u200f]/g, "").replace(/\s+/g, " ").trim();
+  return value
+    .replace(/[\u200b\u200e\u200f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function fromWasm(value: unknown): unknown {
