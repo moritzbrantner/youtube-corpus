@@ -45,7 +45,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: moritzbrantner/audio-analysis
-          ref: 79ea70bf91773578bd602a669e561c1711a3c6be
+          ref: 68982791d1ad7eb196421a988ddccc77af19fb02
           path: _deps/audio-analysis
 
       - name: Set up Rust for browser Wasm
