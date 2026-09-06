@@ -29,14 +29,8 @@ pub async fn download_and_parse_captions(
     let auto_template = dir.join(format!("{}-subs.auto.%(id)s.%(ext)s", item.item_id));
 
     let mut messages = Vec::new();
-    if let Err(error) = run_caption_download(
-        &item.source_url,
-        &manual_template,
-        &langs,
-        false,
-        yt_dlp,
-    )
-    .await
+    if let Err(error) =
+        run_caption_download(&item.source_url, &manual_template, &langs, false, yt_dlp).await
     {
         messages.push(TranscriptStream {
             source_kind: SourceKind::CaptionManual,
@@ -48,14 +42,8 @@ pub async fn download_and_parse_captions(
         });
     }
     if config.include_auto_captions {
-        if let Err(error) = run_caption_download(
-            &item.source_url,
-            &auto_template,
-            &langs,
-            true,
-            yt_dlp,
-        )
-        .await
+        if let Err(error) =
+            run_caption_download(&item.source_url, &auto_template, &langs, true, yt_dlp).await
         {
             messages.push(TranscriptStream {
                 source_kind: SourceKind::CaptionAuto,

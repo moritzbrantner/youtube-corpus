@@ -103,7 +103,9 @@ async fn load_streams(
 
     rows.into_iter()
         .map(|row| {
-            let source_kind: String = row.try_get("source_kind").map_err(AnalysisError::internal)?;
+            let source_kind: String = row
+                .try_get("source_kind")
+                .map_err(AnalysisError::internal)?;
             Ok(VideoAnalysisStream {
                 stream_id: row.try_get("id").map_err(AnalysisError::internal)?,
                 source_kind: parse_source_kind(&source_kind)?,
@@ -191,8 +193,10 @@ fn concrete_operation_result(value: serde_json::Value) -> serde_json::Value {
 }
 
 async fn has_visual_evidence(pool: &PgPool, video_id: Uuid) -> Result<bool, AnalysisError> {
-    Ok(optional_table_has_video_rows(pool, "face_observations", video_id).await?
-        || optional_table_has_video_rows(pool, "video_scenes", video_id).await?)
+    Ok(
+        optional_table_has_video_rows(pool, "face_observations", video_id).await?
+            || optional_table_has_video_rows(pool, "video_scenes", video_id).await?,
+    )
 }
 
 async fn has_audio_evidence(pool: &PgPool, video_id: Uuid) -> Result<bool, AnalysisError> {

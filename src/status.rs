@@ -138,10 +138,12 @@ pub async fn find_video_by_source_url(
     pool: &sqlx::PgPool,
     source_url: &str,
 ) -> anyhow::Result<Option<VideoStatus>> {
-    Ok(list_videos_with_pool(pool, false, false, Some(1), Some(source_url))
-        .await?
-        .into_iter()
-        .next())
+    Ok(
+        list_videos_with_pool(pool, false, false, Some(1), Some(source_url))
+            .await?
+            .into_iter()
+            .next(),
+    )
 }
 
 pub async fn list_monitored_sources(
