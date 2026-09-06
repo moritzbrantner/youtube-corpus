@@ -30,6 +30,17 @@ jobs:
           ref: b0c5ea465aa045fd5a967004d0230310735adf7f
           path: _deps/nlp-stack
 
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check frontend formatting
+        run: bun run format:check
+
       - name: Set up Rust for browser Wasm
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -41,17 +52,6 @@ jobs:
 
       - name: Build browser NLP runtime
         run: NLP_STACK_DIR="$GITHUB_WORKSPACE/_deps/nlp-stack" bash scripts/build-browser-wasm.sh
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.14"
-
-      - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Check frontend formatting
-        run: bun run format:check
 
       - name: Build analyzer
         run: bun run build
