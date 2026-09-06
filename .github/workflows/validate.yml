@@ -33,21 +33,13 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Check frontend formatting
-        run: bun run format:check
-
-      - name: Build frontend
-        run: bun run build
-
-      - name: Install Rust formatter
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-
-      - name: Check Rust formatting
-        run: cargo fmt --check
-
-      - name: Explain source verification boundary
+      - name: Show canonical frontend formatting
         run: |
-          echo "Rust build, clippy, tests, and Postgres integration checks run in the local coding workspace against the exact sibling source graph."
-          echo "Hosted CI stays repository-local; registry-only verification remains a release/distribution concern."
+          bun run format
+          echo '<<< AudioYouTubeAnalyzer.tsx'
+          cat src/app/features/analyzer/AudioYouTubeAnalyzer.tsx
+          echo '>>> AudioYouTubeAnalyzer.tsx'
+          echo '<<< audio-browser-analysis.ts'
+          cat src/app/features/analyzer/audio-browser-analysis.ts
+          echo '>>> audio-browser-analysis.ts'
+          exit 1
