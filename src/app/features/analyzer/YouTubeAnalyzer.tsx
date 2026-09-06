@@ -53,7 +53,9 @@ export function YouTubeAnalyzer() {
         throw new Error(status.message ?? "The configured database is not reachable.");
       }
       if (!status.schemaReady) {
-        throw new Error(status.message ?? "The corpus schema is not ready. Start the backend with --migrate.");
+        throw new Error(
+          status.message ?? "The corpus schema is not ready. Start the backend with --migrate.",
+        );
       }
       setBackendState("ready");
       setBackendMessage(
@@ -95,7 +97,9 @@ export function YouTubeAnalyzer() {
 
       persistWorkbenchUrl(parsed.canonicalUrl, backendUrl);
       setPhase("ingesting");
-      setProgressMessage("Fetching metadata and captions, normalizing the transcript, and indexing it…");
+      setProgressMessage(
+        "Fetching metadata and captions, normalizing the transcript, and indexing it…",
+      );
       const ingest = await addSource({
         sourceKind: "video",
         sourceUrl: parsed.canonicalUrl,
@@ -141,9 +145,9 @@ export function YouTubeAnalyzer() {
           </a>
           <h1>Analyze a YouTube video from one URL</h1>
           <p>
-            Paste a public YouTube URL. The corpus backend retrieves metadata and captions, preserves provenance,
-            indexes the transcript, and runs deterministic NLP analysis. Existing multimodal evidence is surfaced when
-            available.
+            Paste a public YouTube URL. The corpus backend retrieves metadata and captions,
+            preserves provenance, indexes the transcript, and runs deterministic NLP analysis.
+            Existing multimodal evidence is surfaced when available.
           </p>
         </div>
         <nav className="analyzer-nav" aria-label="YouTube Corpus views">
@@ -154,7 +158,9 @@ export function YouTubeAnalyzer() {
 
       <section className="runtime-strip" aria-label="Runtime status">
         <span className={`runtime-dot runtime-dot-${backendState}`} aria-hidden="true" />
-        <strong>{isGitHubPages() ? "Static GitHub Pages + corpus backend" : "Corpus workbench"}</strong>
+        <strong>
+          {isGitHubPages() ? "Static GitHub Pages + corpus backend" : "Corpus workbench"}
+        </strong>
         <span>{backendMessage}</span>
       </section>
 
@@ -171,18 +177,30 @@ export function YouTubeAnalyzer() {
               value={sourceUrl}
               onChange={(event) => setSourceUrl(event.target.value)}
             />
-            <button type="submit" disabled={phase === "connecting" || phase === "ingesting" || phase === "analyzing"}>
+            <button
+              type="submit"
+              disabled={phase === "connecting" || phase === "ingesting" || phase === "analyzing"}
+            >
               {phase === "ingesting" || phase === "analyzing" ? "Analyzing…" : "Analyze video"}
             </button>
           </div>
-          {sourceUrl && !parsedUrl ? <p className="field-error">This is not a recognized YouTube video URL.</p> : null}
+          {sourceUrl && !parsedUrl ? (
+            <p className="field-error">This is not a recognized YouTube video URL.</p>
+          ) : null}
 
           <div className="analysis-options">
             <label className="checkbox-row">
-              <input type="checkbox" checked={useAsr} onChange={(event) => setUseAsr(event.target.checked)} />
+              <input
+                type="checkbox"
+                checked={useAsr}
+                onChange={(event) => setUseAsr(event.target.checked)}
+              />
               <span>
                 <strong>ASR fallback</strong>
-                <small>Download media and run Whisper when available. This is off by default because it is heavier.</small>
+                <small>
+                  Download media and run Whisper when available. This is off by default because it
+                  is heavier.
+                </small>
               </span>
             </label>
             <details>
@@ -197,13 +215,18 @@ export function YouTubeAnalyzer() {
                     value={backendUrl}
                     onChange={(event) => setBackendUrl(event.target.value)}
                   />
-                  <button type="button" className="secondary-button" onClick={() => void probeBackend(backendUrl)}>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void probeBackend(backendUrl)}
+                  >
                     Check
                   </button>
                 </div>
                 <p>
-                  On GitHub Pages the browser only parses the URL and renders the workbench. yt-dlp, transcript
-                  persistence, and NLP run through the corpus backend. The default Pages backend is local loopback.
+                  On GitHub Pages the browser only parses the URL and renders the workbench. yt-dlp,
+                  transcript persistence, and NLP run through the corpus backend. The default Pages
+                  backend is local loopback.
                 </p>
               </div>
             </details>
@@ -228,7 +251,10 @@ export function YouTubeAnalyzer() {
             <ol className="pipeline-list">
               <PipelineStep label="URL + preview" active={Boolean(preview)} />
               <PipelineStep label="Metadata + captions" active={phaseReached(phase, "ingesting")} />
-              <PipelineStep label="Transcript index" active={Boolean(report?.coverage.transcript)} />
+              <PipelineStep
+                label="Transcript index"
+                active={Boolean(report?.coverage.transcript)}
+              />
               <PipelineStep label="Lexical analysis" active={Boolean(report?.coverage.lexical)} />
               <PipelineStep label="Report" active={phase === "done"} />
             </ol>
@@ -236,7 +262,11 @@ export function YouTubeAnalyzer() {
         </section>
       ) : null}
 
-      {error ? <div className="analysis-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="analysis-error" role="alert">
+          {error}
+        </div>
+      ) : null}
 
       {report ? (
         <div className="report-stack">
@@ -246,23 +276,43 @@ export function YouTubeAnalyzer() {
                 <span>Coverage</span>
                 <h2>What this run actually analyzed</h2>
               </div>
-              <a href={report.video.sourceUrl} target="_blank" rel="noreferrer">Open on YouTube</a>
+              <a href={report.video.sourceUrl} target="_blank" rel="noreferrer">
+                Open on YouTube
+              </a>
             </div>
             <div className="coverage-grid">
-              <CoverageCard label="Metadata" available={report.coverage.metadata} detail="yt-dlp video metadata" />
+              <CoverageCard
+                label="Metadata"
+                available={report.coverage.metadata}
+                detail="yt-dlp video metadata"
+              />
               <CoverageCard
                 label="Transcript"
                 available={report.coverage.transcript}
                 detail={`${formatNumber(report.video.transcriptSegments)} timed segments`}
               />
-              <CoverageCard label="NLP" available={report.coverage.lexical} detail="text-lexical deterministic analysis" />
+              <CoverageCard
+                label="NLP"
+                available={report.coverage.lexical}
+                detail="text-lexical deterministic analysis"
+              />
               <CoverageCard
                 label="Media retained"
                 available={report.coverage.mediaRetained}
-                detail={report.coverage.mediaRetained ? "local media available" : "caption-first ingest"}
+                detail={
+                  report.coverage.mediaRetained ? "local media available" : "caption-first ingest"
+                }
               />
-              <CoverageCard label="Visual timeline" available={report.coverage.visualTimeline} detail="scene / face evidence" />
-              <CoverageCard label="Audio evidence" available={report.coverage.audioFeatures} detail="voice observations" />
+              <CoverageCard
+                label="Visual timeline"
+                available={report.coverage.visualTimeline}
+                detail="scene / face evidence"
+              />
+              <CoverageCard
+                label="Audio evidence"
+                available={report.coverage.audioFeatures}
+                detail="voice observations"
+              />
             </div>
           </section>
 
@@ -274,19 +324,29 @@ export function YouTubeAnalyzer() {
               </div>
             </div>
             <div className="metric-grid">
-              <Metric label="Duration" value={report.video.durationString ?? formatDuration(report.video.durationSeconds)} />
+              <Metric
+                label="Duration"
+                value={report.video.durationString ?? formatDuration(report.video.durationSeconds)}
+              />
               <Metric label="Views" value={formatOptionalNumber(report.video.viewCount)} />
               <Metric label="Likes" value={formatOptionalNumber(report.video.likeCount)} />
               <Metric label="Comments" value={formatOptionalNumber(report.video.commentCount)} />
               <Metric label="Transcript words" value={valueOrDash(lexicalStats?.words)} />
-              <Metric label="Unique terms" value={valueOrDash(lexicalSummary?.unique_terms ?? lexicalSummary?.uniqueTerms)} />
+              <Metric
+                label="Unique terms"
+                value={valueOrDash(lexicalSummary?.unique_terms ?? lexicalSummary?.uniqueTerms)}
+              />
               <Metric
                 label="Lexical diversity"
-                value={formatRatio(lexicalSummary?.lexical_diversity ?? lexicalSummary?.lexicalDiversity)}
+                value={formatRatio(
+                  lexicalSummary?.lexical_diversity ?? lexicalSummary?.lexicalDiversity,
+                )}
               />
               <Metric
                 label="Avg. sentence words"
-                value={formatDecimal(readability?.average_sentence_words ?? readability?.averageSentenceWords)}
+                value={formatDecimal(
+                  readability?.average_sentence_words ?? readability?.averageSentenceWords,
+                )}
               />
             </div>
             <dl className="metadata-list">
@@ -296,7 +356,9 @@ export function YouTubeAnalyzer() {
               <MetadataRow label="Live status" value={report.video.liveStatus} />
               <MetadataRow label="Categories" value={report.video.categories.join(", ") || null} />
             </dl>
-            {report.video.description ? <p className="video-description">{report.video.description}</p> : null}
+            {report.video.description ? (
+              <p className="video-description">{report.video.description}</p>
+            ) : null}
           </section>
 
           {report.coverage.lexical ? (
@@ -314,7 +376,9 @@ export function YouTubeAnalyzer() {
                   <h3>Extractive summary</h3>
                   <ol>
                     {summarySentences.map((sentence, index) => (
-                      <li key={`${readString(sentence.text) ?? "summary"}-${index}`}>{readString(sentence.text)}</li>
+                      <li key={`${readString(sentence.text) ?? "summary"}-${index}`}>
+                        {readString(sentence.text)}
+                      </li>
                     ))}
                   </ol>
                 </div>
@@ -322,8 +386,14 @@ export function YouTubeAnalyzer() {
 
               <div className="analysis-columns">
                 <AnalysisList title="Keywords" items={keywords.map(termLabel).filter(Boolean)} />
-                <AnalysisList title="Key phrases" items={phrases.map(phraseLabel).filter(Boolean)} />
-                <AnalysisList title="Rule entities" items={entities.map(entityLabel).filter(Boolean)} />
+                <AnalysisList
+                  title="Key phrases"
+                  items={phrases.map(phraseLabel).filter(Boolean)}
+                />
+                <AnalysisList
+                  title="Rule entities"
+                  items={entities.map(entityLabel).filter(Boolean)}
+                />
                 <div className="analysis-card">
                   <h3>Sentiment</h3>
                   <p className="analysis-emphasis">{sentimentLabel(sentiment)}</p>
@@ -359,8 +429,8 @@ export function YouTubeAnalyzer() {
               </div>
             ) : (
               <p className="empty-state">
-                No usable transcript was returned. Enable ASR fallback when the backend has Whisper installed, or retry a
-                video with captions.
+                No usable transcript was returned. Enable ASR fallback when the backend has Whisper
+                installed, or retry a video with captions.
               </p>
             )}
           </section>
@@ -402,7 +472,10 @@ export function YouTubeAnalyzer() {
       ) : null}
 
       <footer className="analyzer-footer">
-        <span>Static GitHub Pages workbench · corpus-owned ingestion and persistence · nlp-stack lexical analysis</span>
+        <span>
+          Static GitHub Pages workbench · corpus-owned ingestion and persistence · nlp-stack lexical
+          analysis
+        </span>
         <a href="https://github.com/moritzbrantner/youtube-corpus">View source</a>
       </footer>
     </main>
@@ -418,7 +491,15 @@ function PipelineStep({ label, active }: { label: string; active: boolean }) {
   );
 }
 
-function CoverageCard({ label, available, detail }: { label: string; available: boolean; detail: string }) {
+function CoverageCard({
+  label,
+  available,
+  detail,
+}: {
+  label: string;
+  available: boolean;
+  detail: string;
+}) {
   return (
     <article className={available ? "coverage-card coverage-yes" : "coverage-card"}>
       <span>{available ? "Available" : "Not produced"}</span>
@@ -452,7 +533,11 @@ function AnalysisList({ title, items }: { title: string; items: string[] }) {
     <div className="analysis-card">
       <h3>{title}</h3>
       {items.length ? (
-        <ul>{items.slice(0, 16).map((item) => <li key={item}>{item}</li>)}</ul>
+        <ul>
+          {items.slice(0, 16).map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
       ) : (
         <p className="muted-label">No results.</p>
       )}
@@ -466,7 +551,11 @@ async function waitForIngest(jobId: string, onProgress: (message: string) => voi
     if (run.status === "completed" || run.job?.status === "succeeded") {
       return;
     }
-    if (run.status === "failed" || run.job?.status === "failed" || run.job?.status === "cancelled") {
+    if (
+      run.status === "failed" ||
+      run.job?.status === "failed" ||
+      run.job?.status === "cancelled"
+    ) {
       throw new Error(run.job?.failure?.message ?? "Video ingestion failed.");
     }
     const progress = run.job?.progress;
@@ -476,7 +565,9 @@ async function waitForIngest(jobId: string, onProgress: (message: string) => voi
     );
     await delay(1000);
   }
-  throw new Error("The ingest is still running after 15 minutes. Check the backend ingest run for details.");
+  throw new Error(
+    "The ingest is still running after 15 minutes. Check the backend ingest run for details.",
+  );
 }
 
 function initialBackendUrl() {
@@ -528,7 +619,9 @@ function phaseReached(phase: Phase, threshold: "ingesting") {
 
 function primaryStreamLabel(report: VideoAnalysisReport) {
   const stream = report.streams.find((item) => item.streamId === report.primaryStreamId);
-  return stream ? `${sourceKindLabel(stream.sourceKind)} · ${stream.language ?? "unknown language"}` : "No transcript";
+  return stream
+    ? `${sourceKindLabel(stream.sourceKind)} · ${stream.language ?? "unknown language"}`
+    : "No transcript";
 }
 
 function sourceKindLabel(sourceKind: string) {
@@ -547,7 +640,9 @@ function termLabel(item: JsonRecord) {
 function phraseLabel(item: JsonRecord) {
   const text = readString(item.text);
   if (text) return text;
-  const terms = Array.isArray(item.terms) ? item.terms.filter((value): value is string => typeof value === "string") : [];
+  const terms = Array.isArray(item.terms)
+    ? item.terms.filter((value): value is string => typeof value === "string")
+    : [];
   return terms.join(" ");
 }
 
@@ -569,11 +664,15 @@ function sentimentLabel(sentiment: JsonRecord | null) {
 }
 
 function asRecord(value: unknown): JsonRecord | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as JsonRecord) : null;
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : null;
 }
 
 function asRecordArray(value: unknown): JsonRecord[] {
-  return Array.isArray(value) ? value.map(asRecord).filter((item): item is JsonRecord => item !== null) : [];
+  return Array.isArray(value)
+    ? value.map(asRecord).filter((item): item is JsonRecord => item !== null)
+    : [];
 }
 
 function readString(value: unknown) {
