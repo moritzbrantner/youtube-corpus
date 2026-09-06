@@ -25,11 +25,18 @@ pub async fn download_and_parse_captions(
     }
     tokio::fs::create_dir_all(dir).await?;
     let langs = config.languages.join(",");
-    let template = dir.join(format!("{}-subs.%(id)s.%(ext)s", item.item_id));
+    let manual_template = dir.join(format!("{}-subs.manual.%(id)s.%(ext)s", item.item_id));
+    let auto_template = dir.join(format!("{}-subs.auto.%(id)s.%(ext)s", item.item_id));
 
     let mut messages = Vec::new();
-    if let Err(error) =
-        run_caption_download(&item.source_url, &template, &langs, false, yt_dlp).await
+    if let Err(error) = run_caption_download(
+        &item.source_url,
+        &manual_template,
+        &langs,
+        false,
+        yt_dlp,
+    )
+    .await
     {
         messages.push(TranscriptStream {
             source_kind: SourceKind::CaptionManual,
@@ -41,8 +48,14 @@ pub async fn download_and_parse_captions(
         });
     }
     if config.include_auto_captions {
-        if let Err(error) =
-            run_caption_download(&item.source_url, &template, &langs, true, yt_dlp).await
+        if let Err(error) = run_caption_download(
+            &item.source_url,
+            &auto_template,
+            &langs,
+            true,
+            yt_dlp,
+        )
+        .await
         {
             messages.push(TranscriptStream {
                 source_kind: SourceKind::CaptionAuto,
@@ -77,15 +90,7 @@ pub async fn parse_caption_files(dir: &Path) -> anyhow::Result<Vec<TranscriptStr
         } else {
             text_transcripts::parse_srt(&text)
         }?;
-        let source_kind = if path
-            .file_name()
-            .and_then(|value| value.to_str())
-            .is_some_and(|name| name.contains(".auto.") || name.contains("auto"))
-        {
-            SourceKind::CaptionAuto
-        } else {
-            SourceKind::CaptionManual
-        };
+        let source_kind = caption_source_kind_from_path(&path);
         let segments = parsed
             .segments
             .into_iter()
@@ -153,6 +158,18 @@ async fn run_caption_download(
         .map_err(Into::into)
 }
 
+fn caption_source_kind_from_path(path: &Path) -> SourceKind {
+    if path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .is_some_and(|name| name.contains(".auto."))
+    {
+        SourceKind::CaptionAuto
+    } else {
+        SourceKind::CaptionManual
+    }
+}
+
 fn infer_language_from_path(path: &Path) -> Option<String> {
     let file_name = path.file_name()?.to_str()?;
     let parts = file_name.split('.').collect::<Vec<_>>();
@@ -162,4 +179,23 @@ fn infer_language_from_path(path: &Path) -> Option<String> {
         .skip(1)
         .find(|part| part.len() == 2 || part.len() == 5)
         .map(|value| (*value).to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::caption_source_kind_from_path;
+    use crate::config::SourceKind;
+    use std::path::Path;
+
+    #[test]
+    fn caption_filename_preserves_manual_and_auto_provenance() {
+        assert_eq!(
+            caption_source_kind_from_path(Path::new("video-subs.manual.id.en.vtt")),
+            SourceKind::CaptionManual
+        );
+        assert_eq!(
+            caption_source_kind_from_path(Path::new("video-subs.auto.id.en.vtt")),
+            SourceKind::CaptionAuto
+        );
+    }
 }
