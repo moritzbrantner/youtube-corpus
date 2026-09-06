@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,11 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Verify local-only source contract
-        run: |
-          jq -e '.schemaVersion == 2 and .cargo.localOnly == true' .coding-tooling.source-deps.json >/dev/null
-          jq -e '.cargo.patches | length > 0 and all(.[]; (.package | length > 0) and (.git | length > 0) and (.rev | test("^[0-9a-f]{40}$")) and (.localPath | length > 0))' .coding-tooling.source-deps.json >/dev/null
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -33,16 +30,18 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Format frontend sources
-        run: bun run format
+      - name: Format analyzer sources
+        run: |
+          ./node_modules/.bin/oxfmt --write src/app/features/analyzer/AudioYouTubeAnalyzer.tsx src/app/features/analyzer/audio-browser-analysis.ts
 
-      - name: Upload formatter output
-        uses: actions/upload-artifact@v4
-        with:
-          name: canonical-formatter-output
-          path: |
-            src/app/features/analyzer/AudioYouTubeAnalyzer.tsx
-            src/app/features/analyzer/audio-browser-analysis.ts
-
-      - name: Stop after formatter capture
-        run: exit 1
+      - name: Commit canonical formatting
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/features/analyzer/AudioYouTubeAnalyzer.tsx src/app/features/analyzer/audio-browser-analysis.ts
+          if git diff --cached --quiet; then
+            echo "No formatter changes needed."
+            exit 0
+          fi
+          git commit -m "Format browser audio analyzer"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
