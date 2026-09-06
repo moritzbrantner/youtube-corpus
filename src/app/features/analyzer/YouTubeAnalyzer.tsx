@@ -1,10 +1,7 @@
 import * as React from "react";
 
 import type { VideoAnalysisReport } from "../../api";
-import {
-  analyzeYouTubeInBrowser,
-  type BrowserAnalysisStage,
-} from "./browser-analysis";
+import { analyzeYouTubeInBrowser, type BrowserAnalysisStage } from "./browser-analysis";
 import { parseYouTubeVideoUrl } from "./youtube-url";
 
 type Phase = "idle" | "metadata" | "captions" | "analyzing" | "done" | "error";
@@ -86,7 +83,9 @@ export function YouTubeAnalyzer() {
       <section className="runtime-strip" aria-label="Runtime status">
         <span className="runtime-dot runtime-dot-ready" aria-hidden="true" />
         <strong>Browser-only GitHub Pages</strong>
-        <span>Direct YouTube metadata + captions · local nlp-stack Rust/Wasm · no corpus backend</span>
+        <span>
+          Direct YouTube metadata + captions · local nlp-stack Rust/Wasm · no corpus backend
+        </span>
       </section>
 
       <section className="analyzer-input-panel">
@@ -129,7 +128,10 @@ export function YouTubeAnalyzer() {
             <ol className="pipeline-list">
               <PipelineStep label="URL + preview" active={Boolean(preview)} />
               <PipelineStep label="Metadata + captions" active={phaseReached(phase, "captions")} />
-              <PipelineStep label="In-memory transcript" active={Boolean(report?.coverage.transcript)} />
+              <PipelineStep
+                label="In-memory transcript"
+                active={Boolean(report?.coverage.transcript)}
+              />
               <PipelineStep label="Rust/Wasm NLP" active={Boolean(report?.coverage.lexical)} />
               <PipelineStep label="Report" active={phase === "done"} />
             </ol>
