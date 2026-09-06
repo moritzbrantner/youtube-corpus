@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "surface": "youtube-video-analyzer",
   "delivery": "static-github-pages",
   "input": "youtube-video-url",
@@ -8,38 +8,42 @@
       "youtube-url-validation",
       "canonical-video-url",
       "privacy-enhanced-preview",
+      "youtube-oembed-metadata",
+      "youtube-player-caption-discovery",
+      "timedtext-caption-fetch",
+      "in-memory-transcript-normalization",
+      "nlp-stack-rust-wasm-analysis",
       "analysis-report-rendering"
     ],
     "doesNotOwn": [
       "youtube-media-download",
-      "youtube-caption-download",
-      "transcript-persistence",
-      "nlp-semantics"
+      "persistent-corpus-storage",
+      "cross-origin-media-decoding",
+      "browser-asr-from-youtube-embed"
     ]
   },
   "backend": {
-    "defaultPagesUrl": "http://127.0.0.1:1420",
-    "requiredForFullAnalysis": true,
-    "operations": [
-      "yt-dlp-metadata",
-      "manual-and-auto-caption-ingest",
-      "transcript-normalization-and-indexing",
-      "text-lexical-analysis",
-      "optional-whisper-asr",
-      "available-multimodal-evidence"
-    ]
+    "requiredForPagesAnalysis": false,
+    "role": "optional persistent corpus, search, recursive discovery, retained-media, and server-side ASR workflows"
   },
-  "transcriptPreference": ["caption_manual", "caption_auto", "asr"],
+  "transcriptPreference": ["caption_manual", "caption_auto"],
   "analysis": {
-    "metadata": "available-after-ingest",
-    "transcript": "available-when-captions-or-asr-exist",
-    "lexical": "deterministic-text-lexical",
-    "visualTimeline": "reported-only-when-evidence-exists",
-    "audioFeatures": "reported-only-when-evidence-exists"
+    "metadata": "direct-youtube-oembed-and-player",
+    "transcript": "browser-memory-when-youtube-exposes-a-readable-caption-track",
+    "lexical": "deterministic-nlp-stack-rust-wasm",
+    "visualTimeline": "not-produced-by-static-url-only-analyzer",
+    "audioFeatures": "not-produced-by-static-url-only-analyzer"
   },
+  "limitations": [
+    "YouTube can withhold captions or make a caption track unreadable from a third-party static origin.",
+    "The parent page cannot decode audio or video bytes from a cross-origin YouTube iframe, so URL-only browser ASR, scene analysis, and audio analysis are not claimed.",
+    "The static analyzer keeps the transcript and NLP result in browser memory and does not persist them to the corpus."
+  ],
   "privacy": {
     "staticSiteStoresMedia": false,
+    "staticSitePersistsTranscript": false,
     "previewHost": "youtube-nocookie.com",
-    "backendPersistence": "configured-youtube-corpus-work-directory-and-postgres"
+    "analysisRuntime": "browser-memory",
+    "networkRequests": "YouTube embed, oEmbed, iframe API, and caption endpoints only"
   }
 }

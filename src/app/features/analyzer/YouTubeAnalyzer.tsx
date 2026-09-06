@@ -1,25 +1,14 @@
 import * as React from "react";
 
-import {
-  addSource,
-  configureApiBaseUrl,
-  getCorpusStatus,
-  getIngestRun,
-  getVideoAnalysis,
-  type VideoAnalysisReport,
-} from "../../api";
+import type { VideoAnalysisReport } from "../../api";
+import { analyzeYouTubeInBrowser, type BrowserAnalysisStage } from "./browser-analysis";
 import { parseYouTubeVideoUrl } from "./youtube-url";
 
-type Phase = "idle" | "connecting" | "ingesting" | "analyzing" | "done" | "error";
-type BackendState = "checking" | "ready" | "unavailable";
+type Phase = "idle" | "metadata" | "captions" | "analyzing" | "done" | "error";
 type JsonRecord = Record<string, unknown>;
 
 export function YouTubeAnalyzer() {
   const [sourceUrl, setSourceUrl] = React.useState(initialVideoUrl);
-  const [backendUrl, setBackendUrl] = React.useState(initialBackendUrl);
-  const [backendState, setBackendState] = React.useState<BackendState>("checking");
-  const [backendMessage, setBackendMessage] = React.useState("Checking analysis backend…");
-  const [useAsr, setUseAsr] = React.useState(false);
   const [phase, setPhase] = React.useState<Phase>("idle");
   const [progressMessage, setProgressMessage] = React.useState("Paste a YouTube URL to begin.");
   const [error, setError] = React.useState<string | null>(null);
@@ -36,41 +25,6 @@ export function YouTubeAnalyzer() {
   const summarySentences = asRecordArray(lexical?.extractiveSummary);
   const entities = asRecordArray(lexical?.ruleEntities);
 
-  React.useEffect(() => {
-    void probeBackend(backendUrl);
-  }, []);
-
-  async function probeBackend(candidate: string) {
-    setBackendState("checking");
-    setBackendMessage("Checking analysis backend…");
-    configureApiBaseUrl(candidate);
-    try {
-      const status = await getCorpusStatus();
-      if (!status.configured) {
-        throw new Error("The backend is running without DATABASE_URL.");
-      }
-      if (!status.reachable) {
-        throw new Error(status.message ?? "The configured database is not reachable.");
-      }
-      if (!status.schemaReady) {
-        throw new Error(
-          status.message ?? "The corpus schema is not ready. Start the backend with --migrate.",
-        );
-      }
-      setBackendState("ready");
-      setBackendMessage(
-        status.stats
-          ? `Ready · ${formatNumber(status.stats.videos)} videos · ${formatNumber(status.stats.segments)} transcript segments`
-          : "Ready",
-      );
-      return true;
-    } catch (caught) {
-      setBackendState("unavailable");
-      setBackendMessage(errorMessage(caught));
-      return false;
-    }
-  }
-
   async function analyze(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
@@ -83,48 +37,17 @@ export function YouTubeAnalyzer() {
       return;
     }
 
+    persistWorkbenchUrl(parsed.canonicalUrl);
     try {
-      setPhase("connecting");
-      setProgressMessage("Connecting to the corpus analysis backend…");
-      const ready = await probeBackend(backendUrl);
-      if (!ready) {
-        throw new Error(
-          isGitHubPages()
-            ? "Start the local youtube-corpus backend, then retry. The static Pages site cannot run yt-dlp or Postgres itself."
-            : "The youtube-corpus backend is not ready.",
-        );
-      }
-
-      persistWorkbenchUrl(parsed.canonicalUrl, backendUrl);
-      setPhase("ingesting");
-      setProgressMessage(
-        "Fetching metadata and captions, normalizing the transcript, and indexing it…",
-      );
-      const ingest = await addSource({
-        sourceKind: "video",
-        sourceUrl: parsed.canonicalUrl,
-        captionLanguages: ["all"],
-        captionsEnabled: true,
-        autoCaptionsEnabled: true,
-        asrEnabled: useAsr,
-        ingestNow: true,
-        async: true,
-        migrate: false,
+      setPhase("metadata");
+      setProgressMessage("Reading public YouTube metadata directly in the browser…");
+      const nextReport = await analyzeYouTubeInBrowser(parsed, (stage, message) => {
+        setPhase(phaseForStage(stage));
+        setProgressMessage(message);
       });
-
-      if (ingest.jobId) {
-        await waitForIngest(ingest.jobId, (message) => setProgressMessage(message));
-      } else if (ingest.ingest && ingest.ingest.items.some((item) => item.status === "failed")) {
-        const failed = ingest.ingest.items.find((item) => item.status === "failed");
-        throw new Error(failed?.message ?? "Video ingestion failed.");
-      }
-
-      setPhase("analyzing");
-      setProgressMessage("Composing metadata, transcript, lexical, and multimodal evidence…");
-      const nextReport = await getVideoAnalysis(parsed.canonicalUrl);
       setReport(nextReport);
       setPhase("done");
-      setProgressMessage("Analysis complete.");
+      setProgressMessage("Browser analysis complete. Nothing was sent to a corpus backend.");
     } catch (caught) {
       setPhase("error");
       setError(errorMessage(caught));
@@ -135,6 +58,7 @@ export function YouTubeAnalyzer() {
   const preview = report?.video.youtubeId
     ? parseYouTubeVideoUrl(`https://www.youtube.com/watch?v=${report.video.youtubeId}`)
     : parsedUrl;
+  const busy = ["metadata", "captions", "analyzing"].includes(phase);
 
   return (
     <main className="analyzer-shell">
@@ -145,9 +69,9 @@ export function YouTubeAnalyzer() {
           </a>
           <h1>Analyze a YouTube video from one URL</h1>
           <p>
-            Paste a public YouTube URL. The corpus backend retrieves metadata and captions,
-            preserves provenance, indexes the transcript, and runs deterministic NLP analysis.
-            Existing multimodal evidence is surfaced when available.
+            Paste a public YouTube URL. GitHub Pages reads available metadata and captions directly
+            from YouTube, normalizes the transcript in memory, and runs deterministic nlp-stack
+            analysis locally in Rust/Wasm. No Postgres or corpus backend is required.
           </p>
         </div>
         <nav className="analyzer-nav" aria-label="YouTube Corpus views">
@@ -157,11 +81,11 @@ export function YouTubeAnalyzer() {
       </header>
 
       <section className="runtime-strip" aria-label="Runtime status">
-        <span className={`runtime-dot runtime-dot-${backendState}`} aria-hidden="true" />
-        <strong>
-          {isGitHubPages() ? "Static GitHub Pages + corpus backend" : "Corpus workbench"}
-        </strong>
-        <span>{backendMessage}</span>
+        <span className="runtime-dot runtime-dot-ready" aria-hidden="true" />
+        <strong>Browser-only GitHub Pages</strong>
+        <span>
+          Direct YouTube metadata + captions · local nlp-stack Rust/Wasm · no corpus backend
+        </span>
       </section>
 
       <section className="analyzer-input-panel">
@@ -177,60 +101,13 @@ export function YouTubeAnalyzer() {
               value={sourceUrl}
               onChange={(event) => setSourceUrl(event.target.value)}
             />
-            <button
-              type="submit"
-              disabled={phase === "connecting" || phase === "ingesting" || phase === "analyzing"}
-            >
-              {phase === "ingesting" || phase === "analyzing" ? "Analyzing…" : "Analyze video"}
+            <button type="submit" disabled={busy}>
+              {busy ? "Analyzing…" : "Analyze video"}
             </button>
           </div>
           {sourceUrl && !parsedUrl ? (
             <p className="field-error">This is not a recognized YouTube video URL.</p>
           ) : null}
-
-          <div className="analysis-options">
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={useAsr}
-                onChange={(event) => setUseAsr(event.target.checked)}
-              />
-              <span>
-                <strong>ASR fallback</strong>
-                <small>
-                  Download media and run Whisper when available. This is off by default because it
-                  is heavier.
-                </small>
-              </span>
-            </label>
-            <details>
-              <summary>Backend connection</summary>
-              <div className="backend-editor">
-                <label htmlFor="backend-url">Analysis backend</label>
-                <div className="backend-row">
-                  <input
-                    id="backend-url"
-                    type="url"
-                    placeholder="Same origin or http://127.0.0.1:1420"
-                    value={backendUrl}
-                    onChange={(event) => setBackendUrl(event.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => void probeBackend(backendUrl)}
-                  >
-                    Check
-                  </button>
-                </div>
-                <p>
-                  On GitHub Pages the browser only parses the URL and renders the workbench. yt-dlp,
-                  transcript persistence, and NLP run through the corpus backend. The default Pages
-                  backend is local loopback.
-                </p>
-              </div>
-            </details>
-          </div>
         </form>
       </section>
 
@@ -250,12 +127,12 @@ export function YouTubeAnalyzer() {
             <p>{progressMessage}</p>
             <ol className="pipeline-list">
               <PipelineStep label="URL + preview" active={Boolean(preview)} />
-              <PipelineStep label="Metadata + captions" active={phaseReached(phase, "ingesting")} />
+              <PipelineStep label="Metadata + captions" active={phaseReached(phase, "captions")} />
               <PipelineStep
-                label="Transcript index"
+                label="In-memory transcript"
                 active={Boolean(report?.coverage.transcript)}
               />
-              <PipelineStep label="Lexical analysis" active={Boolean(report?.coverage.lexical)} />
+              <PipelineStep label="Rust/Wasm NLP" active={Boolean(report?.coverage.lexical)} />
               <PipelineStep label="Report" active={phase === "done"} />
             </ol>
           </div>
@@ -274,7 +151,7 @@ export function YouTubeAnalyzer() {
             <div className="section-heading">
               <div>
                 <span>Coverage</span>
-                <h2>What this run actually analyzed</h2>
+                <h2>What this browser run actually analyzed</h2>
               </div>
               <a href={report.video.sourceUrl} target="_blank" rel="noreferrer">
                 Open on YouTube
@@ -284,34 +161,32 @@ export function YouTubeAnalyzer() {
               <CoverageCard
                 label="Metadata"
                 available={report.coverage.metadata}
-                detail="yt-dlp video metadata"
+                detail="YouTube oEmbed / player metadata"
               />
               <CoverageCard
                 label="Transcript"
                 available={report.coverage.transcript}
-                detail={`${formatNumber(report.video.transcriptSegments)} timed segments`}
+                detail={`${formatNumber(report.video.transcriptSegments)} in-memory segments`}
               />
               <CoverageCard
                 label="NLP"
                 available={report.coverage.lexical}
-                detail="text-lexical deterministic analysis"
+                detail="nlp-stack Rust/Wasm analysis"
               />
               <CoverageCard
                 label="Media retained"
                 available={report.coverage.mediaRetained}
-                detail={
-                  report.coverage.mediaRetained ? "local media available" : "caption-first ingest"
-                }
+                detail="not downloaded by the static analyzer"
               />
               <CoverageCard
                 label="Visual timeline"
                 available={report.coverage.visualTimeline}
-                detail="scene / face evidence"
+                detail="not produced from a cross-origin embed"
               />
               <CoverageCard
                 label="Audio evidence"
                 available={report.coverage.audioFeatures}
-                detail="voice observations"
+                detail="no browser ASR from a cross-origin embed"
               />
             </div>
           </section>
@@ -429,8 +304,7 @@ export function YouTubeAnalyzer() {
               </div>
             ) : (
               <p className="empty-state">
-                No usable transcript was returned. Enable ASR fallback when the backend has Whisper
-                installed, or retry a video with captions.
+                No usable caption track was available to the browser for this video.
               </p>
             )}
           </section>
@@ -439,7 +313,7 @@ export function YouTubeAnalyzer() {
             <div className="section-heading">
               <div>
                 <span>Provenance</span>
-                <h2>Transcript streams and raw metadata</h2>
+                <h2>Browser transcript and analysis evidence</h2>
               </div>
             </div>
             <div className="stream-list">
@@ -458,12 +332,12 @@ export function YouTubeAnalyzer() {
               ))}
             </div>
             <details className="raw-details">
-              <summary>Raw metadata JSON</summary>
+              <summary>Raw browser metadata JSON</summary>
               <pre>{JSON.stringify(report.video.metadata, null, 2)}</pre>
             </details>
             {report.lexicalAnalysis ? (
               <details className="raw-details">
-                <summary>Raw lexical analysis JSON</summary>
+                <summary>Raw nlp-stack analysis JSON</summary>
                 <pre>{JSON.stringify(report.lexicalAnalysis, null, 2)}</pre>
               </details>
             ) : null}
@@ -473,8 +347,8 @@ export function YouTubeAnalyzer() {
 
       <footer className="analyzer-footer">
         <span>
-          Static GitHub Pages workbench · corpus-owned ingestion and persistence · nlp-stack lexical
-          analysis
+          Static GitHub Pages · browser-owned caption ingest · nlp-stack Rust/Wasm analysis · no
+          corpus backend
         </span>
         <a href="https://github.com/moritzbrantner/youtube-corpus">View source</a>
       </footer>
@@ -545,62 +419,31 @@ function AnalysisList({ title, items }: { title: string; items: string[] }) {
   );
 }
 
-async function waitForIngest(jobId: string, onProgress: (message: string) => void) {
-  for (let attempt = 0; attempt < 900; attempt += 1) {
-    const run = await getIngestRun(jobId);
-    if (run.status === "completed" || run.job?.status === "succeeded") {
-      return;
-    }
-    if (
-      run.status === "failed" ||
-      run.job?.status === "failed" ||
-      run.job?.status === "cancelled"
-    ) {
-      throw new Error(run.job?.failure?.message ?? "Video ingestion failed.");
-    }
-    const progress = run.job?.progress;
-    onProgress(
-      progress?.message ??
-        `Ingesting video · ${formatNumber(run.videosIndexed)} indexed · ${formatNumber(run.segmentsIndexed)} segments`,
-    );
-    await delay(1000);
-  }
-  throw new Error(
-    "The ingest is still running after 15 minutes. Check the backend ingest run for details.",
-  );
-}
-
-function initialBackendUrl() {
-  if (typeof window === "undefined") return "";
-  const configured = new URLSearchParams(window.location.search).get("backend");
-  if (configured) return configured;
-  return isGitHubPages() ? "http://127.0.0.1:1420" : "";
-}
-
 function initialVideoUrl() {
   if (typeof window === "undefined") return "";
   return new URLSearchParams(window.location.search).get("url") ?? "";
 }
 
-function persistWorkbenchUrl(sourceUrl: string, backendUrl: string) {
+function persistWorkbenchUrl(sourceUrl: string) {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   url.searchParams.set("url", sourceUrl);
-  if (backendUrl) url.searchParams.set("backend", backendUrl);
-  else url.searchParams.delete("backend");
+  url.searchParams.delete("backend");
   window.history.replaceState(null, "", url);
 }
 
-function isGitHubPages() {
-  return typeof window !== "undefined" && window.location.hostname === "moritzbrantner.github.io";
+function phaseForStage(stage: BrowserAnalysisStage): Phase {
+  if (stage === "metadata") return "metadata";
+  if (stage === "captions") return "captions";
+  return "analyzing";
 }
 
 function phaseLabel(phase: Phase) {
   switch (phase) {
-    case "connecting":
-      return "Connecting";
-    case "ingesting":
-      return "Ingesting";
+    case "metadata":
+      return "Metadata";
+    case "captions":
+      return "Captions";
     case "analyzing":
       return "Analyzing";
     case "done":
@@ -612,8 +455,8 @@ function phaseLabel(phase: Phase) {
   }
 }
 
-function phaseReached(phase: Phase, threshold: "ingesting") {
-  if (threshold === "ingesting") return ["ingesting", "analyzing", "done"].includes(phase);
+function phaseReached(phase: Phase, threshold: "captions") {
+  if (threshold === "captions") return ["captions", "analyzing", "done"].includes(phase);
   return false;
 }
 
@@ -725,8 +568,4 @@ function formatTimestamp(seconds: number | null) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-function delay(milliseconds: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
