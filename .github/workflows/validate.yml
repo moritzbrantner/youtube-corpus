@@ -33,13 +33,16 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Show canonical frontend formatting
-        run: |
-          bun run format
-          echo '<<< AudioYouTubeAnalyzer.tsx'
-          cat src/app/features/analyzer/AudioYouTubeAnalyzer.tsx
-          echo '>>> AudioYouTubeAnalyzer.tsx'
-          echo '<<< audio-browser-analysis.ts'
-          cat src/app/features/analyzer/audio-browser-analysis.ts
-          echo '>>> audio-browser-analysis.ts'
-          exit 1
+      - name: Format frontend sources
+        run: bun run format
+
+      - name: Upload formatter output
+        uses: actions/upload-artifact@v4
+        with:
+          name: canonical-formatter-output
+          path: |
+            src/app/features/analyzer/AudioYouTubeAnalyzer.tsx
+            src/app/features/analyzer/audio-browser-analysis.ts
+
+      - name: Stop after formatter capture
+        run: exit 1
