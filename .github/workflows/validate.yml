@@ -33,8 +33,11 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Check frontend formatting
-        run: bun run format:check
+      - name: Show analyzer formatter diff
+        run: |
+          bunx oxfmt --write src/app/features/analyzer/YouTubeAnalyzer.tsx src/app/features/analyzer/browser-analysis.ts
+          git diff -- src/app/features/analyzer/YouTubeAnalyzer.tsx src/app/features/analyzer/browser-analysis.ts
+          exit 1
 
       - name: Build frontend
         run: bun run build
