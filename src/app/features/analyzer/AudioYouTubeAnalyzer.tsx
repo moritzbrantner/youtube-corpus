@@ -7,14 +7,7 @@ import {
 } from "./audio-browser-analysis";
 import { parseYouTubeVideoUrl } from "./youtube-url";
 
-type Phase =
-  | "idle"
-  | "capture"
-  | "metadata"
-  | "transcribing"
-  | "analyzing"
-  | "done"
-  | "error";
+type Phase = "idle" | "capture" | "metadata" | "transcribing" | "analyzing" | "done" | "error";
 type JsonRecord = Record<string, unknown>;
 
 export function AudioYouTubeAnalyzer() {

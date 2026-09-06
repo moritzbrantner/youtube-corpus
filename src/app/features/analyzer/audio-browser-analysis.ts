@@ -1,8 +1,4 @@
-import type {
-  VideoAnalysisReport,
-  VideoAnalysisSegment,
-  VideoAnalysisStream,
-} from "../../api";
+import type { VideoAnalysisReport, VideoAnalysisSegment, VideoAnalysisStream } from "../../api";
 import type { ParsedYouTubeUrl } from "./youtube-url";
 
 export type AudioBrowserAnalysisStage = "capture" | "metadata" | "transcribing" | "analyzing";
@@ -82,7 +78,9 @@ export async function analyzeYouTubeAudioInBrowser(
   const audioRuntime = await audioRuntimePromise;
   if (typeof audioRuntime.supportsBrowserTranscription !== "function") {
     stopStream(displayStream);
-    throw new Error("The bundled audio-analysis runtime does not expose browser transcription support.");
+    throw new Error(
+      "The bundled audio-analysis runtime does not expose browser transcription support.",
+    );
   }
   if (!(await audioRuntime.supportsBrowserTranscription())) {
     stopStream(displayStream);
@@ -112,7 +110,9 @@ export async function analyzeYouTubeAudioInBrowser(
 
   const transcriptText = transcription.text.trim();
   if (!transcriptText) {
-    throw new Error("audio-analysis completed but did not detect transcribable speech in the captured audio.");
+    throw new Error(
+      "audio-analysis completed but did not detect transcribable speech in the captured audio.",
+    );
   }
 
   const streamId = `browser-asr-${parsed.videoId}`;
@@ -330,7 +330,9 @@ async function loadAudioAnalysisRuntime(): Promise<AudioAnalysisModule> {
     try {
       return (await import(/* @vite-ignore */ moduleUrl)) as AudioAnalysisModule;
     } catch (caught) {
-      throw new Error(`Unable to load the bundled audio-analysis browser runtime. ${errorMessage(caught)}`);
+      throw new Error(
+        `Unable to load the bundled audio-analysis browser runtime. ${errorMessage(caught)}`,
+      );
     }
   })();
   return audioAnalysisRuntimePromise;
