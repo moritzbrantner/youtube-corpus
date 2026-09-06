@@ -23,13 +23,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check out pinned nlp-stack source
-        uses: actions/checkout@v4
-        with:
-          repository: moritzbrantner/nlp-stack
-          ref: b0c5ea465aa045fd5a967004d0230310735adf7f
-          path: _deps/nlp-stack
-
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -40,6 +33,13 @@ jobs:
 
       - name: Check frontend formatting
         run: bun run format:check
+
+      - name: Check out pinned nlp-stack source
+        uses: actions/checkout@v4
+        with:
+          repository: moritzbrantner/nlp-stack
+          ref: b0c5ea465aa045fd5a967004d0230310735adf7f
+          path: _deps/nlp-stack
 
       - name: Set up Rust for browser Wasm
         uses: dtolnay/rust-toolchain@stable
