@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "surface": "youtube-video-analyzer",
   "delivery": "static-github-pages",
   "input": "youtube-video-url",
@@ -9,8 +9,9 @@
       "canonical-video-url",
       "privacy-enhanced-preview",
       "youtube-oembed-metadata",
-      "youtube-player-caption-discovery",
-      "timedtext-caption-fetch",
+      "user-approved-tab-audio-capture",
+      "in-memory-audio-recording",
+      "audio-analysis-webgpu-transcription",
       "in-memory-transcript-normalization",
       "nlp-stack-rust-wasm-analysis",
       "analysis-report-rendering"
@@ -18,32 +19,34 @@
     "doesNotOwn": [
       "youtube-media-download",
       "persistent-corpus-storage",
-      "cross-origin-media-decoding",
-      "browser-asr-from-youtube-embed"
+      "direct-cross-origin-youtube-media-decoding",
+      "audio-analysis-transcription-semantics",
+      "nlp-analysis-semantics"
     ]
   },
   "backend": {
     "requiredForPagesAnalysis": false,
-    "role": "optional persistent corpus, search, recursive discovery, retained-media, and server-side ASR workflows"
+    "role": "optional persistent corpus, search, recursive discovery, retained-media, and server-side workflows"
   },
-  "transcriptPreference": ["caption_manual", "caption_auto"],
+  "transcriptPreference": ["asr"],
   "analysis": {
-    "metadata": "direct-youtube-oembed-and-player",
-    "transcript": "browser-memory-when-youtube-exposes-a-readable-caption-track",
+    "metadata": "direct-youtube-oembed",
+    "transcript": "audio-analysis-whisper-tiny-webgpu-over-user-shared-tab-audio",
     "lexical": "deterministic-nlp-stack-rust-wasm",
-    "visualTimeline": "not-produced-by-static-url-only-analyzer",
-    "audioFeatures": "not-produced-by-static-url-only-analyzer"
+    "visualTimeline": "not-produced-by-audio-first-static-analyzer",
+    "audioFeatures": "not-produced-beyond-transcription"
   },
   "limitations": [
-    "YouTube can withhold captions or make a caption track unreadable from a third-party static origin.",
-    "The parent page cannot decode audio or video bytes from a cross-origin YouTube iframe, so URL-only browser ASR, scene analysis, and audio analysis are not claimed.",
-    "The static analyzer keeps the transcript and NLP result in browser memory and does not persist them to the corpus."
+    "A static third-party page cannot read raw audio bytes out of a cross-origin YouTube iframe, so the user must explicitly share a tab and enable tab audio.",
+    "Browser transcription requires WebGPU and deliberately has no CPU, Python, or corpus-backend fallback.",
+    "The user stops tab sharing when playback is complete; the captured audio is kept only in memory and discarded after transcription.",
+    "The first browser transcription slice provides timed ASR segments but not alignment, diarization, or translation."
   ],
   "privacy": {
     "staticSiteStoresMedia": false,
     "staticSitePersistsTranscript": false,
     "previewHost": "youtube-nocookie.com",
     "analysisRuntime": "browser-memory",
-    "networkRequests": "YouTube embed, oEmbed, iframe API, and caption endpoints only"
+    "networkRequests": "YouTube preview/oEmbed plus audio-analysis browser runtime and Whisper model assets"
   }
 }
