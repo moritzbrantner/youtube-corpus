@@ -1,17 +1,25 @@
 import * as React from "react";
 
-import type { VideoAnalysisReport } from "../../api";
 import {
-  analyzeYouTubeAudioInBrowser,
-  type AudioBrowserAnalysisStage,
-} from "./audio-browser-analysis";
+  addSource,
+  configureApiBaseUrl,
+  getCorpusStatus,
+  getIngestRun,
+  getVideoAnalysis,
+  type VideoAnalysisReport,
+} from "../../api";
 import { parseYouTubeVideoUrl } from "./youtube-url";
 
-type Phase = "idle" | "capture" | "metadata" | "transcribing" | "analyzing" | "done" | "error";
+type Phase = "idle" | "connecting" | "ingesting" | "analyzing" | "done" | "error";
+type BackendState = "checking" | "ready" | "unavailable";
 type JsonRecord = Record<string, unknown>;
 
-export function AudioYouTubeAnalyzer() {
+export function YouTubeAnalyzer() {
   const [sourceUrl, setSourceUrl] = React.useState(initialVideoUrl);
+  const [backendUrl, setBackendUrl] = React.useState(initialBackendUrl);
+  const [backendState, setBackendState] = React.useState<BackendState>("checking");
+  const [backendMessage, setBackendMessage] = React.useState("Checking analysis backend…");
+  const [useAsr, setUseAsr] = React.useState(false);
   const [phase, setPhase] = React.useState<Phase>("idle");
   const [progressMessage, setProgressMessage] = React.useState("Paste a YouTube URL to begin.");
   const [error, setError] = React.useState<string | null>(null);
@@ -28,6 +36,41 @@ export function AudioYouTubeAnalyzer() {
   const summarySentences = asRecordArray(lexical?.extractiveSummary);
   const entities = asRecordArray(lexical?.ruleEntities);
 
+  React.useEffect(() => {
+    void probeBackend(backendUrl);
+  }, []);
+
+  async function probeBackend(candidate: string) {
+    setBackendState("checking");
+    setBackendMessage("Checking analysis backend…");
+    configureApiBaseUrl(candidate);
+    try {
+      const status = await getCorpusStatus();
+      if (!status.configured) {
+        throw new Error("The backend is running without DATABASE_URL.");
+      }
+      if (!status.reachable) {
+        throw new Error(status.message ?? "The configured database is not reachable.");
+      }
+      if (!status.schemaReady) {
+        throw new Error(
+          status.message ?? "The corpus schema is not ready. Start the backend with --migrate.",
+        );
+      }
+      setBackendState("ready");
+      setBackendMessage(
+        status.stats
+          ? `Ready · ${formatNumber(status.stats.videos)} videos · ${formatNumber(status.stats.segments)} transcript segments`
+          : "Ready",
+      );
+      return true;
+    } catch (caught) {
+      setBackendState("unavailable");
+      setBackendMessage(errorMessage(caught));
+      return false;
+    }
+  }
+
   async function analyze(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
@@ -40,21 +83,48 @@ export function AudioYouTubeAnalyzer() {
       return;
     }
 
-    persistWorkbenchUrl(parsed.canonicalUrl);
     try {
-      setPhase("capture");
+      setPhase("connecting");
+      setProgressMessage("Connecting to the corpus analysis backend…");
+      const ready = await probeBackend(backendUrl);
+      if (!ready) {
+        throw new Error(
+          isGitHubPages()
+            ? "Start the local youtube-corpus backend, then retry. The static Pages site cannot run yt-dlp or Postgres itself."
+            : "The youtube-corpus backend is not ready.",
+        );
+      }
+
+      persistWorkbenchUrl(parsed.canonicalUrl, backendUrl);
+      setPhase("ingesting");
       setProgressMessage(
-        "Choose the tab playing this video and enable Share tab audio. Stop sharing when the video is finished.",
+        "Fetching metadata and captions, normalizing the transcript, and indexing it…",
       );
-      const nextReport = await analyzeYouTubeAudioInBrowser(parsed, (stage, message) => {
-        setPhase(phaseForStage(stage));
-        setProgressMessage(message);
+      const ingest = await addSource({
+        sourceKind: "video",
+        sourceUrl: parsed.canonicalUrl,
+        captionLanguages: ["all"],
+        captionsEnabled: true,
+        autoCaptionsEnabled: true,
+        asrEnabled: useAsr,
+        ingestNow: true,
+        async: true,
+        migrate: false,
       });
+
+      if (ingest.jobId) {
+        await waitForIngest(ingest.jobId, (message) => setProgressMessage(message));
+      } else if (ingest.ingest && ingest.ingest.items.some((item) => item.status === "failed")) {
+        const failed = ingest.ingest.items.find((item) => item.status === "failed");
+        throw new Error(failed?.message ?? "Video ingestion failed.");
+      }
+
+      setPhase("analyzing");
+      setProgressMessage("Composing metadata, transcript, lexical, and multimodal evidence…");
+      const nextReport = await getVideoAnalysis(parsed.canonicalUrl);
       setReport(nextReport);
       setPhase("done");
-      setProgressMessage(
-        "Browser analysis complete. Audio was transcribed locally and nothing was sent to a corpus backend.",
-      );
+      setProgressMessage("Analysis complete.");
     } catch (caught) {
       setPhase("error");
       setError(errorMessage(caught));
@@ -65,7 +135,6 @@ export function AudioYouTubeAnalyzer() {
   const preview = report?.video.youtubeId
     ? parseYouTubeVideoUrl(`https://www.youtube.com/watch?v=${report.video.youtubeId}`)
     : parsedUrl;
-  const busy = ["capture", "metadata", "transcribing", "analyzing"].includes(phase);
 
   return (
     <main className="analyzer-shell">
@@ -76,10 +145,9 @@ export function AudioYouTubeAnalyzer() {
           </a>
           <h1>Analyze a YouTube video from one URL</h1>
           <p>
-            Paste a public YouTube URL. GitHub Pages reads public metadata, captures audio from the
-            tab you explicitly share, transcribes it locally with the audio-analysis WebGPU stack,
-            and runs deterministic nlp-stack analysis in Rust/Wasm. No Postgres or corpus backend is
-            required.
+            Paste a public YouTube URL. The corpus backend retrieves metadata and captions,
+            preserves provenance, indexes the transcript, and runs deterministic NLP analysis.
+            Existing multimodal evidence is surfaced when available.
           </p>
         </div>
         <nav className="analyzer-nav" aria-label="YouTube Corpus views">
@@ -89,12 +157,11 @@ export function AudioYouTubeAnalyzer() {
       </header>
 
       <section className="runtime-strip" aria-label="Runtime status">
-        <span className="runtime-dot runtime-dot-ready" aria-hidden="true" />
-        <strong>Browser-only GitHub Pages</strong>
-        <span>
-          Direct YouTube metadata · shared tab audio · audio-analysis WebGPU ASR · local nlp-stack
-          Rust/Wasm · no corpus backend
-        </span>
+        <span className={`runtime-dot runtime-dot-${backendState}`} aria-hidden="true" />
+        <strong>
+          {isGitHubPages() ? "Static GitHub Pages + corpus backend" : "Corpus workbench"}
+        </strong>
+        <span>{backendMessage}</span>
       </section>
 
       <section className="analyzer-input-panel">
@@ -110,18 +177,60 @@ export function AudioYouTubeAnalyzer() {
               value={sourceUrl}
               onChange={(event) => setSourceUrl(event.target.value)}
             />
-            <button type="submit" disabled={busy}>
-              {busy ? "Analyzing…" : "Share audio & analyze"}
+            <button
+              type="submit"
+              disabled={phase === "connecting" || phase === "ingesting" || phase === "analyzing"}
+            >
+              {phase === "ingesting" || phase === "analyzing" ? "Analyzing…" : "Analyze video"}
             </button>
           </div>
           {sourceUrl && !parsedUrl ? (
             <p className="field-error">This is not a recognized YouTube video URL.</p>
           ) : null}
-          <p className="muted-label">
-            The browser must grant a user-initiated tab-share. Choose the tab that is playing the
-            video, enable tab audio, then stop sharing when playback is finished. Raw audio stays in
-            memory and is discarded after transcription.
-          </p>
+
+          <div className="analysis-options">
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={useAsr}
+                onChange={(event) => setUseAsr(event.target.checked)}
+              />
+              <span>
+                <strong>ASR fallback</strong>
+                <small>
+                  Download media and run Whisper when available. This is off by default because it
+                  is heavier.
+                </small>
+              </span>
+            </label>
+            <details>
+              <summary>Backend connection</summary>
+              <div className="backend-editor">
+                <label htmlFor="backend-url">Analysis backend</label>
+                <div className="backend-row">
+                  <input
+                    id="backend-url"
+                    type="url"
+                    placeholder="Same origin or http://127.0.0.1:1420"
+                    value={backendUrl}
+                    onChange={(event) => setBackendUrl(event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => void probeBackend(backendUrl)}
+                  >
+                    Check
+                  </button>
+                </div>
+                <p>
+                  On GitHub Pages the browser only parses the URL and renders the workbench. yt-dlp,
+                  transcript persistence, and NLP run through the corpus backend. The default Pages
+                  backend is local loopback.
+                </p>
+              </div>
+            </details>
+          </div>
         </form>
       </section>
 
@@ -141,16 +250,12 @@ export function AudioYouTubeAnalyzer() {
             <p>{progressMessage}</p>
             <ol className="pipeline-list">
               <PipelineStep label="URL + preview" active={Boolean(preview)} />
-              <PipelineStep label="Shared video audio" active={phaseReached(phase, "capture")} />
+              <PipelineStep label="Metadata + captions" active={phaseReached(phase, "ingesting")} />
               <PipelineStep
-                label="audio-analysis transcription"
-                active={phaseReached(phase, "transcribing")}
-              />
-              <PipelineStep
-                label="In-memory transcript"
+                label="Transcript index"
                 active={Boolean(report?.coverage.transcript)}
               />
-              <PipelineStep label="Rust/Wasm NLP" active={Boolean(report?.coverage.lexical)} />
+              <PipelineStep label="Lexical analysis" active={Boolean(report?.coverage.lexical)} />
               <PipelineStep label="Report" active={phase === "done"} />
             </ol>
           </div>
@@ -169,7 +274,7 @@ export function AudioYouTubeAnalyzer() {
             <div className="section-heading">
               <div>
                 <span>Coverage</span>
-                <h2>What this browser run actually analyzed</h2>
+                <h2>What this run actually analyzed</h2>
               </div>
               <a href={report.video.sourceUrl} target="_blank" rel="noreferrer">
                 Open on YouTube
@@ -179,32 +284,34 @@ export function AudioYouTubeAnalyzer() {
               <CoverageCard
                 label="Metadata"
                 available={report.coverage.metadata}
-                detail="YouTube oEmbed metadata"
+                detail="yt-dlp video metadata"
               />
               <CoverageCard
                 label="Transcript"
                 available={report.coverage.transcript}
-                detail={`${formatNumber(report.video.transcriptSegments)} audio-analysis ASR segments`}
+                detail={`${formatNumber(report.video.transcriptSegments)} timed segments`}
               />
               <CoverageCard
                 label="NLP"
                 available={report.coverage.lexical}
-                detail="nlp-stack Rust/Wasm analysis"
-              />
-              <CoverageCard
-                label="Audio evidence"
-                available={report.coverage.transcript}
-                detail="user-shared tab audio transcribed locally"
+                detail="text-lexical deterministic analysis"
               />
               <CoverageCard
                 label="Media retained"
                 available={report.coverage.mediaRetained}
-                detail="captured audio discarded after transcription"
+                detail={
+                  report.coverage.mediaRetained ? "local media available" : "caption-first ingest"
+                }
               />
               <CoverageCard
                 label="Visual timeline"
                 available={report.coverage.visualTimeline}
-                detail="not produced in this audio-first browser run"
+                detail="scene / face evidence"
+              />
+              <CoverageCard
+                label="Audio evidence"
+                available={report.coverage.audioFeatures}
+                detail="voice observations"
               />
             </div>
           </section>
@@ -217,7 +324,13 @@ export function AudioYouTubeAnalyzer() {
               </div>
             </div>
             <div className="metric-grid">
-              <Metric label="Transcript segments" value={formatNumber(report.segments.length)} />
+              <Metric
+                label="Duration"
+                value={report.video.durationString ?? formatDuration(report.video.durationSeconds)}
+              />
+              <Metric label="Views" value={formatOptionalNumber(report.video.viewCount)} />
+              <Metric label="Likes" value={formatOptionalNumber(report.video.likeCount)} />
+              <Metric label="Comments" value={formatOptionalNumber(report.video.commentCount)} />
               <Metric label="Transcript words" value={valueOrDash(lexicalStats?.words)} />
               <Metric
                 label="Unique terms"
@@ -238,9 +351,14 @@ export function AudioYouTubeAnalyzer() {
             </div>
             <dl className="metadata-list">
               <MetadataRow label="Channel" value={report.video.channel ?? report.video.uploader} />
+              <MetadataRow label="Uploaded" value={report.video.uploadDate} />
               <MetadataRow label="Availability" value={report.video.availability} />
-              <MetadataRow label="Transcript source" value="audio-analysis WebGPU ASR" />
+              <MetadataRow label="Live status" value={report.video.liveStatus} />
+              <MetadataRow label="Categories" value={report.video.categories.join(", ") || null} />
             </dl>
+            {report.video.description ? (
+              <p className="video-description">{report.video.description}</p>
+            ) : null}
           </section>
 
           {report.coverage.lexical ? (
@@ -289,7 +407,7 @@ export function AudioYouTubeAnalyzer() {
             <div className="section-heading">
               <div>
                 <span>Transcript</span>
-                <h2>Timestamped audio-analysis evidence</h2>
+                <h2>Timestamped evidence</h2>
               </div>
               <span className="muted-label">{formatNumber(report.segments.length)} segments</span>
             </div>
@@ -310,7 +428,10 @@ export function AudioYouTubeAnalyzer() {
                 ))}
               </div>
             ) : (
-              <p className="empty-state">No speech was detected in the shared audio.</p>
+              <p className="empty-state">
+                No usable transcript was returned. Enable ASR fallback when the backend has Whisper
+                installed, or retry a video with captions.
+              </p>
             )}
           </section>
 
@@ -318,7 +439,7 @@ export function AudioYouTubeAnalyzer() {
             <div className="section-heading">
               <div>
                 <span>Provenance</span>
-                <h2>Browser transcript and analysis evidence</h2>
+                <h2>Transcript streams and raw metadata</h2>
               </div>
             </div>
             <div className="stream-list">
@@ -326,7 +447,7 @@ export function AudioYouTubeAnalyzer() {
                 <div key={stream.streamId} className="stream-row">
                   <div>
                     <strong>{sourceKindLabel(stream.sourceKind)}</strong>
-                    <span>{stream.language ?? "language detected by model"}</span>
+                    <span>{stream.language ?? "unknown language"}</span>
                   </div>
                   <div>
                     <span>{formatNumber(stream.segmentCount)} segments</span>
@@ -337,12 +458,12 @@ export function AudioYouTubeAnalyzer() {
               ))}
             </div>
             <details className="raw-details">
-              <summary>Raw browser metadata JSON</summary>
+              <summary>Raw metadata JSON</summary>
               <pre>{JSON.stringify(report.video.metadata, null, 2)}</pre>
             </details>
             {report.lexicalAnalysis ? (
               <details className="raw-details">
-                <summary>Raw nlp-stack analysis JSON</summary>
+                <summary>Raw lexical analysis JSON</summary>
                 <pre>{JSON.stringify(report.lexicalAnalysis, null, 2)}</pre>
               </details>
             ) : null}
@@ -352,8 +473,8 @@ export function AudioYouTubeAnalyzer() {
 
       <footer className="analyzer-footer">
         <span>
-          Static GitHub Pages · browser-owned audio capture · audio-analysis WebGPU transcription ·
-          nlp-stack Rust/Wasm analysis · no corpus backend
+          Static GitHub Pages workbench · corpus-owned ingestion and persistence · nlp-stack lexical
+          analysis
         </span>
         <a href="https://github.com/moritzbrantner/youtube-corpus">View source</a>
       </footer>
@@ -424,34 +545,62 @@ function AnalysisList({ title, items }: { title: string; items: string[] }) {
   );
 }
 
+async function waitForIngest(jobId: string, onProgress: (message: string) => void) {
+  for (let attempt = 0; attempt < 900; attempt += 1) {
+    const run = await getIngestRun(jobId);
+    if (run.status === "completed" || run.job?.status === "succeeded") {
+      return;
+    }
+    if (
+      run.status === "failed" ||
+      run.job?.status === "failed" ||
+      run.job?.status === "cancelled"
+    ) {
+      throw new Error(run.job?.failure?.message ?? "Video ingestion failed.");
+    }
+    const progress = run.job?.progress;
+    onProgress(
+      progress?.message ??
+        `Ingesting video · ${formatNumber(run.videosIndexed)} indexed · ${formatNumber(run.segmentsIndexed)} segments`,
+    );
+    await delay(1000);
+  }
+  throw new Error(
+    "The ingest is still running after 15 minutes. Check the backend ingest run for details.",
+  );
+}
+
+function initialBackendUrl() {
+  if (typeof window === "undefined") return "";
+  const configured = new URLSearchParams(window.location.search).get("backend");
+  if (configured) return configured;
+  return isGitHubPages() ? "http://127.0.0.1:1420" : "";
+}
+
 function initialVideoUrl() {
   if (typeof window === "undefined") return "";
   return new URLSearchParams(window.location.search).get("url") ?? "";
 }
 
-function persistWorkbenchUrl(sourceUrl: string) {
+function persistWorkbenchUrl(sourceUrl: string, backendUrl: string) {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   url.searchParams.set("url", sourceUrl);
-  url.searchParams.delete("backend");
+  if (backendUrl) url.searchParams.set("backend", backendUrl);
+  else url.searchParams.delete("backend");
   window.history.replaceState(null, "", url);
 }
 
-function phaseForStage(stage: AudioBrowserAnalysisStage): Phase {
-  if (stage === "capture") return "capture";
-  if (stage === "metadata") return "metadata";
-  if (stage === "transcribing") return "transcribing";
-  return "analyzing";
+function isGitHubPages() {
+  return typeof window !== "undefined" && window.location.hostname === "moritzbrantner.github.io";
 }
 
 function phaseLabel(phase: Phase) {
   switch (phase) {
-    case "capture":
-      return "Audio capture";
-    case "metadata":
-      return "Metadata";
-    case "transcribing":
-      return "Transcribing";
+    case "connecting":
+      return "Connecting";
+    case "ingesting":
+      return "Ingesting";
     case "analyzing":
       return "Analyzing";
     case "done":
@@ -463,22 +612,22 @@ function phaseLabel(phase: Phase) {
   }
 }
 
-function phaseReached(phase: Phase, threshold: "capture" | "transcribing") {
-  const order: Phase[] = ["idle", "capture", "metadata", "transcribing", "analyzing", "done"];
-  const currentIndex = order.indexOf(phase);
-  const thresholdIndex = order.indexOf(threshold);
-  return currentIndex >= thresholdIndex && phase !== "error";
+function phaseReached(phase: Phase, threshold: "ingesting") {
+  if (threshold === "ingesting") return ["ingesting", "analyzing", "done"].includes(phase);
+  return false;
 }
 
 function primaryStreamLabel(report: VideoAnalysisReport) {
   const stream = report.streams.find((item) => item.streamId === report.primaryStreamId);
   return stream
-    ? `${sourceKindLabel(stream.sourceKind)} · ${stream.language ?? "model-detected language"}`
+    ? `${sourceKindLabel(stream.sourceKind)} · ${stream.language ?? "unknown language"}`
     : "No transcript";
 }
 
 function sourceKindLabel(sourceKind: string) {
-  if (sourceKind === "asr") return "audio-analysis ASR";
+  if (sourceKind === "caption_manual") return "Manual captions";
+  if (sourceKind === "caption_auto") return "Automatic captions";
+  if (sourceKind === "asr") return "ASR";
   return sourceKind;
 }
 
@@ -545,6 +694,10 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat().format(value);
 }
 
+function formatOptionalNumber(value: number | null) {
+  return value === null ? "—" : formatNumber(value);
+}
+
 function formatDecimal(value: unknown) {
   const number = readNumber(value);
   return number === null ? "—" : number.toFixed(1);
@@ -572,4 +725,8 @@ function formatTimestamp(seconds: number | null) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function delay(milliseconds: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }

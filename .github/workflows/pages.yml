@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate browser-only analyzer
+    name: Validate static analyzer
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,35 +34,6 @@ jobs:
       - name: Check frontend formatting
         run: bun run format:check
 
-      - name: Check out pinned nlp-stack source
-        uses: actions/checkout@v4
-        with:
-          repository: moritzbrantner/nlp-stack
-          ref: b0c5ea465aa045fd5a967004d0230310735adf7f
-          path: _deps/nlp-stack
-
-      - name: Check out pinned audio-analysis browser source
-        uses: actions/checkout@v4
-        with:
-          repository: moritzbrantner/audio-analysis
-          ref: 14ec2d8797ab914e5bf9fbe6dd7e1744e8d971a2
-          path: _deps/audio-analysis
-
-      - name: Set up Rust for browser Wasm
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.95.0"
-          targets: wasm32-unknown-unknown
-
-      - name: Install wasm-pack
-        run: cargo install wasm-pack --locked --version 0.14.0
-
-      - name: Build browser runtimes
-        run: |
-          NLP_STACK_DIR="$GITHUB_WORKSPACE/_deps/nlp-stack" \
-          AUDIO_ANALYSIS_DIR="$GITHUB_WORKSPACE/_deps/audio-analysis" \
-          bash scripts/build-browser-wasm.sh
-
       - name: Build analyzer
         run: bun run build
 
@@ -70,15 +41,7 @@ jobs:
         run: |
           test -s dist/index.html
           test -s dist/analysis-capabilities.json
-          test -s dist/wasm/moenarch_text_analysis_wasm.js
-          test -s dist/wasm/moenarch_text_analysis_wasm_bg.wasm
-          test -s dist/audio-analysis/transcription.js
           grep -q 'youtube-corpus' dist/index.html
-          grep -q 'audio-analysis-transformers-js-webgpu' dist/audio-analysis/transcription.js
-          grep -q 'createBrowserMediaStreamTranscriptionSession' dist/audio-analysis/transcription.js
-          grep -q '"schemaVersion": 4' dist/analysis-capabilities.json
-          grep -q '"requiredForPagesAnalysis": false' dist/analysis-capabilities.json
-          grep -q '"completeAudioRecordingCreated": false' dist/analysis-capabilities.json
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
