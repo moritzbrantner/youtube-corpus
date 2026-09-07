@@ -1,8 +1,8 @@
 import * as React from "react";
 
 import LegacyApp from "./LegacyApp";
-import { AudioYouTubeAnalyzer } from "./app/features/analyzer/AudioYouTubeAnalyzer";
 import { CorpusWorkspace } from "./app/features/corpora/CorpusWorkspace";
+import { YouTubeAnalyzer } from "./app/features/analyzer/YouTubeAnalyzer";
 
 type AppRoute = "analyzer" | "corpora" | "legacy";
 
@@ -36,5 +36,5 @@ export default function App() {
     return <LegacyApp />;
   }
 
-  return <AudioYouTubeAnalyzer />;
+  return <YouTubeAnalyzer />;
 }
