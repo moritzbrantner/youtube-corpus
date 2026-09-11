@@ -9,6 +9,7 @@ pub mod config;
 pub mod corpora;
 pub mod db;
 pub mod diagnostics;
+pub mod discovery;
 pub mod evaluation;
 pub mod ingest;
 pub mod multimodal;
@@ -32,6 +33,14 @@ pub use annotations::{
 pub use config::{
     AppConfig, BrowserCookieSource, CaptionConfig, CorpusSource, SearchMode, SourceKind,
     YtDlpConfig,
+};
+pub use discovery::{
+    canonicalize_youtube_target, claim_next_discovery, claim_next_discovery_with_lease,
+    complete_discovery, discovery_schema_available, enqueue_discovery, extract_youtube_targets,
+    fail_discovery, list_discovery_evidence, list_frontier, record_ingest_discoveries,
+    workflow_input, DiscoveredYouTubeTarget, DiscoveryEvidence, DiscoveryKind, DiscoveryMethod,
+    DiscoveryPolicy, DiscoveryState, DiscoveryTarget, DiscoveryWorkflowInput,
+    EnqueueDiscoveryRequest, DEFAULT_CLAIM_LEASE_SECONDS, DISCOVERY_WORKFLOW_ID,
 };
 pub use evaluation::{
     list_cases as list_evaluation_cases, record_judgment, run_evaluation, EvaluationCase,
