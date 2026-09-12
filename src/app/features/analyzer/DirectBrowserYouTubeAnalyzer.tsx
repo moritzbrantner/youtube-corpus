@@ -196,8 +196,8 @@ export function DirectBrowserYouTubeAnalyzer() {
           </a>
           <h1>Analyze YouTube captions directly on GitHub Pages</h1>
           <p>
-            Paste a public YouTube URL. The page tries YouTube's browser-facing player API and signed
-            caption tracks, then parses the result with the Rust/WASM extraction core. No
+            Paste a public YouTube URL. The page tries YouTube's browser-facing player API and
+            signed caption tracks, then parses the result with the Rust/WASM extraction core. No
             youtube-corpus server or Postgres instance is required.
           </p>
         </div>
