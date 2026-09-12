@@ -6,7 +6,6 @@
 //! the full yt-dlp runtime.
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -175,7 +174,10 @@ pub fn extract_player_response(value: JsValue) -> Result<JsValue, JsValue> {
 /// Chooses one caption track deterministically. Language preference wins first,
 /// then human-authored captions win over ASR for otherwise equivalent tracks.
 #[wasm_bindgen(js_name = selectCaptionTrack)]
-pub fn select_caption_track(tracks: JsValue, preferred_languages: JsValue) -> Result<JsValue, JsValue> {
+pub fn select_caption_track(
+    tracks: JsValue,
+    preferred_languages: JsValue,
+) -> Result<JsValue, JsValue> {
     let mut tracks: Vec<CaptionTrack> =
         serde_wasm_bindgen::from_value(tracks).map_err(js_error)?;
     let preferred_languages: Vec<String> =
@@ -198,18 +200,20 @@ pub fn json3_to_web_vtt(input: &str) -> Result<String, JsValue> {
 }
 
 fn player_evidence(response: PlayerResponse) -> BrowserPlayerEvidence {
-    let playability_status = response
-        .playability_status
-        .as_ref()
+    let PlayerResponse {
+        playability_status,
+        video_details,
+        captions,
+    } = response;
+
+    let playability = playability_status.as_ref();
+    let playability_status = playability
         .and_then(|status| status.status.clone())
         .unwrap_or_else(|| "UNKNOWN".to_string());
-    let playability_reason = response
-        .playability_status
-        .and_then(|status| status.reason);
+    let playability_reason = playability.and_then(|status| status.reason.clone());
+    let video = video_details.as_ref();
 
-    let video = response.video_details;
-    let caption_tracks = response
-        .captions
+    let caption_tracks = captions
         .and_then(|captions| captions.player_captions_tracklist_renderer)
         .map(|renderer| {
             renderer
@@ -233,19 +237,13 @@ fn player_evidence(response: PlayerResponse) -> BrowserPlayerEvidence {
         .unwrap_or_default();
 
     BrowserPlayerEvidence {
-        title: video.as_ref().and_then(|video| video.title.clone()),
-        author: video.as_ref().and_then(|video| video.author.clone()),
-        channel_id: video.as_ref().and_then(|video| video.channel_id.clone()),
-        duration_seconds: video
-            .as_ref()
-            .and_then(|video| parse_u64(video.length_seconds.as_deref())),
-        view_count: video
-            .as_ref()
-            .and_then(|video| parse_u64(video.view_count.as_deref())),
-        description: video.and_then(|video| video.short_description),
-        thumbnail_url: response
-            .video_details
-            .as_ref()
+        title: video.and_then(|video| video.title.clone()),
+        author: video.and_then(|video| video.author.clone()),
+        channel_id: video.and_then(|video| video.channel_id.clone()),
+        duration_seconds: video.and_then(|video| parse_u64(video.length_seconds.as_deref())),
+        view_count: video.and_then(|video| parse_u64(video.view_count.as_deref())),
+        description: video.and_then(|video| video.short_description.clone()),
+        thumbnail_url: video
             .and_then(|video| video.thumbnail.as_ref())
             .and_then(best_thumbnail),
         playability_status,
@@ -283,18 +281,23 @@ fn parse_u64(value: Option<&str>) -> Option<u64> {
     value?.parse().ok()
 }
 
-fn track_rank(track: &CaptionTrack, preferred_languages: &[String]) -> (usize, usize, String, String) {
+fn track_rank(
+    track: &CaptionTrack,
+    preferred_languages: &[String],
+) -> (usize, usize, String, String) {
     let language = track.language_code.to_ascii_lowercase();
-    let base_language = language.split('-').next().unwrap_or(&language);
+    let base_language = language.split('-').next().unwrap_or(language.as_str());
     let language_rank = preferred_languages
         .iter()
         .position(|preferred| preferred == &language)
         .map(|rank| rank * 2)
         .or_else(|| {
-            preferred_languages.iter().position(|preferred| {
-                preferred.split('-').next().unwrap_or(preferred.as_str()) == base_language
-            })
-            .map(|rank| rank * 2 + 1)
+            preferred_languages
+                .iter()
+                .position(|preferred| {
+                    preferred.split('-').next().unwrap_or(preferred.as_str()) == base_language
+                })
+                .map(|rank| rank * 2 + 1)
         })
         .unwrap_or(usize::MAX / 4);
     let source_rank = usize::from(track.source_kind == "caption_auto");
