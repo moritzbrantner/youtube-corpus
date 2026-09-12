@@ -8,7 +8,7 @@ import {
   BrowserYouTubeAcquisitionError,
   type BrowserCaptionAcquisition,
 } from "./youtube-browser-extractor";
-import { parseYouTubeVideoUrl } from "./youtube-url";
+import { parseYouTubeVideoUrl, type ParsedYouTubeUrl } from "./youtube-url";
 import "./browser-analysis.css";
 
 type Phase = "idle" | "fetching" | "analyzing" | "done" | "error";
@@ -31,14 +31,59 @@ export function DirectBrowserYouTubeAnalyzer() {
   );
   const [error, setError] = React.useState<string | null>(null);
   const [report, setReport] = React.useState<VideoAnalysisReport | null>(null);
+  const requestGeneration = React.useRef(0);
 
   const parsedUrl = React.useMemo(() => parseYouTubeVideoUrl(sourceUrl), [sourceUrl]);
-  const lexical = asRecord(report?.lexicalAnalysis);
-  const lexicalSummary = asRecord(lexical?.summary);
-  const lexicalStats = asRecord(lexicalSummary?.stats);
-  const keywords = asRecordArray(lexical?.keywords);
-  const phrases = asRecordArray(lexical?.phraseKeywords);
-  const summarySentences = asRecordArray(lexical?.extractiveSummary);
+  const busy = phase === "fetching" || phase === "analyzing";
+
+  function supersedePendingRequest() {
+    requestGeneration.current += 1;
+  }
+
+  function resetAnalysisState() {
+    setReport(null);
+    setError(null);
+    setPhase("idle");
+  }
+
+  function updateSourceUrl(nextSourceUrl: string) {
+    supersedePendingRequest();
+    const nextVideo = parseYouTubeVideoUrl(nextSourceUrl);
+    const keepsAcquisition =
+      acquisition !== null && nextVideo !== null && acquisition.videoId === nextVideo.videoId;
+
+    setSourceUrl(nextSourceUrl);
+    if (!keepsAcquisition && acquisition) {
+      setTranscriptText("");
+      setTranscriptFileName(null);
+      setAcquisition(null);
+      setStatusMessage("Video changed. Fetch captions for the new video or provide a transcript.");
+    }
+    resetAnalysisState();
+  }
+
+  async function acquireForCurrentVideo(parsed: ParsedYouTubeUrl) {
+    const generation = requestGeneration.current + 1;
+    requestGeneration.current = generation;
+    setPhase("fetching");
+    setStatusMessage("Trying browser-safe YouTube clients and public caption tracks…");
+
+    try {
+      const next = await acquireYouTubeCaptions(parsed);
+      if (requestGeneration.current !== generation) return null;
+      if (next.videoId !== parsed.videoId) return null;
+      return next;
+    } catch (caught) {
+      if (requestGeneration.current !== generation) return null;
+      throw caught;
+    }
+  }
+
+  function commitAcquisition(next: BrowserCaptionAcquisition) {
+    setAcquisition(next);
+    setTranscriptText(next.transcriptText);
+    setTranscriptFileName(null);
+  }
 
   async function analyze(event: React.FormEvent) {
     event.preventDefault();
@@ -50,18 +95,16 @@ export function DirectBrowserYouTubeAnalyzer() {
 
     setError(null);
     setReport(null);
-    let text = transcriptText;
-    let nextAcquisition = acquisition;
+
+    let nextAcquisition = acquisition?.videoId === parsed.videoId ? acquisition : null;
+    let text = nextAcquisition || !acquisition ? transcriptText : "";
 
     try {
       if (!text.trim()) {
-        setPhase("fetching");
-        setStatusMessage("Trying browser-safe YouTube clients and public caption tracks…");
-        nextAcquisition = await acquireYouTubeCaptions(parsed);
+        nextAcquisition = await acquireForCurrentVideo(parsed);
+        if (!nextAcquisition) return;
         text = nextAcquisition.transcriptText;
-        setTranscriptText(text);
-        setTranscriptFileName(null);
-        setAcquisition(nextAcquisition);
+        commitAcquisition(nextAcquisition);
       }
 
       setPhase("analyzing");
@@ -70,12 +113,13 @@ export function DirectBrowserYouTubeAnalyzer() {
       if (nextAcquisition) {
         nextReport = applyBrowserCaptionAcquisition(nextReport, nextAcquisition);
       }
+
       persistWorkbenchUrl(parsed.canonicalUrl);
       setReport(nextReport);
       setPhase("done");
       setStatusMessage(
         nextAcquisition
-          ? `Analysis complete · ${nextAcquisition.track.name} · ${nextAcquisition.client}`
+          ? `Analysis complete · ${nextAcquisition.track.name} · ${nextAcquisition.endpoint}/${nextAcquisition.client}`
           : "Analysis complete from the transcript supplied in this browser.",
       );
     } catch (caught) {
@@ -92,16 +136,13 @@ export function DirectBrowserYouTubeAnalyzer() {
 
     setError(null);
     setReport(null);
-    setPhase("fetching");
-    setStatusMessage("Trying browser-safe YouTube clients and public caption tracks…");
     try {
-      const next = await acquireYouTubeCaptions(parsed);
-      setAcquisition(next);
-      setTranscriptText(next.transcriptText);
-      setTranscriptFileName(null);
+      const next = await acquireForCurrentVideo(parsed);
+      if (!next) return;
+      commitAcquisition(next);
       setPhase("idle");
       setStatusMessage(
-        `Fetched ${next.track.name} (${next.track.languageCode}) via ${next.client}. Ready to analyze.`,
+        `Fetched ${next.track.name} (${next.track.languageCode}) via ${next.endpoint}/${next.client}. Ready to analyze.`,
       );
     } catch (caught) {
       fail(acquisitionErrorMessage(caught));
@@ -111,20 +152,33 @@ export function DirectBrowserYouTubeAnalyzer() {
   async function loadTranscriptFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0];
     if (!file) return;
+
+    const generation = requestGeneration.current + 1;
+    requestGeneration.current = generation;
     try {
       const text = await file.text();
+      if (requestGeneration.current !== generation) return;
       setTranscriptText(text);
       setTranscriptFileName(file.name);
       setAcquisition(null);
-      setReport(null);
-      setError(null);
-      setPhase("idle");
+      resetAnalysisState();
       setStatusMessage("Local transcript loaded. It will be analyzed without any network request.");
     } catch (caught) {
-      fail(`Could not read transcript file: ${errorMessage(caught)}`);
+      if (requestGeneration.current === generation) {
+        fail(`Could not read transcript file: ${errorMessage(caught)}`);
+      }
     } finally {
       event.currentTarget.value = "";
     }
+  }
+
+  function updateTranscript(nextTranscript: string) {
+    supersedePendingRequest();
+    setTranscriptText(nextTranscript);
+    setTranscriptFileName(null);
+    setAcquisition(null);
+    resetAnalysisState();
+    setStatusMessage("Using transcript evidence supplied in this browser.");
   }
 
   function fail(message: string) {
@@ -132,11 +186,6 @@ export function DirectBrowserYouTubeAnalyzer() {
     setError(message);
     setStatusMessage("Analysis stopped.");
   }
-
-  const preview = report?.video.youtubeId
-    ? parseYouTubeVideoUrl(`https://www.youtube.com/watch?v=${report.video.youtubeId}`)
-    : parsedUrl;
-  const busy = phase === "fetching" || phase === "analyzing";
 
   return (
     <main className="analyzer-shell">
@@ -147,8 +196,8 @@ export function DirectBrowserYouTubeAnalyzer() {
           </a>
           <h1>Analyze YouTube captions directly on GitHub Pages</h1>
           <p>
-            Paste a public YouTube URL. The page first tries YouTube's browser-facing player API and
-            signed caption tracks, then parses the result with the Rust/WASM extraction core. No
+            Paste a public YouTube URL. The page tries YouTube's browser-facing player API and signed
+            caption tracks, then parses the result with the Rust/WASM extraction core. No
             youtube-corpus server or Postgres instance is required.
           </p>
         </div>
@@ -177,13 +226,7 @@ export function DirectBrowserYouTubeAnalyzer() {
               autoComplete="url"
               placeholder="https://www.youtube.com/watch?v=…"
               value={sourceUrl}
-              onChange={(event) => {
-                setSourceUrl(event.target.value);
-                setAcquisition(null);
-                setReport(null);
-                setPhase("idle");
-                setError(null);
-              }}
+              onChange={(event) => updateSourceUrl(event.target.value)}
             />
             <button type="submit" disabled={busy}>
               {phase === "fetching"
@@ -207,13 +250,7 @@ export function DirectBrowserYouTubeAnalyzer() {
             <textarea
               id="transcript-input"
               value={transcriptText}
-              onChange={(event) => {
-                setTranscriptText(event.target.value);
-                setTranscriptFileName(null);
-                setAcquisition(null);
-                setReport(null);
-                setPhase("idle");
-              }}
+              onChange={(event) => updateTranscript(event.target.value)}
               placeholder="Normally this fills automatically. You can still paste plain text, WebVTT, or SRT when YouTube blocks direct browser acquisition."
               spellCheck={false}
             />
@@ -238,7 +275,7 @@ export function DirectBrowserYouTubeAnalyzer() {
               </div>
               <span>
                 {acquisition
-                  ? `${acquisition.track.name} · ${acquisition.track.sourceKind === "caption_auto" ? "automatic" : "manual"} · ${acquisition.client}`
+                  ? `${acquisition.track.name} · ${acquisition.track.sourceKind === "caption_auto" ? "automatic" : "manual"} · ${acquisition.endpoint}/${acquisition.client}`
                   : (transcriptFileName ??
                     "Automatic acquisition is attempted before manual fallback.")}
               </span>
@@ -254,11 +291,11 @@ export function DirectBrowserYouTubeAnalyzer() {
         </form>
       </section>
 
-      {preview ? (
+      {parsedUrl ? (
         <section className="preview-grid">
           <div className="video-frame">
             <iframe
-              src={preview.embedUrl}
+              src={parsedUrl.embedUrl}
               title="YouTube video preview"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
@@ -269,7 +306,7 @@ export function DirectBrowserYouTubeAnalyzer() {
             <h2>{report?.video.title ?? report?.video.youtubeId ?? "Browser YouTube analysis"}</h2>
             <p>{statusMessage}</p>
             <ol className="pipeline-list">
-              <PipelineStep label="YouTube URL" active={Boolean(parsedUrl)} />
+              <PipelineStep label="YouTube URL" active />
               <PipelineStep label="Caption evidence" active={Boolean(transcriptText.trim())} />
               <PipelineStep label="Rust/WASM extraction" active={Boolean(acquisition)} />
               <PipelineStep
@@ -324,54 +361,24 @@ function BrowserReport({
             Open on YouTube
           </a>
         </div>
-        <div className="coverage-grid">
-          <CoverageCard label="URL" available detail="canonical video identity" />
-          <CoverageCard
+        <dl className="metadata-list">
+          <MetadataRow label="Video" value={report.video.youtubeId} />
+          <MetadataRow label="Channel" value={report.video.channel} />
+          <MetadataRow
             label="Captions"
-            available={report.coverage.transcript}
-            detail={`${formatNumber(report.video.transcriptSegments)} timed segments`}
+            value={`${formatNumber(report.video.transcriptSegments)} timed segments`}
           />
-          <CoverageCard
-            label="Direct fetch"
-            available={Boolean(acquisition)}
-            detail={
+          <MetadataRow
+            label="Acquisition"
+            value={
               acquisition
-                ? `${acquisition.client} · ${acquisition.track.languageCode}`
-                : "manual fallback"
+                ? `${acquisition.endpoint}/${acquisition.client} · ${acquisition.track.name}`
+                : "Transcript supplied in browser"
             }
           />
-          <CoverageCard
-            label="Metadata"
-            available={report.coverage.metadata}
-            detail={report.video.channel ?? "player metadata"}
-          />
-          <CoverageCard
-            label="NLP"
-            available={report.coverage.lexical}
-            detail="browser-local analysis"
-          />
-          <CoverageCard label="Media" available={false} detail="not downloaded by Pages" />
-        </div>
-      </section>
-
-      <section>
-        <div className="section-heading">
-          <div>
-            <span>Overview</span>
-            <h2>{report.video.title ?? report.video.youtubeId ?? "YouTube video"}</h2>
-          </div>
-        </div>
-        <div className="metric-grid">
-          <Metric label="Duration" value={formatDuration(report.video.durationSeconds)} />
-          <Metric label="Views" value={formatOptionalNumber(report.video.viewCount)} />
-          <Metric label="Segments" value={formatNumber(report.segments.length)} />
-          <Metric label="Words" value={valueOrDash(stats?.words)} />
-          <Metric label="Unique terms" value={valueOrDash(summary?.uniqueTerms)} />
-          <Metric label="Lexical diversity" value={formatRatio(summary?.lexicalDiversity)} />
-        </div>
-        {report.video.channel ? (
-          <p className="browser-provenance">Channel: {report.video.channel}</p>
-        ) : null}
+          <MetadataRow label="Duration" value={formatDuration(report.video.durationSeconds)} />
+          <MetadataRow label="Views" value={formatOptionalNumber(report.video.viewCount)} />
+        </dl>
         {report.video.description ? (
           <p className="video-description">{report.video.description}</p>
         ) : null}
@@ -389,6 +396,11 @@ function BrowserReport({
               : "No stream"}
           </span>
         </div>
+        <p className="browser-provenance">
+          {formatNumber(readNumber(stats?.words) ?? 0)} words · {valueOrDash(summary?.uniqueTerms)}
+          {" unique terms · "}
+          {formatRatio(summary?.lexicalDiversity)} lexical diversity
+        </p>
         {summarySentences.length ? (
           <div className="summary-block">
             <h3>Extractive summary</h3>
@@ -466,29 +478,12 @@ function PipelineStep({ label, active }: { label: string; active: boolean }) {
   );
 }
 
-function CoverageCard({
-  label,
-  available,
-  detail,
-}: {
-  label: string;
-  available: boolean;
-  detail: string;
-}) {
+function MetadataRow({ label, value }: { label: string; value: string | null | undefined }) {
+  if (!value || value === "—") return null;
   return (
-    <article className={available ? "coverage-card coverage-yes" : "coverage-card"}>
-      <span>{available ? "Available" : "Not produced"}</span>
-      <h3>{label}</h3>
-      <p>{detail}</p>
-    </article>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="metric">
-      <span>{label}</span>
-      <strong>{value ?? "—"}</strong>
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
     </div>
   );
 }
@@ -513,7 +508,7 @@ function AnalysisList({ title, items }: { title: string; items: string[] }) {
 function acquisitionErrorMessage(error: unknown) {
   if (error instanceof BrowserYouTubeAcquisitionError) {
     const evidence = error.attempts
-      .map((attempt) => `${attempt.client}/${attempt.stage}: ${attempt.detail}`)
+      .map((attempt) => `${attempt.endpoint}/${attempt.client}/${attempt.stage}: ${attempt.detail}`)
       .join(" · ");
     return evidence ? `${error.message} Attempts: ${evidence}` : error.message;
   }
