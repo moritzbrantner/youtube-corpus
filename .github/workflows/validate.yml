@@ -30,11 +30,26 @@ jobs:
         with:
           bun-version: "1.3.14"
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt
+
+      - name: Install wasm-pack
+        run: if ! command -v wasm-pack; then cargo install wasm-pack --version 0.14.0 --locked; fi
+
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
       - name: Check frontend formatting
         run: bun run format:check
+
+      - name: Check browser Wasm formatting
+        run: cargo fmt --manifest-path crates/youtube-browser-wasm/Cargo.toml --check
+
+      - name: Test browser extraction core
+        run: bun run test:browser-wasm
 
       - name: Test standalone browser analysis
         run: bun run test:frontend
@@ -42,15 +57,10 @@ jobs:
       - name: Build frontend
         run: bun run build
 
-      - name: Install Rust formatter
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-
-      - name: Check Rust formatting
+      - name: Check repository Rust formatting
         run: cargo fmt --check
 
       - name: Explain source verification boundary
         run: |
-          echo "Rust build, clippy, tests, and Postgres integration checks run in the local coding workspace against the exact sibling source graph."
-          echo "Hosted CI stays repository-local; registry-only verification remains a release/distribution concern."
+          echo "The standalone browser extractor is repository-owned and fully validated here, including its Rust/Wasm build."
+          echo "The larger Rust server graph, clippy, tests, and Postgres integration checks still run in the local coding workspace against the exact sibling source graph."

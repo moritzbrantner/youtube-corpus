@@ -103,6 +103,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: if ! command -v wasm-pack; then cargo install wasm-pack --version 0.14.0 --locked; fi
 
       - name: Verify native target
         run: |

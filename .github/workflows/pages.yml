@@ -28,18 +28,33 @@ jobs:
         with:
           bun-version: "1.3.14"
 
+      - name: Set up Rust for browser Wasm
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt
+
+      - name: Install wasm-pack
+        run: if ! command -v wasm-pack; then cargo install wasm-pack --version 0.14.0 --locked; fi
+
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
       - name: Check frontend formatting
         run: bun run format:check
 
+      - name: Check browser Wasm formatting
+        run: cargo fmt --manifest-path crates/youtube-browser-wasm/Cargo.toml --check
+
+      - name: Test browser extraction core
+        run: bun run test:browser-wasm
+
       - name: Test standalone browser analysis
         run: bun run test:frontend
 
       - name: Verify standalone Pages capability contract
         run: |
-          jq -e '.schemaVersion == 2 and .pagesStandalone == true and .backend.requiredForPages == false' public/analysis-capabilities.json >/dev/null
+          jq -e '.schemaVersion == 3 and .pagesStandalone == true and .backend.requiredForPages == false and .browser.captionAcquisition.directYoutube == true and .browser.captionAcquisition.thirdPartyProxy == false' public/analysis-capabilities.json >/dev/null
 
       - name: Build analyzer
         run: bun run build
@@ -49,7 +64,8 @@ jobs:
           test -s dist/index.html
           test -s dist/analysis-capabilities.json
           grep -q 'youtube-corpus' dist/index.html
-          jq -e '.pagesStandalone == true and .backend.requiredForPages == false' dist/analysis-capabilities.json >/dev/null
+          jq -e '.pagesStandalone == true and .backend.requiredForPages == false and .browser.captionAcquisition.directYoutube == true' dist/analysis-capabilities.json >/dev/null
+          find dist -type f -name '*.wasm' -size +0c | grep -q .
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
