@@ -239,7 +239,8 @@ export function DirectBrowserYouTubeAnalyzer() {
               <span>
                 {acquisition
                   ? `${acquisition.track.name} · ${acquisition.track.sourceKind === "caption_auto" ? "automatic" : "manual"} · ${acquisition.client}`
-                  : transcriptFileName ?? "Automatic acquisition is attempted before manual fallback."}
+                  : (transcriptFileName ??
+                    "Automatic acquisition is attempted before manual fallback.")}
               </span>
             </div>
           </div>
@@ -271,7 +272,10 @@ export function DirectBrowserYouTubeAnalyzer() {
               <PipelineStep label="YouTube URL" active={Boolean(parsedUrl)} />
               <PipelineStep label="Caption evidence" active={Boolean(transcriptText.trim())} />
               <PipelineStep label="Rust/WASM extraction" active={Boolean(acquisition)} />
-              <PipelineStep label="Browser lexical analysis" active={Boolean(report?.coverage.lexical)} />
+              <PipelineStep
+                label="Browser lexical analysis"
+                active={Boolean(report?.coverage.lexical)}
+              />
               <PipelineStep label="Report" active={phase === "done"} />
             </ol>
           </div>
@@ -330,14 +334,22 @@ function BrowserReport({
           <CoverageCard
             label="Direct fetch"
             available={Boolean(acquisition)}
-            detail={acquisition ? `${acquisition.client} · ${acquisition.track.languageCode}` : "manual fallback"}
+            detail={
+              acquisition
+                ? `${acquisition.client} · ${acquisition.track.languageCode}`
+                : "manual fallback"
+            }
           />
           <CoverageCard
             label="Metadata"
             available={report.coverage.metadata}
             detail={report.video.channel ?? "player metadata"}
           />
-          <CoverageCard label="NLP" available={report.coverage.lexical} detail="browser-local analysis" />
+          <CoverageCard
+            label="NLP"
+            available={report.coverage.lexical}
+            detail="browser-local analysis"
+          />
           <CoverageCard label="Media" available={false} detail="not downloaded by Pages" />
         </div>
       </section>
@@ -357,7 +369,9 @@ function BrowserReport({
           <Metric label="Unique terms" value={valueOrDash(summary?.uniqueTerms)} />
           <Metric label="Lexical diversity" value={formatRatio(summary?.lexicalDiversity)} />
         </div>
-        {report.video.channel ? <p className="browser-provenance">Channel: {report.video.channel}</p> : null}
+        {report.video.channel ? (
+          <p className="browser-provenance">Channel: {report.video.channel}</p>
+        ) : null}
         {report.video.description ? (
           <p className="video-description">{report.video.description}</p>
         ) : null}
@@ -452,7 +466,15 @@ function PipelineStep({ label, active }: { label: string; active: boolean }) {
   );
 }
 
-function CoverageCard({ label, available, detail }: { label: string; available: boolean; detail: string }) {
+function CoverageCard({
+  label,
+  available,
+  detail,
+}: {
+  label: string;
+  available: boolean;
+  detail: string;
+}) {
   return (
     <article className={available ? "coverage-card coverage-yes" : "coverage-card"}>
       <span>{available ? "Available" : "Not produced"}</span>

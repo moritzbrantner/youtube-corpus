@@ -180,13 +180,7 @@ export async function acquireYouTubeCaptions(
         continue;
       }
 
-      const transcriptText = await fetchCaptionTrack(
-        selected,
-        endpoint,
-        client,
-        attempts,
-        fetcher,
-      );
+      const transcriptText = await fetchCaptionTrack(selected, endpoint, client, attempts, fetcher);
       if (!transcriptText) continue;
 
       return {

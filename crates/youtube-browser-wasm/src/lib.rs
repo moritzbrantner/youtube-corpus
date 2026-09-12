@@ -178,8 +178,7 @@ pub fn select_caption_track(
     tracks: JsValue,
     preferred_languages: JsValue,
 ) -> Result<JsValue, JsValue> {
-    let mut tracks: Vec<CaptionTrack> =
-        serde_wasm_bindgen::from_value(tracks).map_err(js_error)?;
+    let mut tracks: Vec<CaptionTrack> = serde_wasm_bindgen::from_value(tracks).map_err(js_error)?;
     let preferred_languages: Vec<String> =
         serde_wasm_bindgen::from_value(preferred_languages).map_err(js_error)?;
 

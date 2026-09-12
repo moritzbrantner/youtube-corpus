@@ -56,9 +56,9 @@ export function applyBrowserCaptionAcquisition(
       ...report.coverage,
       metadata: Boolean(
         acquisition.player.title ||
-          acquisition.player.author ||
-          acquisition.player.durationSeconds ||
-          acquisition.player.viewCount,
+        acquisition.player.author ||
+        acquisition.player.durationSeconds ||
+        acquisition.player.viewCount,
       ),
     },
   };
