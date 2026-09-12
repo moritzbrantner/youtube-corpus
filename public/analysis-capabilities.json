@@ -1,24 +1,36 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "surface": "youtube-video-analyzer",
   "delivery": "static-github-pages",
-  "input": "youtube-video-url",
+  "input": "youtube-video-url-plus-transcript",
+  "pagesStandalone": true,
   "browser": {
     "owns": [
       "youtube-url-validation",
       "canonical-video-url",
       "privacy-enhanced-preview",
+      "plain-transcript-import",
+      "webvtt-import",
+      "srt-import",
+      "timed-segment-parsing",
+      "browser-local-lexical-analysis",
       "analysis-report-rendering"
     ],
     "doesNotOwn": [
       "youtube-media-download",
       "youtube-caption-download",
-      "transcript-persistence",
-      "nlp-semantics"
-    ]
+      "automatic-youtube-metadata-download",
+      "whisper-asr",
+      "postgres-persistence",
+      "nlp-stack-authoritative-analysis",
+      "multimodal-analysis"
+    ],
+    "persistence": "none",
+    "analysisEngine": "youtube-corpus-browser-lexical@1"
   },
   "backend": {
-    "defaultPagesUrl": "http://127.0.0.1:1420",
+    "requiredForPages": false,
+    "requiredForAutomatedYoutubeIngest": true,
     "requiredForFullAnalysis": true,
     "operations": [
       "yt-dlp-metadata",
@@ -26,20 +38,24 @@
       "transcript-normalization-and-indexing",
       "text-lexical-analysis",
       "optional-whisper-asr",
-      "available-multimodal-evidence"
+      "available-multimodal-evidence",
+      "postgres-corpus-search"
     ]
   },
   "transcriptPreference": ["caption_manual", "caption_auto", "asr"],
   "analysis": {
-    "metadata": "available-after-ingest",
-    "transcript": "available-when-captions-or-asr-exist",
-    "lexical": "deterministic-text-lexical",
+    "pagesTranscript": "user-provided-vtt-srt-or-text",
+    "pagesLexical": "deterministic-browser-advisory",
+    "metadata": "available-after-local-ingest",
+    "transcript": "available-from-browser-import-or-local-ingest",
+    "lexical": "authoritative-text-lexical-after-local-ingest",
     "visualTimeline": "reported-only-when-evidence-exists",
     "audioFeatures": "reported-only-when-evidence-exists"
   },
   "privacy": {
     "staticSiteStoresMedia": false,
+    "staticSitePersistsTranscript": false,
     "previewHost": "youtube-nocookie.com",
-    "backendPersistence": "configured-youtube-corpus-work-directory-and-postgres"
+    "localBackendPersistence": "configured-youtube-corpus-work-directory-and-postgres"
   }
 }
