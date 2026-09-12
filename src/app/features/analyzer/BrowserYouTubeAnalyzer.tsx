@@ -193,8 +193,14 @@ export function BrowserYouTubeAnalyzer() {
             <ol className="pipeline-list">
               <PipelineStep label="URL + privacy-enhanced preview" active={Boolean(preview)} />
               <PipelineStep label="Transcript imported" active={Boolean(transcriptText.trim())} />
-              <PipelineStep label="Timestamp parsing" active={Boolean(report?.coverage.transcript)} />
-              <PipelineStep label="Browser lexical analysis" active={Boolean(report?.coverage.lexical)} />
+              <PipelineStep
+                label="Timestamp parsing"
+                active={Boolean(report?.coverage.transcript)}
+              />
+              <PipelineStep
+                label="Browser lexical analysis"
+                active={Boolean(report?.coverage.lexical)}
+              />
               <PipelineStep label="Report" active={phase === "done"} />
             </ol>
           </div>
@@ -220,11 +226,7 @@ export function BrowserYouTubeAnalyzer() {
               </a>
             </div>
             <div className="coverage-grid">
-              <CoverageCard
-                label="URL"
-                available
-                detail="canonical YouTube video identity"
-              />
+              <CoverageCard label="URL" available detail="canonical YouTube video identity" />
               <CoverageCard
                 label="Transcript"
                 available={report.coverage.transcript}
@@ -289,7 +291,10 @@ export function BrowserYouTubeAnalyzer() {
             <div className="analysis-columns">
               <AnalysisList title="Keywords" items={keywords.map(termLabel).filter(Boolean)} />
               <AnalysisList title="Key phrases" items={phrases.map(termLabel).filter(Boolean)} />
-              <AnalysisList title="Rule entities" items={entities.map(entityLabel).filter(Boolean)} />
+              <AnalysisList
+                title="Rule entities"
+                items={entities.map(entityLabel).filter(Boolean)}
+              />
               <div className="analysis-card">
                 <h3>Sentiment</h3>
                 <p className="analysis-emphasis">{sentimentLabel(sentiment)}</p>
@@ -348,7 +353,9 @@ export function BrowserYouTubeAnalyzer() {
       ) : null}
 
       <footer className="analyzer-footer">
-        <span>Static GitHub Pages analyzer · browser-local transcript processing · no persistence</span>
+        <span>
+          Static GitHub Pages analyzer · browser-local transcript processing · no persistence
+        </span>
         <a href="https://github.com/moritzbrantner/youtube-corpus">View source</a>
       </footer>
     </main>

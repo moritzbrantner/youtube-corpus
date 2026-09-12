@@ -403,7 +403,8 @@ function summarize(sentences: string[], keywordCounts: Map<string, number>, limi
 }
 
 function extractEntities(text: string) {
-  const candidates = text.match(/\b[\p{Lu}][\p{L}\p{M}'’-]+(?:\s+[\p{Lu}][\p{L}\p{M}'’-]+){0,2}\b/gu) ?? [];
+  const candidates =
+    text.match(/\b[\p{Lu}][\p{L}\p{M}'’-]+(?:\s+[\p{Lu}][\p{L}\p{M}'’-]+){0,2}\b/gu) ?? [];
   const counts = new Map<string, number>();
   for (const candidate of candidates) {
     const normalized = candidate.trim();
