@@ -1,0 +1,45 @@
+name: Pages Browser Normalize
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  normalize:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ github.head_ref }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Normalize generated source inputs
+        run: |
+          bun run format
+          cargo fmt --manifest-path crates/youtube-browser-wasm/Cargo.toml
+          cargo generate-lockfile --manifest-path crates/youtube-browser-wasm/Cargo.toml
+
+      - name: Commit normalization
+        run: |
+          if git diff --quiet && git diff --cached --quiet && test -f crates/youtube-browser-wasm/Cargo.lock; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/features/analyzer crates/youtube-browser-wasm/Cargo.lock crates/youtube-browser-wasm/src/lib.rs
+          git commit -m "style: normalize browser extractor"
+          git push origin HEAD:${{ github.head_ref }}
