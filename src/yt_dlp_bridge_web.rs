@@ -30,6 +30,7 @@ struct CaptionBridgeResponse {
     transcript_text: String,
     track: CaptionBridgeTrack,
     player: CaptionBridgePlayer,
+    yt_dlp_profile: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -64,6 +65,11 @@ struct BridgeErrorMessage {
 }
 
 type BridgeError = (StatusCode, Json<BridgeErrorBody>);
+
+struct CaptionAttempt {
+    profile: String,
+    streams: Vec<TranscriptStream>,
+}
 
 pub fn router(yt_dlp: YtDlpConfig) -> Router {
     Router::new()
@@ -126,15 +132,14 @@ async fn extract_with_yt_dlp(
         include_auto_captions: true,
         languages: preferred_languages.to_vec(),
     };
-    let streams = download_and_parse_captions(&item, &captions_dir, &caption_config, yt_dlp)
-        .await
-        .map_err(|error| error.to_string())?;
-
-    let selected = select_caption_stream(&streams, preferred_languages).ok_or_else(|| {
-        let mut messages = streams
-            .iter()
-            .filter_map(|stream| stream.message.clone())
-            .collect::<Vec<_>>();
+    let caption_attempt = download_caption_profiles(
+        &item,
+        &captions_dir,
+        &caption_config,
+        yt_dlp,
+    )
+    .await
+    .map_err(|mut messages| {
         if let Some(error) = metadata_error {
             messages.push(format!("metadata unavailable: {error}"));
         }
@@ -145,6 +150,8 @@ async fn extract_with_yt_dlp(
         }
     })?;
 
+    let selected = select_caption_stream(&caption_attempt.streams, preferred_languages)
+        .ok_or_else(|| "yt-dlp produced caption files but none were usable.".to_string())?;
     let source_path = selected
         .source_path
         .as_ref()
@@ -186,6 +193,58 @@ async fn extract_with_yt_dlp(
             description: metadata.description.clone(),
             thumbnail_url: metadata.thumbnail_url.clone(),
         },
+        yt_dlp_profile: caption_attempt.profile,
+    })
+}
+
+async fn download_caption_profiles(
+    item: &crate::youtube::VideoItem,
+    captions_dir: &std::path::Path,
+    caption_config: &CaptionConfig,
+    yt_dlp: &YtDlpConfig,
+) -> Result<CaptionAttempt, Vec<String>> {
+    let mut messages = Vec::new();
+    for (index, (profile, config)) in caption_profiles(yt_dlp).into_iter().enumerate() {
+        let attempt_dir = captions_dir.join(format!("{index}-{profile}"));
+        match download_and_parse_captions(item, &attempt_dir, caption_config, &config).await {
+            Ok(streams) => {
+                if streams.iter().any(|stream| stream.source_path.is_some()) {
+                    return Ok(CaptionAttempt { profile, streams });
+                }
+                messages.extend(streams.into_iter().filter_map(|stream| {
+                    stream
+                        .message
+                        .map(|message| format!("{profile}: {message}"))
+                }));
+            }
+            Err(error) => messages.push(format!("{profile}: {error}")),
+        }
+    }
+    Err(messages)
+}
+
+fn caption_profiles(config: &YtDlpConfig) -> Vec<(String, YtDlpConfig)> {
+    let mut profiles = vec![("default".to_string(), config.clone())];
+    if has_explicit_youtube_player_client(&config.args) {
+        return profiles;
+    }
+
+    for client in ["web_embedded", "mweb", "tv"] {
+        let mut fallback = config.clone();
+        fallback.args.push("--extractor-args".to_string());
+        fallback
+            .args
+            .push(format!("youtube:player_client={client}"));
+        profiles.push((client.to_string(), fallback));
+    }
+    profiles
+}
+
+fn has_explicit_youtube_player_client(args: &[String]) -> bool {
+    args.iter().any(|arg| {
+        let arg = arg.to_ascii_lowercase();
+        arg.contains("youtube:")
+            && (arg.contains("player_client=") || arg.contains("player-client="))
     })
 }
 
@@ -377,5 +436,34 @@ mod tests {
         let selected = select_caption_stream(&streams, &["de".to_string(), "en".to_string()])
             .expect("caption stream");
         assert_eq!(selected.language.as_deref(), Some("de"));
+    }
+
+    #[test]
+    fn adds_bounded_player_client_fallbacks() {
+        let profiles = caption_profiles(&YtDlpConfig::default());
+        assert_eq!(
+            profiles
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["default", "web_embedded", "mweb", "tv"]
+        );
+        assert!(profiles[1].1.args.windows(2).any(|args| {
+            args == ["--extractor-args", "youtube:player_client=web_embedded"]
+        }));
+    }
+
+    #[test]
+    fn preserves_explicit_player_client_policy() {
+        let config = YtDlpConfig {
+            args: vec![
+                "--extractor-args".to_string(),
+                "youtube:player_client=ios;fetch_pot=always".to_string(),
+            ],
+            ..YtDlpConfig::default()
+        };
+        let profiles = caption_profiles(&config);
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].0, "default");
     }
 }
