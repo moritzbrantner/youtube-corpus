@@ -25,11 +25,12 @@ export function applyBrowserCaptionAcquisition(
       metadata: {
         ...report.video.metadata,
         browserAnalysis: {
-          schemaVersion: 2,
+          schemaVersion: 3,
           engine: "youtube-corpus-browser-lexical",
           persistence: "none",
           transcriptSource: "youtube-direct",
           extractionEngine: "youtube-browser-wasm",
+          playerEndpoint: acquisition.endpoint,
           innertubeClient: acquisition.client,
           captionTrack: {
             languageCode: acquisition.track.languageCode,
@@ -46,7 +47,7 @@ export function applyBrowserCaptionAcquisition(
             ...stream,
             sourceKind,
             language,
-            message: `Caption track fetched directly from YouTube in the browser via ${acquisition.client}.`,
+            message: `Caption track fetched directly from YouTube in the browser via ${acquisition.endpoint}/${acquisition.client}.`,
           },
         ]
       : report.streams,
