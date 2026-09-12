@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::routing::post;
@@ -171,7 +169,7 @@ async fn extract_with_yt_dlp(
     let metadata = &item.metadata;
 
     Ok(CaptionBridgeResponse {
-        video_id: item.youtube_id,
+        video_id: item.youtube_id.clone(),
         transcript_text,
         track: CaptionBridgeTrack {
             language_code: language,
@@ -180,7 +178,7 @@ async fn extract_with_yt_dlp(
         },
         player: CaptionBridgePlayer {
             playability_status: "OK".to_string(),
-            title: item.title.or_else(|| metadata.title.clone()),
+            title: item.title.clone().or_else(|| metadata.title.clone()),
             author: metadata.channel.clone().or_else(|| metadata.uploader.clone()),
             channel_id: metadata.channel_id.clone(),
             duration_seconds: item.duration_seconds.or(metadata.duration_seconds),
@@ -279,25 +277,25 @@ fn youtube_video_id(value: &str) -> Option<String> {
     let host = host.strip_prefix("www.").unwrap_or(host.as_str());
 
     let candidate = if host == "youtu.be" {
-        url.path_segments()?.find(|segment| !segment.is_empty())
+        url.path_segments()?
+            .find(|segment| !segment.is_empty())?
+            .to_string()
     } else if host == "youtube.com" || host.ends_with(".youtube.com") {
-        match url.path() {
-            "/watch" => url.query_pairs().find_map(|(key, value)| {
-                (key == "v").then(|| value.into_owned())
-            }).as_deref(),
-            _ => {
-                let mut segments = url.path_segments()?.filter(|segment| !segment.is_empty());
-                match segments.next()? {
-                    "shorts" | "live" | "embed" => segments.next(),
-                    _ => None,
-                }
+        if url.path() == "/watch" {
+            url.query_pairs()
+                .find_map(|(key, value)| (key == "v").then(|| value.into_owned()))?
+        } else {
+            let mut segments = url.path_segments()?.filter(|segment| !segment.is_empty());
+            match segments.next()? {
+                "shorts" | "live" | "embed" => segments.next()?.to_string(),
+                _ => return None,
             }
         }
     } else {
-        None
-    }?;
+        return None;
+    };
 
-    is_probable_video_id(candidate).then(|| candidate.to_string())
+    is_probable_video_id(&candidate).then_some(candidate)
 }
 
 fn is_probable_video_id(value: &str) -> bool {
@@ -320,6 +318,8 @@ fn bridge_error(status: StatusCode, message: impl Into<String>) -> BridgeError {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[test]
