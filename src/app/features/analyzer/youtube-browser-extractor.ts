@@ -28,6 +28,7 @@ export type BrowserPlayerEvidence = {
 };
 
 export type BrowserCaptionAcquisition = {
+  videoId: string;
   transcriptText: string;
   track: BrowserCaptionTrack;
   player: BrowserPlayerEvidence;
@@ -64,22 +65,29 @@ type PlayerEndpoint = {
   contentType?: string;
 };
 
+const INNERTUBE_PUBLIC_WEB_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+
 // The release endpoint is also exposed by current YouTube.js and is useful for
-// browser callers because a string POST can stay a CORS-simple request. Keep
-// the normal YouTube endpoint as fallback rather than depending on the sandbox
-// endpoint as a single authority.
+// browser callers because a string POST can stay a CORS-simple request. Current
+// yt-dlp also supports no-key InnerTube requests by default, but the public web
+// key is retained as a normal YouTube endpoint fallback for clients/rollouts
+// that reject the unkeyed form.
 const PLAYER_ENDPOINTS: PlayerEndpoint[] = [
   {
     id: "release",
     url: "https://release-youtubei.sandbox.googleapis.com/youtubei/v1/player",
   },
   {
+    id: "youtube-keyed-simple",
+    url: `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_PUBLIC_WEB_KEY}&prettyPrint=false`,
+  },
+  {
     id: "youtube-simple",
     url: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
   },
   {
-    id: "youtube-json",
-    url: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+    id: "youtube-keyed-json",
+    url: `https://www.youtube.com/youtubei/v1/player?key=${INNERTUBE_PUBLIC_WEB_KEY}&prettyPrint=false`,
     contentType: "application/json",
   },
 ];
@@ -184,6 +192,7 @@ export async function acquireYouTubeCaptions(
       if (!transcriptText) continue;
 
       return {
+        videoId: parsed.videoId,
         transcriptText,
         track: selected,
         player,
