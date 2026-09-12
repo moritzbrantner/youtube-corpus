@@ -27,7 +27,7 @@ export function DirectBrowserYouTubeAnalyzer() {
   const [acquisition, setAcquisition] = React.useState<BrowserCaptionAcquisition | null>(null);
   const [phase, setPhase] = React.useState<Phase>("idle");
   const [statusMessage, setStatusMessage] = React.useState(
-    "Paste a YouTube URL. Pages will try to fetch its public captions directly.",
+    "Paste a YouTube URL. Pages will try direct captions, then local yt-dlp if available.",
   );
   const [error, setError] = React.useState<string | null>(null);
   const [report, setReport] = React.useState<VideoAnalysisReport | null>(null);
@@ -66,7 +66,7 @@ export function DirectBrowserYouTubeAnalyzer() {
     const generation = requestGeneration.current + 1;
     requestGeneration.current = generation;
     setPhase("fetching");
-    setStatusMessage("Trying browser-safe YouTube clients and public caption tracks…");
+    setStatusMessage("Trying direct YouTube captions, then the local yt-dlp fallback…");
 
     try {
       const next = await acquireYouTubeCaptions(parsed);
@@ -194,11 +194,12 @@ export function DirectBrowserYouTubeAnalyzer() {
           <a className="analyzer-kicker" href="https://github.com/moritzbrantner/youtube-corpus">
             youtube-corpus
           </a>
-          <h1>Analyze YouTube captions directly on GitHub Pages</h1>
+          <h1>Analyze YouTube captions on GitHub Pages</h1>
           <p>
-            Paste a public YouTube URL. The page tries YouTube's browser-facing player API and
-            signed caption tracks, then parses the result with the Rust/WASM extraction core. No
-            youtube-corpus server or Postgres instance is required.
+            Paste a public YouTube URL. Pages first tries YouTube directly and parses successful
+            responses with Rust/WASM. If the browser is blocked by CORS or YouTube policy, it can
+            fall back to a loopback youtube-corpus process running yt-dlp. Postgres is not required
+            for that fallback.
           </p>
         </div>
         <nav className="analyzer-nav" aria-label="YouTube Corpus views">
@@ -211,7 +212,7 @@ export function DirectBrowserYouTubeAnalyzer() {
           className={`runtime-dot ${phase === "error" ? "runtime-dot-unavailable" : "runtime-dot-ready"}`}
           aria-hidden="true"
         />
-        <strong>Standalone Pages + Rust/WASM</strong>
+        <strong>Static Pages + optional local yt-dlp</strong>
         <span>{statusMessage}</span>
       </section>
 
@@ -251,7 +252,7 @@ export function DirectBrowserYouTubeAnalyzer() {
               id="transcript-input"
               value={transcriptText}
               onChange={(event) => updateTranscript(event.target.value)}
-              placeholder="Normally this fills automatically. You can still paste plain text, WebVTT, or SRT when YouTube blocks direct browser acquisition."
+              placeholder="Normally this fills automatically. You can still paste plain text, WebVTT, or SRT when YouTube blocks automatic acquisition."
               spellCheck={false}
             />
             <div className="browser-transcript-actions">
@@ -277,16 +278,16 @@ export function DirectBrowserYouTubeAnalyzer() {
                 {acquisition
                   ? `${acquisition.track.name} · ${acquisition.track.sourceKind === "caption_auto" ? "automatic" : "manual"} · ${acquisition.endpoint}/${acquisition.client}`
                   : (transcriptFileName ??
-                    "Automatic acquisition is attempted before manual fallback.")}
+                    "Direct acquisition is attempted before local yt-dlp and manual fallback.")}
               </span>
             </div>
           </div>
 
           <p className="browser-analysis-note">
-            Direct acquisition is best-effort and fail-closed. Some videos still require YouTube
-            proof-of-origin, authentication, or a same-origin context. In those cases this page does
-            not route your signed caption URL through a third-party proxy; paste/import a transcript
-            or use the local yt-dlp pipeline instead.
+            Direct acquisition is best-effort and fail-closed. When YouTube blocks browser access,
+            Pages tries only a loopback youtube-corpus endpoint; it never sends the signed caption
+            URL through a third-party CORS relay. If the local helper is not running, paste/import a
+            transcript instead.
           </p>
         </form>
       </section>
@@ -308,7 +309,14 @@ export function DirectBrowserYouTubeAnalyzer() {
             <ol className="pipeline-list">
               <PipelineStep label="YouTube URL" active />
               <PipelineStep label="Caption evidence" active={Boolean(transcriptText.trim())} />
-              <PipelineStep label="Rust/WASM extraction" active={Boolean(acquisition)} />
+              <PipelineStep
+                label={
+                  acquisition?.transport === "local-yt-dlp"
+                    ? "Local yt-dlp extraction"
+                    : "Rust/WASM extraction"
+                }
+                active={Boolean(acquisition)}
+              />
               <PipelineStep
                 label="Browser lexical analysis"
                 active={Boolean(report?.coverage.lexical)}
@@ -328,7 +336,7 @@ export function DirectBrowserYouTubeAnalyzer() {
       {report ? <BrowserReport report={report} acquisition={acquisition} /> : null}
 
       <footer className="analyzer-footer">
-        <span>Static GitHub Pages · direct YouTube captions when allowed · Rust/WASM parsing</span>
+        <span>Static GitHub Pages · direct captions first · loopback yt-dlp fallback</span>
         <a href="https://github.com/moritzbrantner/youtube-corpus">View source</a>
       </footer>
     </main>
@@ -452,13 +460,15 @@ function BrowserReport({
         <div className="section-heading">
           <div>
             <span>Provenance</span>
-            <h2>Browser extraction boundary</h2>
+            <h2>Caption extraction boundary</h2>
           </div>
         </div>
         <p className="browser-provenance">
-          {acquisition
-            ? `The browser requested an InnerTube player response, selected ${acquisition.track.name}, fetched its signed timed-text URL directly from YouTube, and converted json3 to WebVTT in Rust/WASM. No youtube-corpus server, Postgres database, or third-party CORS relay was used.`
-            : "The report uses transcript evidence supplied by you. No youtube-corpus server, Postgres database, or third-party relay was used."}
+          {acquisition?.transport === "local-yt-dlp"
+            ? `Direct browser acquisition was unavailable. Pages sent the canonical YouTube URL and language preferences to the loopback youtube-corpus process, which fetched ${acquisition.track.name} with yt-dlp. No Postgres persistence or third-party CORS relay was used.`
+            : acquisition
+              ? `The browser requested an InnerTube player response, selected ${acquisition.track.name}, fetched its signed timed-text URL directly from YouTube, and converted json3 to WebVTT in Rust/WASM. No youtube-corpus server, Postgres database, or third-party CORS relay was used.`
+              : "The report uses transcript evidence supplied by you. No youtube-corpus server, Postgres database, or third-party relay was used."}
         </p>
         <details className="raw-details">
           <summary>Raw browser analysis metadata</summary>
@@ -524,7 +534,6 @@ function persistWorkbenchUrl(sourceUrl: string) {
   if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   url.searchParams.set("url", sourceUrl);
-  url.searchParams.delete("backend");
   window.history.replaceState(null, "", url);
 }
 
