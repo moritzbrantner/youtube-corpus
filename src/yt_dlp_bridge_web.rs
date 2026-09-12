@@ -204,8 +204,7 @@ async fn download_caption_profiles(
 
     for (language_profile, config) in caption_language_passes(caption_config) {
         for (index, (profile, yt_dlp_config)) in profiles.iter().enumerate() {
-            let attempt_dir =
-                captions_dir.join(format!("{language_profile}-{index}-{profile}"));
+            let attempt_dir = captions_dir.join(format!("{language_profile}-{index}-{profile}"));
             match download_and_parse_captions(item, &attempt_dir, &config, yt_dlp_config).await {
                 Ok(streams) => {
                     if streams.iter().any(|stream| stream.source_path.is_some()) {
@@ -215,9 +214,9 @@ async fn download_caption_profiles(
                         });
                     }
                     messages.extend(streams.into_iter().filter_map(|stream| {
-                        stream.message.map(|message| {
-                            format!("{profile}/{language_profile}: {message}")
-                        })
+                        stream
+                            .message
+                            .map(|message| format!("{profile}/{language_profile}: {message}"))
                     }));
                 }
                 Err(error) => {
