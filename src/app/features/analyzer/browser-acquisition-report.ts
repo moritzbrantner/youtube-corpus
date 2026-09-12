@@ -8,6 +8,7 @@ export function applyBrowserCaptionAcquisition(
   const sourceKind = acquisition.track.sourceKind;
   const stream = report.streams[0];
   const language = acquisition.track.languageCode || null;
+  const localYtDlp = acquisition.transport === "local-yt-dlp";
 
   return {
     ...report,
@@ -25,11 +26,11 @@ export function applyBrowserCaptionAcquisition(
       metadata: {
         ...report.video.metadata,
         browserAnalysis: {
-          schemaVersion: 3,
+          schemaVersion: 4,
           engine: "youtube-corpus-browser-lexical",
           persistence: "none",
-          transcriptSource: "youtube-direct",
-          extractionEngine: "youtube-browser-wasm",
+          transcriptSource: localYtDlp ? "local-yt-dlp" : "youtube-direct",
+          extractionEngine: localYtDlp ? "yt-dlp" : "youtube-browser-wasm",
           playerEndpoint: acquisition.endpoint,
           innertubeClient: acquisition.client,
           captionTrack: {
@@ -47,7 +48,9 @@ export function applyBrowserCaptionAcquisition(
             ...stream,
             sourceKind,
             language,
-            message: `Caption track fetched directly from YouTube in the browser via ${acquisition.endpoint}/${acquisition.client}.`,
+            message: localYtDlp
+              ? "Caption track fetched by the local yt-dlp bridge; no Postgres persistence was used."
+              : `Caption track fetched directly from YouTube in the browser via ${acquisition.endpoint}/${acquisition.client}.`,
           },
         ]
       : report.streams,
