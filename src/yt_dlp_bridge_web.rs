@@ -89,10 +89,8 @@ async fn fetch_youtube_captions(
     }
 
     let preferred_languages = normalize_languages(&input.preferred_languages);
-    let work_dir = std::env::temp_dir().join(format!(
-        "youtube-corpus-caption-bridge-{}",
-        Uuid::new_v4()
-    ));
+    let work_dir =
+        std::env::temp_dir().join(format!("youtube-corpus-caption-bridge-{}", Uuid::new_v4()));
     let result = extract_with_yt_dlp(
         &input.source_url,
         &preferred_languages,
@@ -132,23 +130,18 @@ async fn extract_with_yt_dlp(
         include_auto_captions: true,
         languages: preferred_languages.to_vec(),
     };
-    let caption_attempt = download_caption_profiles(
-        &item,
-        &captions_dir,
-        &caption_config,
-        yt_dlp,
-    )
-    .await
-    .map_err(|mut messages| {
-        if let Some(error) = metadata_error {
-            messages.push(format!("metadata unavailable: {error}"));
-        }
-        if messages.is_empty() {
-            "yt-dlp completed without a usable manual or automatic caption file.".to_string()
-        } else {
-            messages.join(" · ")
-        }
-    })?;
+    let caption_attempt = download_caption_profiles(&item, &captions_dir, &caption_config, yt_dlp)
+        .await
+        .map_err(|mut messages| {
+            if let Some(error) = metadata_error {
+                messages.push(format!("metadata unavailable: {error}"));
+            }
+            if messages.is_empty() {
+                "yt-dlp completed without a usable manual or automatic caption file.".to_string()
+            } else {
+                messages.join(" · ")
+            }
+        })?;
 
     let selected = select_caption_stream(&caption_attempt.streams, preferred_languages)
         .ok_or_else(|| "yt-dlp produced caption files but none were usable.".to_string())?;
@@ -186,7 +179,10 @@ async fn extract_with_yt_dlp(
         player: CaptionBridgePlayer {
             playability_status: "OK".to_string(),
             title: item.title.clone().or_else(|| metadata.title.clone()),
-            author: metadata.channel.clone().or_else(|| metadata.uploader.clone()),
+            author: metadata
+                .channel
+                .clone()
+                .or_else(|| metadata.uploader.clone()),
             channel_id: metadata.channel_id.clone(),
             duration_seconds: item.duration_seconds.or(metadata.duration_seconds),
             view_count: metadata.view_count,
@@ -448,9 +444,11 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["default", "web_embedded", "mweb", "tv"]
         );
-        assert!(profiles[1].1.args.windows(2).any(|args| {
-            args == ["--extractor-args", "youtube:player_client=web_embedded"]
-        }));
+        assert!(profiles[1]
+            .1
+            .args
+            .windows(2)
+            .any(|args| { args == ["--extractor-args", "youtube:player_client=web_embedded"] }));
     }
 
     #[test]
