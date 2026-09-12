@@ -34,6 +34,13 @@ jobs:
       - name: Check frontend formatting
         run: bun run format:check
 
+      - name: Test standalone browser analysis
+        run: bun run test:frontend
+
+      - name: Verify standalone Pages capability contract
+        run: |
+          jq -e '.schemaVersion == 2 and .pagesStandalone == true and .backend.requiredForPages == false' public/analysis-capabilities.json >/dev/null
+
       - name: Build analyzer
         run: bun run build
 
@@ -42,6 +49,7 @@ jobs:
           test -s dist/index.html
           test -s dist/analysis-capabilities.json
           grep -q 'youtube-corpus' dist/index.html
+          jq -e '.pagesStandalone == true and .backend.requiredForPages == false' dist/analysis-capabilities.json >/dev/null
 
       - name: Configure GitHub Pages
         if: github.event_name != 'pull_request'
