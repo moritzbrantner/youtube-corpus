@@ -200,23 +200,47 @@ async fn download_caption_profiles(
     yt_dlp: &YtDlpConfig,
 ) -> Result<CaptionAttempt, Vec<String>> {
     let mut messages = Vec::new();
-    for (index, (profile, config)) in caption_profiles(yt_dlp).into_iter().enumerate() {
-        let attempt_dir = captions_dir.join(format!("{index}-{profile}"));
-        match download_and_parse_captions(item, &attempt_dir, caption_config, &config).await {
-            Ok(streams) => {
-                if streams.iter().any(|stream| stream.source_path.is_some()) {
-                    return Ok(CaptionAttempt { profile, streams });
+    let profiles = caption_profiles(yt_dlp);
+
+    for (language_profile, config) in caption_language_passes(caption_config) {
+        for (index, (profile, yt_dlp_config)) in profiles.iter().enumerate() {
+            let attempt_dir =
+                captions_dir.join(format!("{language_profile}-{index}-{profile}"));
+            match download_and_parse_captions(item, &attempt_dir, &config, yt_dlp_config).await {
+                Ok(streams) => {
+                    if streams.iter().any(|stream| stream.source_path.is_some()) {
+                        return Ok(CaptionAttempt {
+                            profile: profile.clone(),
+                            streams,
+                        });
+                    }
+                    messages.extend(streams.into_iter().filter_map(|stream| {
+                        stream.message.map(|message| {
+                            format!("{profile}/{language_profile}: {message}")
+                        })
+                    }));
                 }
-                messages.extend(streams.into_iter().filter_map(|stream| {
-                    stream
-                        .message
-                        .map(|message| format!("{profile}: {message}"))
-                }));
+                Err(error) => {
+                    messages.push(format!("{profile}/{language_profile}: {error}"));
+                }
             }
-            Err(error) => messages.push(format!("{profile}: {error}")),
         }
     }
     Err(messages)
+}
+
+fn caption_language_passes(config: &CaptionConfig) -> Vec<(&'static str, CaptionConfig)> {
+    let mut passes = vec![("preferred", config.clone())];
+    if !config
+        .languages
+        .iter()
+        .any(|language| language.eq_ignore_ascii_case("all"))
+    {
+        let mut all_languages = config.clone();
+        all_languages.languages = vec!["all".to_string()];
+        passes.push(("all", all_languages));
+    }
+    passes
 }
 
 fn caption_profiles(config: &YtDlpConfig) -> Vec<(String, YtDlpConfig)> {
@@ -407,6 +431,25 @@ mod tests {
             vec!["de-de", "de", "en-us", "en"]
         );
         assert_eq!(normalize_languages(&[]), vec!["en"]);
+    }
+
+    #[test]
+    fn retries_all_caption_languages_after_preferred_languages() {
+        let config = CaptionConfig {
+            enabled: true,
+            include_auto_captions: true,
+            languages: vec!["de".to_string()],
+        };
+        let passes = caption_language_passes(&config);
+        assert_eq!(passes.len(), 2);
+        assert_eq!(passes[0].1.languages, vec!["de".to_string()]);
+        assert_eq!(passes[1].1.languages, vec!["all".to_string()]);
+
+        let all_config = CaptionConfig {
+            languages: vec!["all".to_string()],
+            ..config
+        };
+        assert_eq!(caption_language_passes(&all_config).len(), 1);
     }
 
     #[test]
