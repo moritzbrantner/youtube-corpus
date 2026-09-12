@@ -48,11 +48,17 @@
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--foreground) 12%, transparent);
 }
 
-.browser-file-button {
-  position: relative;
-  display: inline-flex;
-  min-height: 38px;
+.browser-action-group {
+  display: flex;
   align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.browser-file-button,
+.browser-fetch-button {
+  min-height: 38px;
+  box-sizing: border-box;
   padding: 0 13px;
   border: 1px solid var(--border);
   border-radius: 9px;
@@ -60,11 +66,27 @@
   background: var(--background);
   font-size: 0.82rem;
   font-weight: 650;
+}
+
+.browser-file-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
   cursor: pointer;
 }
 
-.browser-file-button:hover {
+.browser-fetch-button {
+  cursor: pointer;
+}
+
+.browser-file-button:hover,
+.browser-fetch-button:hover:not(:disabled) {
   border-color: var(--foreground);
+}
+
+.browser-fetch-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .browser-file-button input {
