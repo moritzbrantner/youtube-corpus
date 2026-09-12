@@ -2,9 +2,9 @@ import * as React from "react";
 
 import LegacyApp from "./LegacyApp";
 import {
-  BrowserYouTubeAnalyzer,
-  shouldUseBrowserAnalyzer,
-} from "./app/features/analyzer/BrowserYouTubeAnalyzer";
+  DirectBrowserYouTubeAnalyzer,
+  shouldUseDirectBrowserAnalyzer,
+} from "./app/features/analyzer/DirectBrowserYouTubeAnalyzer";
 import { YouTubeAnalyzer } from "./app/features/analyzer/YouTubeAnalyzer";
 import { CorpusWorkspace } from "./app/features/corpora/CorpusWorkspace";
 
@@ -32,8 +32,8 @@ export default function App() {
     return () => window.removeEventListener("hashchange", syncRoute);
   }, []);
 
-  if (shouldUseBrowserAnalyzer()) {
-    return <BrowserYouTubeAnalyzer />;
+  if (shouldUseDirectBrowserAnalyzer()) {
+    return <DirectBrowserYouTubeAnalyzer />;
   }
 
   if (route === "corpora") {
