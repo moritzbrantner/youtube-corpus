@@ -34,6 +34,7 @@ export type BrowserCaptionAcquisition = {
   player: BrowserPlayerEvidence;
   client: string;
   endpoint: string;
+  transport: "browser-direct" | "local-yt-dlp";
 };
 
 export type BrowserAcquisitionAttempt = {
@@ -65,7 +66,17 @@ type PlayerEndpoint = {
   contentType?: string;
 };
 
+type LocalCaptionBridgeResponse = {
+  videoId?: unknown;
+  transcriptText?: unknown;
+  track?: unknown;
+  player?: unknown;
+};
+
+type JsonRecord = Record<string, unknown>;
+
 const INNERTUBE_PUBLIC_WEB_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
+const DEFAULT_LOCAL_YT_DLP_ORIGIN = "http://127.0.0.1:1420";
 
 // The release endpoint is also exposed by current YouTube.js and is useful for
 // browser callers because a string POST can stay a CORS-simple request. Current
@@ -146,11 +157,29 @@ export async function acquireYouTubeCaptions(
 ): Promise<BrowserCaptionAcquisition> {
   await ensureWasm();
   const attempts: BrowserAcquisitionAttempt[] = [];
+  const blockedOrigins = new Set<string>();
 
   for (const endpoint of PLAYER_ENDPOINTS) {
+    const origin = new URL(endpoint.url).origin;
+    if (blockedOrigins.has(origin)) continue;
+
     for (const client of INNERTUBE_CLIENTS) {
       const player = await fetchPlayerEvidence(parsed, endpoint, client, attempts, fetcher);
-      if (!player) continue;
+      if (!player) {
+        const lastAttempt = attempts.at(-1);
+        if (
+          lastAttempt?.endpoint === endpoint.id &&
+          lastAttempt.stage === "player" &&
+          lastAttempt.outcome === "blocked"
+        ) {
+          // A browser CORS/network denial applies before YouTube sees the
+          // InnerTube client payload. Retrying the same origin with more client
+          // profiles cannot fix that boundary, so move on immediately.
+          blockedOrigins.add(origin);
+          break;
+        }
+        continue;
+      }
 
       if (player.playabilityStatus !== "OK") {
         attempts.push({
@@ -198,9 +227,18 @@ export async function acquireYouTubeCaptions(
         player,
         client: client.id,
         endpoint: endpoint.id,
+        transport: "browser-direct",
       };
     }
   }
+
+  const localFallback = await fetchLocalYtDlpCaptions(
+    parsed,
+    preferredLanguages,
+    attempts,
+    fetcher,
+  );
+  if (localFallback) return localFallback;
 
   throw new BrowserYouTubeAcquisitionError(acquisitionFailureMessage(attempts), attempts);
 }
@@ -315,6 +353,143 @@ async function fetchCaptionTrack(
   }
 }
 
+async function fetchLocalYtDlpCaptions(
+  parsed: ParsedYouTubeUrl,
+  preferredLanguages: string[],
+  attempts: BrowserAcquisitionAttempt[],
+  fetcher: typeof fetch,
+): Promise<BrowserCaptionAcquisition | null> {
+  const origin = localYtDlpBridgeOrigin();
+  if (!origin) return null;
+
+  try {
+    const response = await fetcher(`${origin}/api/youtube-captions`, {
+      method: "POST",
+      mode: "cors",
+      credentials: "omit",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceUrl: parsed.canonicalUrl,
+        preferredLanguages,
+      }),
+    });
+    if (!response.ok) {
+      const detail = await localBridgeError(response);
+      attempts.push({
+        client: "local",
+        endpoint: "yt-dlp-bridge",
+        stage: "captions",
+        outcome: "http-error",
+        detail: `HTTP ${response.status}${detail ? `: ${detail}` : ""}`,
+      });
+      return null;
+    }
+
+    const payload = (await response.json()) as LocalCaptionBridgeResponse;
+    const acquisition = parseLocalBridgeResponse(parsed, payload);
+    if (!acquisition) {
+      attempts.push({
+        client: "local",
+        endpoint: "yt-dlp-bridge",
+        stage: "captions",
+        outcome: "invalid",
+        detail: "local yt-dlp bridge returned an invalid caption response",
+      });
+      return null;
+    }
+    return acquisition;
+  } catch (error) {
+    attempts.push({
+      client: "local",
+      endpoint: "yt-dlp-bridge",
+      stage: "captions",
+      outcome: "blocked",
+      detail: networkError(error),
+    });
+    return null;
+  }
+}
+
+function parseLocalBridgeResponse(
+  parsed: ParsedYouTubeUrl,
+  payload: LocalCaptionBridgeResponse,
+): BrowserCaptionAcquisition | null {
+  const transcriptText = typeof payload.transcriptText === "string" ? payload.transcriptText : null;
+  const trackValue = asRecord(payload.track);
+  const playerValue = asRecord(payload.player);
+  if (!transcriptText?.trim() || !trackValue || !playerValue) return null;
+
+  const returnedVideoId = optionalString(payload.videoId);
+  if (returnedVideoId && returnedVideoId !== parsed.videoId) return null;
+
+  const sourceKind = optionalString(trackValue.sourceKind);
+  if (sourceKind !== "caption_manual" && sourceKind !== "caption_auto") return null;
+  const languageCode = optionalString(trackValue.languageCode);
+  const name = optionalString(trackValue.name);
+  if (!languageCode || !name) return null;
+
+  const track: BrowserCaptionTrack = {
+    baseUrl: `local://yt-dlp/${parsed.videoId}`,
+    languageCode,
+    name,
+    sourceKind,
+    isTranslatable: false,
+    vssId: null,
+  };
+  const player: BrowserPlayerEvidence = {
+    playabilityStatus: optionalString(playerValue.playabilityStatus) ?? "OK",
+    playabilityReason: optionalString(playerValue.playabilityReason),
+    title: optionalString(playerValue.title),
+    author: optionalString(playerValue.author),
+    channelId: optionalString(playerValue.channelId),
+    durationSeconds: optionalNumber(playerValue.durationSeconds),
+    viewCount: optionalNumber(playerValue.viewCount),
+    description: optionalString(playerValue.description),
+    thumbnailUrl: optionalString(playerValue.thumbnailUrl),
+    captionTracks: [track],
+  };
+
+  return {
+    videoId: parsed.videoId,
+    transcriptText,
+    track,
+    player,
+    client: "local",
+    endpoint: "yt-dlp-bridge",
+    transport: "local-yt-dlp",
+  };
+}
+
+async function localBridgeError(response: Response) {
+  try {
+    const payload = (await response.json()) as unknown;
+    const body = asRecord(payload);
+    const error = asRecord(body?.error);
+    return optionalString(error?.message) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function localYtDlpBridgeOrigin() {
+  if (typeof window === "undefined") return null;
+  const configured = new URLSearchParams(window.location.search).get("backend");
+  const candidate = configured || DEFAULT_LOCAL_YT_DLP_ORIGIN;
+  try {
+    const url = new URL(candidate);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    if (!isLoopbackHost(url.hostname)) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function isLoopbackHost(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
 export function captionJson3Url(baseUrl: string) {
   const url = new URL(baseUrl, "https://www.youtube.com");
   if (url.protocol !== "https:" || !isYoutubeHost(url.hostname)) {
@@ -360,19 +535,40 @@ function ensureWasm() {
 }
 
 function acquisitionFailureMessage(attempts: BrowserAcquisitionAttempt[]) {
+  const localAttempt = attempts.find((attempt) => attempt.endpoint === "yt-dlp-bridge");
+  if (localAttempt?.outcome === "blocked") {
+    return "YouTube blocked direct browser captions and the local yt-dlp bridge was not reachable. Start youtube-corpus locally, then retry; Postgres is not required for this fallback.";
+  }
+  if (localAttempt) {
+    return "Direct browser acquisition failed and local yt-dlp could not produce captions. Check the local yt-dlp cookies/PO-token setup, or paste/import a transcript.";
+  }
   if (attempts.some((attempt) => attempt.outcome === "blocked")) {
-    return "YouTube blocked the direct browser caption path for this origin or video. Paste/import the transcript, or use the local yt-dlp mode for the stronger fallback.";
+    return "YouTube blocked the direct browser caption path for this origin or video. Start the local youtube-corpus yt-dlp fallback or paste/import the transcript.";
   }
   if (attempts.some((attempt) => attempt.outcome === "empty")) {
-    return "YouTube exposed caption tracks but returned empty timed-text data. This commonly indicates proof-of-origin enforcement. Paste/import the transcript, or use local yt-dlp.";
+    return "YouTube exposed caption tracks but returned empty timed-text data. This commonly indicates proof-of-origin enforcement. Use local yt-dlp or paste/import the transcript.";
   }
   if (attempts.length > 0 && attempts.every((attempt) => attempt.outcome === "no-captions")) {
     return "No public caption track was exposed for this video. Paste/import a transcript or use local ASR.";
   }
   const last = attempts.at(-1);
   return last
-    ? `Direct YouTube caption acquisition failed: ${last.detail}. Paste/import the transcript or use local yt-dlp.`
-    : "Direct YouTube caption acquisition failed. Paste/import the transcript or use local yt-dlp.";
+    ? `YouTube caption acquisition failed: ${last.detail}. Use local yt-dlp or paste/import the transcript.`
+    : "YouTube caption acquisition failed. Use local yt-dlp or paste/import the transcript.";
+}
+
+function asRecord(value: unknown): JsonRecord | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as JsonRecord)
+    : null;
+}
+
+function optionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function optionalNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function errorMessage(error: unknown) {

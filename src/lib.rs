@@ -24,6 +24,7 @@ pub mod video_analysis_web;
 pub mod web;
 pub mod youtube;
 pub mod yt_dlp;
+pub mod yt_dlp_bridge_web;
 
 pub use annotations::{
     create_annotation, list_annotations, AnnotationSourceKind, CreateAnnotationRequest,
