@@ -8,6 +8,7 @@
     "db:migrate": "DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/youtube_corpus} cargo run -- migrate",
     "dev": "bun run build && DATABASE_URL=${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/youtube_corpus} cargo run",
     "dev:frontend": "bun run build:wasm && vite",
+    "captions:bridge": "cargo run -- --no-open",
     "build:wasm": "wasm-pack build crates/youtube-browser-wasm --target web --release --out-dir ../../src/app/features/analyzer/wasm --out-name youtube_browser_wasm",
     "build": "bun run build:wasm && tsc && vite build",
     "format": "oxfmt --write .",
