@@ -4,10 +4,12 @@ fn app_with_research(state: AppState) -> Router {
     let research = crate::research_web::router(state.database_url.clone(), state.yt_dlp.clone());
     let research_quality = crate::research_quality_web::router(state.database_url.clone());
     let video_analysis = crate::video_analysis_web::router(state.database_url.clone());
+    let yt_dlp_bridge = crate::yt_dlp_bridge_web::router(state.yt_dlp.clone());
     app(state)
         .merge(research)
         .merge(research_quality)
         .merge(video_analysis)
+        .merge(yt_dlp_bridge)
         .layer(pages_cors_layer())
 }
 
