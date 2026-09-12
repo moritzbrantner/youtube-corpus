@@ -32,10 +32,12 @@ export type BrowserCaptionAcquisition = {
   track: BrowserCaptionTrack;
   player: BrowserPlayerEvidence;
   client: string;
+  endpoint: string;
 };
 
 export type BrowserAcquisitionAttempt = {
   client: string;
+  endpoint: string;
   stage: "player" | "captions";
   outcome: "blocked" | "http-error" | "no-captions" | "playability" | "empty" | "invalid";
   detail: string;
@@ -56,7 +58,31 @@ type InnertubeClient = {
   context: Record<string, unknown>;
 };
 
-const PLAYER_ENDPOINT = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
+type PlayerEndpoint = {
+  id: string;
+  url: string;
+  contentType?: string;
+};
+
+// The release endpoint is also exposed by current YouTube.js and is useful for
+// browser callers because a string POST can stay a CORS-simple request. Keep
+// the normal YouTube endpoint as fallback rather than depending on the sandbox
+// endpoint as a single authority.
+const PLAYER_ENDPOINTS: PlayerEndpoint[] = [
+  {
+    id: "release",
+    url: "https://release-youtubei.sandbox.googleapis.com/youtubei/v1/player",
+  },
+  {
+    id: "youtube-simple",
+    url: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+  },
+  {
+    id: "youtube-json",
+    url: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+    contentType: "application/json",
+  },
+];
 
 // Keep this bounded to clients that yt-dlp currently models as not requiring a
 // subtitles PO token. Media/GVS policy is intentionally irrelevant here.
@@ -113,126 +139,177 @@ export async function acquireYouTubeCaptions(
   await ensureWasm();
   const attempts: BrowserAcquisitionAttempt[] = [];
 
-  for (const client of INNERTUBE_CLIENTS) {
-    let rawPlayer: unknown;
-    try {
-      const response = await fetcher(PLAYER_ENDPOINT, {
-        method: "POST",
-        mode: "cors",
-        credentials: "omit",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(playerRequest(parsed, client)),
-      });
-      if (!response.ok) {
+  for (const endpoint of PLAYER_ENDPOINTS) {
+    for (const client of INNERTUBE_CLIENTS) {
+      const player = await fetchPlayerEvidence(parsed, endpoint, client, attempts, fetcher);
+      if (!player) continue;
+
+      if (player.playabilityStatus !== "OK") {
         attempts.push({
           client: client.id,
+          endpoint: endpoint.id,
           stage: "player",
-          outcome: "http-error",
-          detail: `HTTP ${response.status}`,
+          outcome: "playability",
+          detail: player.playabilityReason ?? player.playabilityStatus,
         });
         continue;
       }
-      rawPlayer = await response.json();
-    } catch (error) {
-      attempts.push({
-        client: client.id,
-        stage: "player",
-        outcome: "blocked",
-        detail: networkError(error),
-      });
-      continue;
-    }
-
-    let player: BrowserPlayerEvidence;
-    try {
-      player = extractPlayerResponse(rawPlayer) as BrowserPlayerEvidence;
-    } catch (error) {
-      attempts.push({
-        client: client.id,
-        stage: "player",
-        outcome: "invalid",
-        detail: errorMessage(error),
-      });
-      continue;
-    }
-
-    if (player.playabilityStatus !== "OK") {
-      attempts.push({
-        client: client.id,
-        stage: "player",
-        outcome: "playability",
-        detail: player.playabilityReason ?? player.playabilityStatus,
-      });
-      continue;
-    }
-    if (player.captionTracks.length === 0) {
-      attempts.push({
-        client: client.id,
-        stage: "player",
-        outcome: "no-captions",
-        detail: "player response contains no caption tracks",
-      });
-      continue;
-    }
-
-    const selected = selectCaptionTrack(player.captionTracks, preferredLanguages) as
-      | BrowserCaptionTrack
-      | null
-      | undefined;
-    if (!selected) {
-      attempts.push({
-        client: client.id,
-        stage: "player",
-        outcome: "no-captions",
-        detail: "no usable caption track matched",
-      });
-      continue;
-    }
-
-    try {
-      const captionUrl = captionJson3Url(selected.baseUrl);
-      const response = await fetcher(captionUrl, {
-        method: "GET",
-        mode: "cors",
-        credentials: "omit",
-      });
-      if (!response.ok) {
+      if (player.captionTracks.length === 0) {
         attempts.push({
           client: client.id,
-          stage: "captions",
-          outcome: "http-error",
-          detail: `${selected.languageCode}: HTTP ${response.status}`,
+          endpoint: endpoint.id,
+          stage: "player",
+          outcome: "no-captions",
+          detail: "player response contains no caption tracks",
         });
         continue;
       }
-      const payload = await response.text();
-      if (!payload.trim()) {
+
+      const selected = selectCaptionTrack(player.captionTracks, preferredLanguages) as
+        | BrowserCaptionTrack
+        | null
+        | undefined;
+      if (!selected) {
         attempts.push({
           client: client.id,
-          stage: "captions",
-          outcome: "empty",
-          detail: `${selected.languageCode}: YouTube returned an empty timed-text body`,
+          endpoint: endpoint.id,
+          stage: "player",
+          outcome: "no-captions",
+          detail: "no usable caption track matched",
         });
         continue;
       }
-      const transcriptText = json3ToWebVtt(payload);
+
+      const transcriptText = await fetchCaptionTrack(
+        selected,
+        endpoint,
+        client,
+        attempts,
+        fetcher,
+      );
+      if (!transcriptText) continue;
+
       return {
         transcriptText,
         track: selected,
         player,
         client: client.id,
+        endpoint: endpoint.id,
       };
-    } catch (error) {
-      attempts.push({
-        client: client.id,
-        stage: "captions",
-        outcome: error instanceof SyntaxError ? "invalid" : "blocked",
-        detail: `${selected.languageCode}: ${networkError(error)}`,
-      });
     }
   }
 
   throw new BrowserYouTubeAcquisitionError(acquisitionFailureMessage(attempts), attempts);
+}
+
+async function fetchPlayerEvidence(
+  parsed: ParsedYouTubeUrl,
+  endpoint: PlayerEndpoint,
+  client: InnertubeClient,
+  attempts: BrowserAcquisitionAttempt[],
+  fetcher: typeof fetch,
+): Promise<BrowserPlayerEvidence | null> {
+  try {
+    const headers = endpoint.contentType ? { "Content-Type": endpoint.contentType } : undefined;
+    const response = await fetcher(endpoint.url, {
+      method: "POST",
+      mode: "cors",
+      credentials: "omit",
+      headers,
+      body: JSON.stringify(playerRequest(parsed, client)),
+    });
+    if (!response.ok) {
+      attempts.push({
+        client: client.id,
+        endpoint: endpoint.id,
+        stage: "player",
+        outcome: "http-error",
+        detail: `HTTP ${response.status}`,
+      });
+      return null;
+    }
+    const rawPlayer = await response.json();
+    try {
+      return extractPlayerResponse(rawPlayer) as BrowserPlayerEvidence;
+    } catch (error) {
+      attempts.push({
+        client: client.id,
+        endpoint: endpoint.id,
+        stage: "player",
+        outcome: "invalid",
+        detail: errorMessage(error),
+      });
+      return null;
+    }
+  } catch (error) {
+    attempts.push({
+      client: client.id,
+      endpoint: endpoint.id,
+      stage: "player",
+      outcome: "blocked",
+      detail: networkError(error),
+    });
+    return null;
+  }
+}
+
+async function fetchCaptionTrack(
+  selected: BrowserCaptionTrack,
+  endpoint: PlayerEndpoint,
+  client: InnertubeClient,
+  attempts: BrowserAcquisitionAttempt[],
+  fetcher: typeof fetch,
+): Promise<string | null> {
+  try {
+    const captionUrl = captionJson3Url(selected.baseUrl);
+    const response = await fetcher(captionUrl, {
+      method: "GET",
+      mode: "cors",
+      credentials: "omit",
+    });
+    if (!response.ok) {
+      attempts.push({
+        client: client.id,
+        endpoint: endpoint.id,
+        stage: "captions",
+        outcome: "http-error",
+        detail: `${selected.languageCode}: HTTP ${response.status}`,
+      });
+      return null;
+    }
+    const payload = await response.text();
+    if (!payload.trim()) {
+      attempts.push({
+        client: client.id,
+        endpoint: endpoint.id,
+        stage: "captions",
+        outcome: "empty",
+        detail: `${selected.languageCode}: YouTube returned an empty timed-text body`,
+      });
+      return null;
+    }
+    try {
+      return json3ToWebVtt(payload);
+    } catch (error) {
+      attempts.push({
+        client: client.id,
+        endpoint: endpoint.id,
+        stage: "captions",
+        outcome: "invalid",
+        detail: `${selected.languageCode}: ${errorMessage(error)}`,
+      });
+      return null;
+    }
+  } catch (error) {
+    attempts.push({
+      client: client.id,
+      endpoint: endpoint.id,
+      stage: "captions",
+      outcome: "blocked",
+      detail: `${selected.languageCode}: ${networkError(error)}`,
+    });
+    return null;
+  }
 }
 
 export function captionJson3Url(baseUrl: string) {
@@ -286,7 +363,7 @@ function acquisitionFailureMessage(attempts: BrowserAcquisitionAttempt[]) {
   if (attempts.some((attempt) => attempt.outcome === "empty")) {
     return "YouTube exposed caption tracks but returned empty timed-text data. This commonly indicates proof-of-origin enforcement. Paste/import the transcript, or use local yt-dlp.";
   }
-  if (attempts.every((attempt) => attempt.outcome === "no-captions")) {
+  if (attempts.length > 0 && attempts.every((attempt) => attempt.outcome === "no-captions")) {
     return "No public caption track was exposed for this video. Paste/import a transcript or use local ASR.";
   }
   const last = attempts.at(-1);
