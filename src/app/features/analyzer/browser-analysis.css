@@ -1,0 +1,95 @@
+.browser-transcript-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.browser-transcript-heading,
+.browser-transcript-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.browser-transcript-heading label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.browser-transcript-heading span,
+.browser-transcript-actions span,
+.browser-analysis-note,
+.browser-provenance {
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.browser-transcript-editor textarea {
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  box-sizing: border-box;
+  padding: 14px 15px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  outline: none;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
+  line-height: 1.55;
+}
+
+.browser-transcript-editor textarea:focus {
+  border-color: var(--foreground);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--foreground) 12%, transparent);
+}
+
+.browser-file-button {
+  position: relative;
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--foreground);
+  background: var(--background);
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.browser-file-button:hover {
+  border-color: var(--foreground);
+}
+
+.browser-file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.browser-analysis-note {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.browser-provenance {
+  margin: 0 0 18px;
+}
+
+@media (max-width: 720px) {
+  .browser-transcript-heading,
+  .browser-transcript-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
