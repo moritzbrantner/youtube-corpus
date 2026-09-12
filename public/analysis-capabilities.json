@@ -1,14 +1,18 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "surface": "youtube-video-analyzer",
   "delivery": "static-github-pages",
-  "input": "youtube-video-url-plus-transcript",
+  "input": "youtube-video-url",
   "pagesStandalone": true,
   "browser": {
     "owns": [
       "youtube-url-validation",
       "canonical-video-url",
       "privacy-enhanced-preview",
+      "innertube-player-request",
+      "caption-track-selection",
+      "signed-timedtext-fetch",
+      "json3-to-webvtt-wasm-normalization",
       "plain-transcript-import",
       "webvtt-import",
       "srt-import",
@@ -18,22 +22,37 @@
     ],
     "doesNotOwn": [
       "youtube-media-download",
-      "youtube-caption-download",
-      "automatic-youtube-metadata-download",
+      "youtube-authentication",
+      "youtube-proof-of-origin-generation",
       "whisper-asr",
       "postgres-persistence",
       "nlp-stack-authoritative-analysis",
       "multimodal-analysis"
     ],
+    "captionAcquisition": {
+      "directYoutube": true,
+      "bestEffort": true,
+      "thirdPartyProxy": false,
+      "clients": ["ios", "android", "web_embedded"],
+      "manualFallback": ["paste", "vtt", "srt", "txt"],
+      "failureModes": [
+        "cors-policy",
+        "proof-of-origin-enforcement",
+        "authentication-required",
+        "captions-disabled",
+        "embedding-disabled"
+      ]
+    },
     "persistence": "none",
+    "extractionEngine": "youtube-browser-wasm@1",
     "analysisEngine": "youtube-corpus-browser-lexical@1"
   },
   "backend": {
     "requiredForPages": false,
-    "requiredForAutomatedYoutubeIngest": true,
+    "requiredForPersistentCorpusIngest": true,
     "requiredForFullAnalysis": true,
     "operations": [
-      "yt-dlp-metadata",
+      "yt-dlp-metadata-and-caption-fallback",
       "manual-and-auto-caption-ingest",
       "transcript-normalization-and-indexing",
       "text-lexical-analysis",
@@ -44,10 +63,10 @@
   },
   "transcriptPreference": ["caption_manual", "caption_auto", "asr"],
   "analysis": {
-    "pagesTranscript": "user-provided-vtt-srt-or-text",
+    "pagesTranscript": "direct-youtube-when-allowed-with-user-import-fallback",
     "pagesLexical": "deterministic-browser-advisory",
-    "metadata": "available-after-local-ingest",
-    "transcript": "available-from-browser-import-or-local-ingest",
+    "metadata": "best-effort-from-player-response-or-authoritative-after-local-ingest",
+    "transcript": "available-from-direct-browser-captions-user-import-or-local-ingest",
     "lexical": "authoritative-text-lexical-after-local-ingest",
     "visualTimeline": "reported-only-when-evidence-exists",
     "audioFeatures": "reported-only-when-evidence-exists"
@@ -55,7 +74,9 @@
   "privacy": {
     "staticSiteStoresMedia": false,
     "staticSitePersistsTranscript": false,
+    "thirdPartyCaptionProxy": false,
     "previewHost": "youtube-nocookie.com",
+    "directCaptionHosts": ["youtube.com"],
     "localBackendPersistence": "configured-youtube-corpus-work-directory-and-postgres"
   }
 }
