@@ -2965,7 +2965,6 @@ dependencies = [
  "chrono",
  "clap",
  "mime_guess",
- "moenarch-jobs-core",
  "moenarch-runtime-core",
  "moenarch-text-core",
  "moenarch-text-embeddings",
