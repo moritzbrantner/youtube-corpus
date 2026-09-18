@@ -14,3 +14,4 @@ fi
 cargo test --test db_schema -- --ignored
 cargo test --test db_behavior -- --ignored
 cargo test --test multimodal_db -- --ignored
+cargo test --test discovery_db -- --ignored

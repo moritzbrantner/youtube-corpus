@@ -1,0 +1,90 @@
+{
+  "format": "@moritzbrantner/workflow/compiled",
+  "version": 1,
+  "nodes": [
+    {
+      "id": "claim",
+      "label": "Claim discovery",
+      "kind": "youtube_corpus.frontier.claim",
+      "outputs": [{ "id": "candidate" }, { "id": "found" }]
+    },
+    {
+      "id": "if-found",
+      "label": "Candidate found?",
+      "kind": "control.if",
+      "inputs": [{ "id": "value" }, { "id": "condition" }],
+      "outputs": [{ "id": "true" }, { "id": "false" }]
+    },
+    {
+      "id": "ingest",
+      "label": "Ingest discovery",
+      "kind": "youtube_corpus.ingest",
+      "inputs": [{ "id": "candidate" }],
+      "outputs": [{ "id": "result" }]
+    },
+    {
+      "id": "complete",
+      "label": "Complete discovery",
+      "kind": "youtube_corpus.frontier.complete",
+      "inputs": [{ "id": "result" }],
+      "outputs": [{ "id": "result" }]
+    },
+    {
+      "id": "done",
+      "label": "Processed",
+      "kind": "control.end",
+      "inputs": [{ "id": "in" }]
+    },
+    {
+      "id": "idle",
+      "label": "Frontier empty",
+      "kind": "control.end",
+      "inputs": [{ "id": "in" }]
+    }
+  ],
+  "edges": [
+    {
+      "id": "claim-candidate",
+      "sourceNodeId": "claim",
+      "sourcePortId": "candidate",
+      "targetNodeId": "if-found",
+      "targetPortId": "value"
+    },
+    {
+      "id": "claim-found",
+      "sourceNodeId": "claim",
+      "sourcePortId": "found",
+      "targetNodeId": "if-found",
+      "targetPortId": "condition"
+    },
+    {
+      "id": "found-ingest",
+      "sourceNodeId": "if-found",
+      "sourcePortId": "true",
+      "targetNodeId": "ingest",
+      "targetPortId": "candidate"
+    },
+    {
+      "id": "ingest-complete",
+      "sourceNodeId": "ingest",
+      "sourcePortId": "result",
+      "targetNodeId": "complete",
+      "targetPortId": "result"
+    },
+    {
+      "id": "complete-done",
+      "sourceNodeId": "complete",
+      "sourcePortId": "result",
+      "targetNodeId": "done",
+      "targetPortId": "in"
+    },
+    {
+      "id": "not-found-idle",
+      "sourceNodeId": "if-found",
+      "sourcePortId": "false",
+      "targetNodeId": "idle",
+      "targetPortId": "in"
+    }
+  ],
+  "order": ["claim", "if-found", "ingest", "complete", "done", "idle"]
+}
