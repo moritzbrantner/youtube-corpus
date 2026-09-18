@@ -585,7 +585,7 @@ export default function App() {
   React.useEffect(() => {
     const run = activeIngestRun.data;
     const jobStatus = run?.job?.status;
-    if (!run || !jobStatus || jobStatus === "running" || jobStatus === "queued") {
+    if (!run || !jobStatus || jobStatus === "running") {
       return;
     }
     const refreshKey = `${run.id}:${jobStatus}`;
