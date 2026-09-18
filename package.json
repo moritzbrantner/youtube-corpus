@@ -10,7 +10,7 @@
     "dev:frontend": "bun run build:wasm && vite",
     "captions:bridge": "cargo run -- --no-open",
     "build:wasm": "wasm-pack build crates/youtube-browser-wasm --target web --release --out-dir ../../src/app/features/analyzer/wasm --out-name youtube_browser_wasm",
-    "build": "bun run build:wasm && tsc && vite build",
+    "build": "bun run build:wasm && bun run build:prepared",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "preview": "vite preview",
@@ -22,7 +22,8 @@
     "verify:yt-dlp": "cargo test --test yt_dlp_integration -- --ignored",
     "verify:release": "bun run verify:fast && bun run verify:postgres",
     "verify:ci": "bun run verify:release",
-    "verify": "bun run verify:release"
+    "verify": "bun run verify:release",
+    "build:prepared": "tsc && vite build"
   },
   "dependencies": {
     "@moritzbrantner/ui": "1.0.0",
