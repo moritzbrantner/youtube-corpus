@@ -44,9 +44,41 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag_name=v$version" >> "$GITHUB_OUTPUT"
 
+  web-artifact:
+    name: Build or reuse embedded web artifact
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+    uses: moritzbrantner/reusable-workflows/.github/workflows/build-artifact.yml@5291d5162b128faca9dd83edba24e7342730e604
+    with:
+      source_sha: ${{ github.sha }}
+      artifact_key: youtube-corpus-embedded-web-v1
+      bun_version: "1.3.14"
+      rust_toolchain: "1.98.1"
+      rust_targets: wasm32-unknown-unknown
+      cache_bun: true
+      bun_cache_dependency_path: bun.lock
+      cache_cargo: true
+      cargo_cache_dependency_path: Cargo.lock
+      use_environment_v1: false
+      setup_command: |
+        bun install --frozen-lockfile
+        cargo install wasm-pack --version 0.14.0 --locked
+      build_command: bun run build
+      artifact_paths: dist
+      reuse_across_runs: true
+      artifact_retention_days: 7
+      timeout_minutes: 30
+
   build:
     name: Build ${{ matrix.target }}
-    needs: prepare
+    needs:
+      - prepare
+      - web-artifact
+    permissions:
+      actions: read
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -94,19 +126,10 @@ jobs:
           path: visual-analysis
           token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.14"
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-          targets: wasm32-unknown-unknown
-
-      - name: Install wasm-pack
-        run: if ! command -v wasm-pack; then cargo install wasm-pack --version 0.14.0 --locked; fi
 
       - name: Verify native target
         run: |
@@ -117,11 +140,18 @@ jobs:
             exit 1
           fi
 
-      - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build embedded web UI
-        run: bun run build
+      - name: Consume verified embedded web artifact
+        uses: moritzbrantner/reusable-workflows/.github/actions/consume-build-artifact@5291d5162b128faca9dd83edba24e7342730e604
+        with:
+          producer_run_id: ${{ needs.web-artifact.outputs.producer_run_id }}
+          receipt_artifact_name: ${{ needs.web-artifact.outputs.receipt_artifact_name }}
+          artifact_name: ${{ needs.web-artifact.outputs.artifact_name }}
+          artifact_digest: ${{ needs.web-artifact.outputs.artifact_digest }}
+          source_sha: ${{ needs.web-artifact.outputs.source_sha }}
+          artifact_key: ${{ needs.web-artifact.outputs.artifact_key }}
+          identity_digest: ${{ needs.web-artifact.outputs.identity_digest }}
+          destination_path: youtube-corpus/dist
+          github_token: ${{ github.token }}
 
       - name: Check formatting
         run: cargo fmt --check
