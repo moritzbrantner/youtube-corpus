@@ -1074,17 +1074,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "moenarch-jobs-core"
-version = "0.1.2"
-dependencies = [
- "chrono",
- "moenarch-runtime-core",
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
 name = "moenarch-math-linear"
 version = "0.1.1"
 dependencies = [
@@ -1160,7 +1149,6 @@ dependencies = [
 name = "moenarch-text-core"
 version = "0.1.1"
 dependencies = [
- "moenarch-jobs-core",
  "moenarch-runtime-core",
  "moenarch-video-analysis-core",
  "serde",
