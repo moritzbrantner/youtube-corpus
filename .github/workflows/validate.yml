@@ -14,6 +14,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-web-artifact:
+    name: Build or reuse embedded web artifact
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+    uses: moritzbrantner/reusable-workflows/.github/workflows/build-artifact.yml@5291d5162b128faca9dd83edba24e7342730e604
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      artifact_key: youtube-corpus-embedded-web-v1
+      bun_version: "1.3.14"
+      rust_toolchain: "1.98.1"
+      rust_targets: wasm32-unknown-unknown
+      cache_bun: true
+      bun_cache_dependency_path: bun.lock
+      cache_cargo: true
+      cargo_cache_dependency_path: Cargo.lock
+      use_environment_v1: false
+      setup_command: |
+        bun install --frozen-lockfile
+        cargo install wasm-pack --version 0.14.0 --locked
+      build_command: bun run build
+      artifact_paths: dist
+      reuse_across_runs: true
+      artifact_retention_days: 7
+      timeout_minutes: 30
+
   repository-validation:
     name: Repository-local validation
     runs-on: ubuntu-latest
@@ -36,9 +63,6 @@ jobs:
           targets: wasm32-unknown-unknown
           components: rustfmt
 
-      - name: Install wasm-pack
-        run: if ! command -v wasm-pack; then cargo install wasm-pack --version 0.14.0 --locked; fi
-
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
@@ -54,9 +78,6 @@ jobs:
       - name: Test standalone browser analysis
         run: bun run test:frontend
 
-      - name: Build frontend
-        run: bun run build
-
       - name: Check repository Rust formatting
         run: cargo fmt --check
 
@@ -64,3 +85,37 @@ jobs:
         run: |
           echo "The standalone browser extractor is repository-owned and fully validated here, including its Rust/Wasm build."
           echo "The larger Rust server graph, clippy, tests, and Postgres integration checks still run in the local coding workspace against the exact sibling source graph."
+
+  artifact-validation:
+    name: Embedded web artifact validation
+    needs: build-web-artifact
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ needs.build-web-artifact.outputs.source_sha }}
+
+      - name: Consume verified embedded web artifact
+        uses: moritzbrantner/reusable-workflows/.github/actions/consume-build-artifact@5291d5162b128faca9dd83edba24e7342730e604
+        with:
+          producer_run_id: ${{ needs.build-web-artifact.outputs.producer_run_id }}
+          receipt_artifact_name: ${{ needs.build-web-artifact.outputs.receipt_artifact_name }}
+          artifact_name: ${{ needs.build-web-artifact.outputs.artifact_name }}
+          artifact_digest: ${{ needs.build-web-artifact.outputs.artifact_digest }}
+          source_sha: ${{ needs.build-web-artifact.outputs.source_sha }}
+          artifact_key: ${{ needs.build-web-artifact.outputs.artifact_key }}
+          identity_digest: ${{ needs.build-web-artifact.outputs.identity_digest }}
+          destination_path: dist
+          github_token: ${{ github.token }}
+
+      - name: Verify embedded web artifact
+        run: |
+          test -s dist/index.html
+          test -s dist/analysis-capabilities.json
+          grep -q 'youtube-corpus' dist/index.html
+          jq -e '.pagesStandalone == true and .backend.requiredForPages == false and .browser.captionAcquisition.directYoutube == true' dist/analysis-capabilities.json >/dev/null
+          find dist -type f -name '*.wasm' -size +0c | grep -q .
