@@ -551,11 +551,7 @@ async function waitForIngest(jobId: string, onProgress: (message: string) => voi
     if (run.status === "completed" || run.job?.status === "succeeded") {
       return;
     }
-    if (
-      run.status === "failed" ||
-      run.job?.status === "failed" ||
-      run.job?.status === "cancelled"
-    ) {
+    if (run.status === "failed" || run.job?.status === "failed") {
       throw new Error(run.job?.failure?.message ?? "Video ingestion failed.");
     }
     const progress = run.job?.progress;

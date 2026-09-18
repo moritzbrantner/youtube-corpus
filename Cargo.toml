@@ -43,7 +43,6 @@ text-embeddings = { package = "moenarch-text-embeddings", path = "../nlp-stack/c
 text-lexical = { package = "moenarch-text-lexical", path = "../nlp-stack/crates/text/text-lexical" }
 text-transcripts = { package = "moenarch-text-transcripts", path = "../nlp-stack/crates/text/text-transcripts" }
 runtime-core = { package = "moenarch-runtime-core", path = "../moenarch-foundation/crates/runtime/runtime-core" }
-jobs-core = { package = "moenarch-jobs-core", path = "../moenarch-foundation/crates/jobs/jobs-core" }
 video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", path = "../visual-analysis/crates/video/video-analysis-ffmpeg" }
 video-analysis-ingest = { package = "moenarch-video-analysis-ingest", path = "../visual-analysis/crates/video/video-analysis-ingest" }
 
