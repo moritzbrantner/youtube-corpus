@@ -4,7 +4,7 @@
 
 ## Corpus interoperability
 
-1. [ ] **Define a stable transcript-span export contract.**
+1. [x] **Define a stable transcript-span export contract.**
    - Export video/source identity separately from transcript spans.
    - Preserve video id, source URL, channel/uploader identity, title, language, transcript source, start/end timestamps, verbatim text, and content hash.
    - Include enough revision/provenance information to distinguish caption, ASR, parser, and re-ingest changes.
