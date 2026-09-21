@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use anyhow::{Context, ensure};
+use anyhow::{ensure, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -77,7 +77,10 @@ pub fn fetch_sponsorblock_snapshot(
     let youtube_id = youtube_id.trim();
     ensure!(!youtube_id.is_empty(), "YouTube video id is required");
     let categories = normalized_categories(categories);
-    ensure!(!categories.is_empty(), "at least one SponsorBlock category is required");
+    ensure!(
+        !categories.is_empty(),
+        "at least one SponsorBlock category is required"
+    );
 
     let video_hash = sha256_hex(youtube_id.as_bytes());
     let hash_prefix = video_hash[..4].to_string();
@@ -215,15 +218,14 @@ pub async fn refresh_sponsorblock_for_video(
     video_id: Uuid,
     categories: &[String],
 ) -> anyhow::Result<SponsorBlockSnapshot> {
-    let youtube_id = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT youtube_id FROM videos WHERE id = $1",
-    )
-    .bind(video_id)
-    .fetch_optional(pool)
-    .await?
-    .flatten()
-    .filter(|value| !value.trim().is_empty())
-    .ok_or_else(|| anyhow::anyhow!("video {video_id} has no YouTube id"))?;
+    let youtube_id =
+        sqlx::query_scalar::<_, Option<String>>("SELECT youtube_id FROM videos WHERE id = $1")
+            .bind(video_id)
+            .fetch_optional(pool)
+            .await?
+            .flatten()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or_else(|| anyhow::anyhow!("video {video_id} has no YouTube id"))?;
 
     let snapshot = fetch_sponsorblock_snapshot(&youtube_id, categories)?;
     persist_sponsorblock_snapshot(pool, video_id, &snapshot).await?;
@@ -290,7 +292,10 @@ pub async fn latest_sponsorblock_snapshot(
 }
 
 fn segment_from_api(value: ApiSegment) -> anyhow::Result<SponsorBlockSegment> {
-    ensure!(value.segment.len() == 2, "SponsorBlock segment must contain start and end");
+    ensure!(
+        value.segment.len() == 2,
+        "SponsorBlock segment must contain start and end"
+    );
     let start = value.segment[0];
     let end = value.segment[1];
     ensure!(
@@ -403,13 +408,11 @@ mod tests {
                 "UUID": "bad"
             }]
         }]);
-        assert!(
-            parse_hash_response(
-                youtube_id,
-                &["sponsor".to_string()],
-                &serde_json::to_vec(&json).unwrap(),
-            )
-            .is_err()
-        );
+        assert!(parse_hash_response(
+            youtube_id,
+            &["sponsor".to_string()],
+            &serde_json::to_vec(&json).unwrap(),
+        )
+        .is_err());
     }
 }
