@@ -926,6 +926,7 @@ fn parse_source_kind(value: &str) -> Result<SourceKind, StatusQueryError> {
         "caption_manual" => Ok(SourceKind::CaptionManual),
         "caption_auto" => Ok(SourceKind::CaptionAuto),
         "asr" => Ok(SourceKind::Asr),
+        "visual_ocr" => Ok(SourceKind::VisualOcr),
         _ => Err(StatusQueryError::InvalidSourceKind(value.to_string())),
     }
 }
