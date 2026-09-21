@@ -21,6 +21,7 @@ pub mod source_span_export;
 pub mod status;
 pub mod subscriptions;
 pub mod transcript_quality;
+pub mod visual_timeline;
 pub mod video_analysis_web;
 pub mod web;
 pub mod youtube;
@@ -62,4 +63,12 @@ pub use subscriptions::{
 pub use transcript_quality::{
     list_corpus_quality, list_video_quality, refresh_corpus_quality, refresh_video_quality,
     TranscriptQualitySummary,
+};
+
+pub use visual_timeline::{
+    begin_visual_processing_run, list_video_scenes, list_visual_text_tracks, upsert_video_scene,
+    upsert_visual_text_observation, upsert_visual_text_track, BeginVisualProcessingRunRequest,
+    UpsertVideoSceneRequest, UpsertVisualTextObservationRequest, UpsertVisualTextTrackRequest,
+    VideoScene, VisualBoundingBox, VisualProcessingKind, VisualTextObservation, VisualTextRole,
+    VisualTextTrack,
 };
