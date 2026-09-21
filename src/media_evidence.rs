@@ -157,28 +157,29 @@ pub async fn export_media_evidence_batch(
     let scenes = scene_evidence(pool, video_id).await?;
     let ocr_observations = ocr_observation_evidence(pool, video_id).await?;
     let ocr_tracks = ocr_track_evidence(pool, video_id).await?;
-    let sponsorblock = latest_sponsorblock_snapshot(pool, video_id)
-        .await?
-        .map(|(snapshot_id, snapshot)| SponsorBlockEvidenceV1 {
-            snapshot_id: snapshot_id.to_string(),
-            response_hash: snapshot.response_hash,
-            data_license: SPONSORBLOCK_DATA_LICENSE.to_string(),
-            attribution: SPONSORBLOCK_ATTRIBUTION.to_string(),
-            categories: snapshot.categories,
-            segments: snapshot
-                .segments
-                .into_iter()
-                .map(|segment| SponsorBlockSegmentEvidenceV1 {
-                    uuid: segment.uuid,
-                    category: segment.category,
-                    action_type: segment.action_type,
-                    start_seconds: segment.start_seconds,
-                    end_seconds: segment.end_seconds,
-                    video_duration: segment.video_duration,
-                    metadata: segment.metadata,
-                })
-                .collect(),
-        });
+    let sponsorblock =
+        latest_sponsorblock_snapshot(pool, video_id)
+            .await?
+            .map(|(snapshot_id, snapshot)| SponsorBlockEvidenceV1 {
+                snapshot_id: snapshot_id.to_string(),
+                response_hash: snapshot.response_hash,
+                data_license: SPONSORBLOCK_DATA_LICENSE.to_string(),
+                attribution: SPONSORBLOCK_ATTRIBUTION.to_string(),
+                categories: snapshot.categories,
+                segments: snapshot
+                    .segments
+                    .into_iter()
+                    .map(|segment| SponsorBlockSegmentEvidenceV1 {
+                        uuid: segment.uuid,
+                        category: segment.category,
+                        action_type: segment.action_type,
+                        start_seconds: segment.start_seconds,
+                        end_seconds: segment.end_seconds,
+                        video_duration: segment.video_duration,
+                        metadata: segment.metadata,
+                    })
+                    .collect(),
+            });
 
     let revision_material = serde_json::json!({
         "video": &video,
