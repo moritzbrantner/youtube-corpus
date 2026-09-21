@@ -11,6 +11,7 @@ pub mod db;
 pub mod diagnostics;
 pub mod evaluation;
 pub mod ingest;
+pub mod media_evidence;
 pub mod multimodal;
 pub mod provenance;
 pub mod reprocessing;
@@ -18,6 +19,7 @@ pub mod research_quality_web;
 pub mod research_web;
 pub mod search;
 pub mod source_span_export;
+pub mod sponsorblock;
 pub mod status;
 pub mod subscriptions;
 pub mod transcript_quality;
@@ -71,4 +73,17 @@ pub use visual_timeline::{
     UpsertVideoSceneRequest, UpsertVisualTextObservationRequest, UpsertVisualTextTrackRequest,
     VideoScene, VisualBoundingBox, VisualProcessingKind, VisualTextObservation, VisualTextRole,
     VisualTextTrack,
+};
+
+pub use media_evidence::{
+    export_media_evidence_batch, BoundingBoxV1, EvidenceProducerV1, EvidenceVideoV1,
+    MediaEvidenceBatchV1, OcrObservationEvidenceV1, OcrTrackEvidenceV1, ProcessingEvidenceV1,
+    SceneEvidenceV1, SponsorBlockEvidenceV1, SponsorBlockSegmentEvidenceV1,
+    MEDIA_EVIDENCE_SCHEMA, MEDIA_EVIDENCE_VERSION_V1,
+};
+pub use sponsorblock::{
+    fetch_sponsorblock_snapshot, latest_sponsorblock_snapshot, parse_hash_response,
+    persist_sponsorblock_snapshot, refresh_sponsorblock_for_video, SponsorBlockSegment,
+    SponsorBlockSnapshot, DEFAULT_SPONSORBLOCK_CATEGORIES, SPONSORBLOCK_API_BASE,
+    SPONSORBLOCK_ATTRIBUTION, SPONSORBLOCK_DATA_LICENSE,
 };
