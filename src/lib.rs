@@ -17,6 +17,7 @@ pub mod reprocessing;
 pub mod research_quality_web;
 pub mod research_web;
 pub mod search;
+pub mod source_span_export;
 pub mod status;
 pub mod subscriptions;
 pub mod transcript_quality;
@@ -49,6 +50,10 @@ pub use multimodal::{
 };
 pub use reprocessing::{reprocess_video, ReprocessReport, ReprocessRequest, ReprocessStage};
 pub use search::{search_corpus, SearchReport, SearchRequest};
+pub use source_span_export::{
+    export_source_span_batch, SourceLocatorV1, SourceProducerV1, SourceRecordV1,
+    SourceSpanBatchV1, SourceSpanRecordV1,
+};
 pub use status::{corpus_status, list_videos, CorpusStatusReport, VideoStatus};
 pub use subscriptions::{
     add_subscription, check_subscriptions, list_subscriptions, CheckSubscriptionsReport,
