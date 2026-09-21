@@ -203,9 +203,9 @@ fn build_source_span_batch(
             });
         let source_hash = sha256(&stream_text);
         let revision_material = serde_json::json!({
-            "contentHash": source_hash,
-            "sourceKind": first.source_kind,
-            "language": first.stream_language,
+            "contentHash": &source_hash,
+            "sourceKind": &first.source_kind,
+            "language": &first.stream_language,
             "spans": segments
                 .iter()
                 .map(|segment| serde_json::json!({
@@ -214,7 +214,7 @@ fn build_source_span_batch(
                     "textHash": sha256(&segment.text),
                     "startSeconds": segment.start_seconds,
                     "endSeconds": segment.end_seconds,
-                    "language": segment.language,
+                    "language": &segment.language,
                 }))
                 .collect::<Vec<_>>(),
         });
