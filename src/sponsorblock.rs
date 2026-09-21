@@ -110,6 +110,7 @@ pub fn parse_hash_response(
     bytes: &[u8],
 ) -> anyhow::Result<SponsorBlockSnapshot> {
     let expected_hash = sha256_hex(youtube_id.as_bytes());
+    let categories = normalized_categories(categories);
     let matches: Vec<HashMatch> = serde_json::from_slice(bytes)?;
     let selected = matches
         .into_iter()
@@ -122,12 +123,15 @@ pub fn parse_hash_response(
         .map(segment_from_api)
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    let canonical = serde_json::to_vec(&segments)?;
+    let canonical = serde_json::to_vec(&serde_json::json!({
+        "categories": &categories,
+        "segments": &segments,
+    }))?;
     Ok(SponsorBlockSnapshot {
         youtube_id: youtube_id.to_string(),
         video_hash: expected_hash.clone(),
         hash_prefix: expected_hash[..4].to_string(),
-        categories: normalized_categories(categories),
+        categories,
         response_hash: format!("sha256:{}", sha256_hex(&canonical)),
         segments,
     })
