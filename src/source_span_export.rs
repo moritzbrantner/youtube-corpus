@@ -69,6 +69,10 @@ pub enum SourceLocatorV1 {
         #[serde(skip_serializing_if = "Option::is_none")]
         paragraph_ordinal: Option<usize>,
         #[serde(skip_serializing_if = "Option::is_none")]
+        page: Option<u32>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        section: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
         source_selector: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         heading_path: Vec<String>,
@@ -90,6 +94,10 @@ struct TranscriptSpanExportInput {
     youtube_id: Option<String>,
     source_url: String,
     title: Option<String>,
+    channel: Option<String>,
+    channel_id: Option<String>,
+    uploader: Option<String>,
+    uploader_id: Option<String>,
     source_kind: String,
     stream_language: Option<String>,
     full_text: Option<String>,
@@ -114,7 +122,8 @@ pub async fn export_source_span_batch(
         "SELECT ts.id AS segment_id, ts.stream_id, ts.video_id, ts.segment_index,
                 ts.start_seconds, ts.end_seconds, ts.text, ts.language,
                 st.source_kind, st.language AS stream_language, st.full_text,
-                v.youtube_id, v.source_url, v.title
+                v.youtube_id, v.source_url, v.title, v.channel, v.channel_id,
+                v.uploader, v.uploader_id
          FROM transcript_segments ts
          JOIN transcript_streams st ON st.id = ts.stream_id
          JOIN videos v ON v.id = ts.video_id
@@ -135,6 +144,10 @@ pub async fn export_source_span_batch(
             youtube_id: row.try_get("youtube_id")?,
             source_url: row.try_get("source_url")?,
             title: row.try_get("title")?,
+            channel: row.try_get("channel")?,
+            channel_id: row.try_get("channel_id")?,
+            uploader: row.try_get("uploader")?,
+            uploader_id: row.try_get("uploader_id")?,
             source_kind: row.try_get("source_kind")?,
             stream_language: row.try_get("stream_language")?,
             full_text: row.try_get("full_text")?,
@@ -199,6 +212,18 @@ fn build_source_span_batch(
         if let Some(youtube_id) = &first.youtube_id {
             metadata.insert("youtubeId".to_string(), Value::String(youtube_id.clone()));
         }
+        if let Some(channel_id) = &first.channel_id {
+            metadata.insert("channelId".to_string(), Value::String(channel_id.clone()));
+        }
+        if let Some(uploader_id) = &first.uploader_id {
+            metadata.insert("uploaderId".to_string(), Value::String(uploader_id.clone()));
+        }
+        let mut creators = Vec::new();
+        for creator in [&first.channel, &first.uploader].into_iter().flatten() {
+            if !creator.trim().is_empty() && !creators.contains(creator) {
+                creators.push(creator.clone());
+            }
+        }
 
         sources.push(SourceRecordV1 {
             id: stream_id.clone(),
@@ -206,7 +231,7 @@ fn build_source_span_batch(
             revision: source_hash.clone(),
             uri: Some(first.source_url.clone()),
             title: first.title.clone(),
-            creators: Vec::new(),
+            creators,
             language: first.stream_language.clone(),
             content_hash: source_hash,
             metadata,
@@ -302,6 +327,10 @@ mod tests {
             youtube_id: Some("abc123".to_string()),
             source_url: "https://www.youtube.com/watch?v=abc123".to_string(),
             title: Some("Lecture".to_string()),
+            channel: Some("Lecture Channel".to_string()),
+            channel_id: Some("channel-1".to_string()),
+            uploader: Some("Lecturer".to_string()),
+            uploader_id: Some("uploader-1".to_string()),
             source_kind: "caption_manual".to_string(),
             stream_language: Some("en".to_string()),
             full_text: Some("First claim. Second claim.".to_string()),
