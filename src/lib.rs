@@ -23,8 +23,8 @@ pub mod sponsorblock;
 pub mod status;
 pub mod subscriptions;
 pub mod transcript_quality;
-pub mod visual_timeline;
 pub mod video_analysis_web;
+pub mod visual_timeline;
 pub mod web;
 pub mod youtube;
 pub mod yt_dlp;
@@ -78,8 +78,8 @@ pub use visual_timeline::{
 pub use media_evidence::{
     export_media_evidence_batch, BoundingBoxV1, EvidenceProducerV1, EvidenceVideoV1,
     MediaEvidenceBatchV1, OcrObservationEvidenceV1, OcrTrackEvidenceV1, ProcessingEvidenceV1,
-    SceneEvidenceV1, SponsorBlockEvidenceV1, SponsorBlockSegmentEvidenceV1,
-    MEDIA_EVIDENCE_SCHEMA, MEDIA_EVIDENCE_VERSION_V1,
+    SceneEvidenceV1, SponsorBlockEvidenceV1, SponsorBlockSegmentEvidenceV1, MEDIA_EVIDENCE_SCHEMA,
+    MEDIA_EVIDENCE_VERSION_V1,
 };
 pub use sponsorblock::{
     fetch_sponsorblock_snapshot, latest_sponsorblock_snapshot, parse_hash_response,
