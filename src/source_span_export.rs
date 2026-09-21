@@ -202,6 +202,23 @@ fn build_source_span_batch(
                     .join(" ")
             });
         let source_hash = sha256(&stream_text);
+        let revision_material = serde_json::json!({
+            "contentHash": source_hash,
+            "sourceKind": first.source_kind,
+            "language": first.stream_language,
+            "spans": segments
+                .iter()
+                .map(|segment| serde_json::json!({
+                    "id": segment.segment_id,
+                    "sequence": segment.segment_index,
+                    "textHash": sha256(&segment.text),
+                    "startSeconds": segment.start_seconds,
+                    "endSeconds": segment.end_seconds,
+                    "language": segment.language,
+                }))
+                .collect::<Vec<_>>(),
+        });
+        let revision = sha256(&serde_json::to_string(&revision_material)?);
         let mut metadata = BTreeMap::new();
         metadata.insert("videoId".to_string(), Value::String(first.video_id.to_string()));
         metadata.insert("streamId".to_string(), Value::String(stream_id.clone()));
@@ -228,7 +245,7 @@ fn build_source_span_batch(
         sources.push(SourceRecordV1 {
             id: stream_id.clone(),
             kind: "youtube_transcript".to_string(),
-            revision: source_hash.clone(),
+            revision,
             uri: Some(first.source_url.clone()),
             title: first.title.clone(),
             creators,
@@ -358,7 +375,8 @@ mod tests {
         assert_eq!(batch.producer.revision, "git:abc123");
         assert_eq!(batch.sources.len(), 1);
         assert!(batch.sources[0].content_hash.starts_with("sha256:"));
-        assert_eq!(batch.sources[0].revision, batch.sources[0].content_hash);
+        assert!(batch.sources[0].revision.starts_with("sha256:"));
+        assert_ne!(batch.sources[0].revision, batch.sources[0].content_hash);
         assert_eq!(
             batch.spans.iter().map(|span| span.sequence).collect::<Vec<_>>(),
             vec![0, 1]
@@ -375,6 +393,23 @@ mod tests {
             .spans
             .iter()
             .all(|span| span.content_hash.starts_with("sha256:")));
+    }
+
+    #[test]
+    fn source_revision_changes_when_timing_changes_but_text_does_not() {
+        let first = build_source_span_batch(
+            vec![input(0, "Claim.", 1.0, 2.0)],
+            "git:abc123",
+        )
+        .unwrap();
+        let second = build_source_span_batch(
+            vec![input(0, "Claim.", 1.5, 2.5)],
+            "git:abc123",
+        )
+        .unwrap();
+
+        assert_eq!(first.sources[0].content_hash, second.sources[0].content_hash);
+        assert_ne!(first.sources[0].revision, second.sources[0].revision);
     }
 
     #[test]
