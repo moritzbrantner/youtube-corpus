@@ -245,7 +245,10 @@ async fn append_visual_text_spans(
             input.end_seconds,
             "visual text",
         )?;
-        grouped.entry(input.run_id.to_string()).or_default().push(input);
+        grouped
+            .entry(input.run_id.to_string())
+            .or_default()
+            .push(input);
     }
 
     for (run_id, tracks) in &grouped {
@@ -279,7 +282,10 @@ async fn append_visual_text_spans(
         });
         let revision = sha256(&serde_json::to_string(&revision_material)?);
         let mut metadata = BTreeMap::new();
-        metadata.insert("videoId".to_string(), Value::String(first.video_id.to_string()));
+        metadata.insert(
+            "videoId".to_string(),
+            Value::String(first.video_id.to_string()),
+        );
         metadata.insert("runId".to_string(), Value::String(run_id.clone()));
         metadata.insert(
             "processor".to_string(),
@@ -294,8 +300,14 @@ async fn append_visual_text_spans(
             "modelVersion".to_string(),
             Value::String(first.model_version.clone()),
         );
-        metadata.insert("inputHash".to_string(), Value::String(first.input_hash.clone()));
-        metadata.insert("configHash".to_string(), Value::String(first.config_hash.clone()));
+        metadata.insert(
+            "inputHash".to_string(),
+            Value::String(first.input_hash.clone()),
+        );
+        metadata.insert(
+            "configHash".to_string(),
+            Value::String(first.config_hash.clone()),
+        );
 
         let mut creators = Vec::new();
         for creator in [&first.channel, &first.uploader].into_iter().flatten() {
@@ -320,9 +332,15 @@ async fn append_visual_text_spans(
         let source_id = format!("ocr:{run_id}");
         for (sequence, track) in tracks.into_iter().enumerate() {
             let mut metadata = BTreeMap::new();
-            metadata.insert("videoId".to_string(), Value::String(track.video_id.to_string()));
+            metadata.insert(
+                "videoId".to_string(),
+                Value::String(track.video_id.to_string()),
+            );
             metadata.insert("runId".to_string(), Value::String(run_id.clone()));
-            metadata.insert("visualTextRole".to_string(), Value::String(track.role.clone()));
+            metadata.insert(
+                "visualTextRole".to_string(),
+                Value::String(track.role.clone()),
+            );
             metadata.insert(
                 "mediaEvidenceRef".to_string(),
                 Value::String(track.track_id.to_string()),
@@ -330,8 +348,7 @@ async fn append_visual_text_spans(
             batch.spans.push(SourceSpanRecordV1 {
                 id: track.track_id.to_string(),
                 source_id: source_id.clone(),
-                sequence: u64::try_from(sequence)
-                    .context("OCR span sequence exceeds u64 range")?,
+                sequence: u64::try_from(sequence).context("OCR span sequence exceeds u64 range")?,
                 text: track.text.clone(),
                 content_hash: sha256(&track.text),
                 language: track.language.clone(),
