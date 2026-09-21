@@ -28,6 +28,11 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "transcript_segments",
     "ingest_runs",
     "corpus_subscriptions",
+    "video_scenes",
+    "visual_text_observations",
+    "visual_text_tracks",
+    "sponsorblock_snapshots",
+    "sponsorblock_segments",
 ];
 
 #[derive(RustEmbed)]
