@@ -1,4 +1,4 @@
-use anyhow::{Context, ensure};
+use anyhow::{ensure, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -61,7 +61,11 @@ pub struct SourceSpanRecordV1 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum SourceLocatorV1 {
     Text {
         byte_start: usize,
@@ -220,7 +224,10 @@ fn build_source_span_batch(
         });
         let revision = sha256(&serde_json::to_string(&revision_material)?);
         let mut metadata = BTreeMap::new();
-        metadata.insert("videoId".to_string(), Value::String(first.video_id.to_string()));
+        metadata.insert(
+            "videoId".to_string(),
+            Value::String(first.video_id.to_string()),
+        );
         metadata.insert("streamId".to_string(), Value::String(stream_id.clone()));
         metadata.insert(
             "transcriptSource".to_string(),
@@ -259,7 +266,10 @@ fn build_source_span_batch(
         .into_iter()
         .map(|input| {
             let mut metadata = BTreeMap::new();
-            metadata.insert("videoId".to_string(), Value::String(input.video_id.to_string()));
+            metadata.insert(
+                "videoId".to_string(),
+                Value::String(input.video_id.to_string()),
+            );
             metadata.insert(
                 "streamId".to_string(),
                 Value::String(input.stream_id.to_string()),
@@ -378,7 +388,11 @@ mod tests {
         assert!(batch.sources[0].revision.starts_with("sha256:"));
         assert_ne!(batch.sources[0].revision, batch.sources[0].content_hash);
         assert_eq!(
-            batch.spans.iter().map(|span| span.sequence).collect::<Vec<_>>(),
+            batch
+                .spans
+                .iter()
+                .map(|span| span.sequence)
+                .collect::<Vec<_>>(),
             vec![0, 1]
         );
         assert!(matches!(
@@ -397,18 +411,15 @@ mod tests {
 
     #[test]
     fn source_revision_changes_when_timing_changes_but_text_does_not() {
-        let first = build_source_span_batch(
-            vec![input(0, "Claim.", 1.0, 2.0)],
-            "git:abc123",
-        )
-        .unwrap();
-        let second = build_source_span_batch(
-            vec![input(0, "Claim.", 1.5, 2.5)],
-            "git:abc123",
-        )
-        .unwrap();
+        let first =
+            build_source_span_batch(vec![input(0, "Claim.", 1.0, 2.0)], "git:abc123").unwrap();
+        let second =
+            build_source_span_batch(vec![input(0, "Claim.", 1.5, 2.5)], "git:abc123").unwrap();
 
-        assert_eq!(first.sources[0].content_hash, second.sources[0].content_hash);
+        assert_eq!(
+            first.sources[0].content_hash,
+            second.sources[0].content_hash
+        );
         assert_ne!(first.sources[0].revision, second.sources[0].revision);
     }
 
@@ -426,7 +437,10 @@ mod tests {
         let value = serde_json::to_value(batch).unwrap();
 
         assert_eq!(value["schemaVersion"], 1);
-        assert_eq!(value["spans"][0]["sourceId"].as_str(), value["sources"][0]["id"].as_str());
+        assert_eq!(
+            value["spans"][0]["sourceId"].as_str(),
+            value["sources"][0]["id"].as_str()
+        );
         assert_eq!(value["spans"][0]["locator"]["kind"], "timed");
         assert_eq!(value["spans"][0]["locator"]["segmentIndex"], 0);
         assert_eq!(value["spans"][0]["locator"]["startSeconds"], 1.0);
