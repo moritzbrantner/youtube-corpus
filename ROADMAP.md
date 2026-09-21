@@ -46,7 +46,8 @@
    - Fetch segment annotations for a video without mutating or deleting the underlying transcript/media.
    - Preserve segment UUID, raw category/action vocabulary, start/end times, video-duration context, fetch time, API/source revision where available, and the exact request policy.
    - Treat SponsorBlock as community annotation evidence: useful for identifying sponsors, intros/outros, self-promotion, interaction reminders, and other non-core intervals, but never authoritative proof that content is philosophically irrelevant.
-   - Make network-backed refresh explicit and keep deterministic fixtures for tests.
+   - Respect SponsorBlock API/database licensing and attribution requirements; keep SponsorBlock-derived data explicitly attributable and do not silently mix it into differently licensed corpus exports.
+   - Make network-backed refresh explicit and use synthetic deterministic fixtures unless a test fixture intentionally carries the required SponsorBlock attribution/license.
 
 4. [ ] **Export one aligned media-evidence companion contract.**
    - Keep `source_span_interchange@1` focused on textual evidence.
