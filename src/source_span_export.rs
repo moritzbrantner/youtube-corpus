@@ -165,7 +165,188 @@ pub async fn export_source_span_batch(
         });
     }
 
-    build_source_span_batch(inputs, producer_revision)
+    let mut batch = build_source_span_batch(inputs, producer_revision)?;
+    append_visual_text_spans(pool, video_id, &mut batch).await?;
+    Ok(batch)
+}
+
+#[derive(Debug, Clone)]
+struct VisualTextSpanExportInput {
+    track_id: Uuid,
+    run_id: Uuid,
+    video_id: Uuid,
+    source_url: String,
+    title: Option<String>,
+    channel: Option<String>,
+    uploader: Option<String>,
+    processor: String,
+    processor_version: String,
+    model: String,
+    model_version: String,
+    input_hash: String,
+    config_hash: String,
+    role: String,
+    language: Option<String>,
+    start_seconds: Option<f64>,
+    end_seconds: Option<f64>,
+    text: String,
+}
+
+async fn append_visual_text_spans(
+    pool: &PgPool,
+    video_id: Option<Uuid>,
+    batch: &mut SourceSpanBatchV1,
+) -> anyhow::Result<()> {
+    let rows = sqlx::query(
+        "SELECT t.id AS track_id, t.run_id, t.video_id, t.role, t.language,
+                t.start_seconds, t.end_seconds, t.text,
+                r.processor, r.processor_version, r.model, r.model_version,
+                r.input_hash, r.config_hash,
+                v.source_url, v.title, v.channel, v.uploader
+         FROM visual_text_tracks t
+         JOIN media_processing_runs r ON r.id = t.run_id
+         JOIN videos v ON v.id = t.video_id
+         WHERE ($1::uuid IS NULL OR t.video_id = $1)
+         ORDER BY t.run_id, t.start_seconds NULLS LAST, t.track_key, t.id",
+    )
+    .bind(video_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut inputs = Vec::with_capacity(rows.len());
+    for row in rows {
+        inputs.push(VisualTextSpanExportInput {
+            track_id: row.try_get("track_id")?,
+            run_id: row.try_get("run_id")?,
+            video_id: row.try_get("video_id")?,
+            source_url: row.try_get("source_url")?,
+            title: row.try_get("title")?,
+            channel: row.try_get("channel")?,
+            uploader: row.try_get("uploader")?,
+            processor: row.try_get("processor")?,
+            processor_version: row.try_get("processor_version")?,
+            model: row.try_get("model")?,
+            model_version: row.try_get("model_version")?,
+            input_hash: row.try_get("input_hash")?,
+            config_hash: row.try_get("config_hash")?,
+            role: row.try_get("role")?,
+            language: row.try_get("language")?,
+            start_seconds: row.try_get("start_seconds")?,
+            end_seconds: row.try_get("end_seconds")?,
+            text: row.try_get("text")?,
+        });
+    }
+
+    let mut grouped = BTreeMap::<String, Vec<&VisualTextSpanExportInput>>::new();
+    for input in &inputs {
+        validate_optional_timed_range(
+            input.track_id,
+            input.start_seconds,
+            input.end_seconds,
+            "visual text",
+        )?;
+        grouped.entry(input.run_id.to_string()).or_default().push(input);
+    }
+
+    for (run_id, tracks) in &grouped {
+        let first = tracks.first().context("OCR run group unexpectedly empty")?;
+        let source_text = tracks
+            .iter()
+            .map(|track| track.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let source_hash = sha256(&source_text);
+        let revision_material = serde_json::json!({
+            "contentHash": &source_hash,
+            "processor": &first.processor,
+            "processorVersion": &first.processor_version,
+            "model": &first.model,
+            "modelVersion": &first.model_version,
+            "inputHash": &first.input_hash,
+            "configHash": &first.config_hash,
+            "spans": tracks
+                .iter()
+                .enumerate()
+                .map(|(sequence, track)| serde_json::json!({
+                    "id": track.track_id,
+                    "sequence": sequence,
+                    "textHash": sha256(&track.text),
+                    "role": &track.role,
+                    "startSeconds": track.start_seconds,
+                    "endSeconds": track.end_seconds,
+                }))
+                .collect::<Vec<_>>(),
+        });
+        let revision = sha256(&serde_json::to_string(&revision_material)?);
+        let mut metadata = BTreeMap::new();
+        metadata.insert("videoId".to_string(), Value::String(first.video_id.to_string()));
+        metadata.insert("runId".to_string(), Value::String(run_id.clone()));
+        metadata.insert(
+            "processor".to_string(),
+            Value::String(first.processor.clone()),
+        );
+        metadata.insert(
+            "processorVersion".to_string(),
+            Value::String(first.processor_version.clone()),
+        );
+        metadata.insert("model".to_string(), Value::String(first.model.clone()));
+        metadata.insert(
+            "modelVersion".to_string(),
+            Value::String(first.model_version.clone()),
+        );
+        metadata.insert("inputHash".to_string(), Value::String(first.input_hash.clone()));
+        metadata.insert("configHash".to_string(), Value::String(first.config_hash.clone()));
+
+        let mut creators = Vec::new();
+        for creator in [&first.channel, &first.uploader].into_iter().flatten() {
+            if !creator.trim().is_empty() && !creators.contains(creator) {
+                creators.push(creator.clone());
+            }
+        }
+        batch.sources.push(SourceRecordV1 {
+            id: format!("ocr:{run_id}"),
+            kind: "youtube_visual_text".to_string(),
+            revision,
+            uri: Some(first.source_url.clone()),
+            title: first.title.clone(),
+            creators,
+            language: tracks.iter().find_map(|track| track.language.clone()),
+            content_hash: source_hash,
+            metadata,
+        });
+    }
+
+    for (run_id, tracks) in grouped {
+        let source_id = format!("ocr:{run_id}");
+        for (sequence, track) in tracks.into_iter().enumerate() {
+            let mut metadata = BTreeMap::new();
+            metadata.insert("videoId".to_string(), Value::String(track.video_id.to_string()));
+            metadata.insert("runId".to_string(), Value::String(run_id.clone()));
+            metadata.insert("visualTextRole".to_string(), Value::String(track.role.clone()));
+            metadata.insert(
+                "mediaEvidenceRef".to_string(),
+                Value::String(track.track_id.to_string()),
+            );
+            batch.spans.push(SourceSpanRecordV1 {
+                id: track.track_id.to_string(),
+                source_id: source_id.clone(),
+                sequence: u64::try_from(sequence)
+                    .context("OCR span sequence exceeds u64 range")?,
+                text: track.text.clone(),
+                content_hash: sha256(&track.text),
+                language: track.language.clone(),
+                locator: SourceLocatorV1::Timed {
+                    segment_index: u64::try_from(sequence)
+                        .context("OCR locator sequence exceeds u64 range")?,
+                    start_seconds: track.start_seconds,
+                    end_seconds: track.end_seconds,
+                },
+                metadata,
+            });
+        }
+    }
+
+    Ok(())
 }
 
 fn build_source_span_batch(
@@ -331,6 +512,30 @@ fn validate_timed_range(input: &TranscriptSpanExportInput) -> anyhow::Result<()>
         input.segment_id
     );
     Ok(())
+
+fn validate_optional_timed_range(
+    id: Uuid,
+    start_seconds: Option<f64>,
+    end_seconds: Option<f64>,
+    kind: &str,
+) -> anyhow::Result<()> {
+    ensure!(
+        start_seconds.is_none_or(|value| value.is_finite() && value >= 0.0),
+        "{kind} {id} has invalid start time"
+    );
+    ensure!(
+        end_seconds.is_none_or(|value| value.is_finite() && value >= 0.0),
+        "{kind} {id} has invalid end time"
+    );
+    ensure!(
+        !start_seconds
+            .zip(end_seconds)
+            .is_some_and(|(start, end)| end < start),
+        "{kind} {id} has reversed timestamps"
+    );
+    Ok(())
+}
+
 }
 
 fn sha256(value: &str) -> String {
