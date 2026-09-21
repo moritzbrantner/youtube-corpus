@@ -51,8 +51,8 @@ pub use multimodal::{
 pub use reprocessing::{reprocess_video, ReprocessReport, ReprocessRequest, ReprocessStage};
 pub use search::{search_corpus, SearchReport, SearchRequest};
 pub use source_span_export::{
-    export_source_span_batch, SourceLocatorV1, SourceProducerV1, SourceRecordV1,
-    SourceSpanBatchV1, SourceSpanRecordV1,
+    export_source_span_batch, SourceLocatorV1, SourceProducerV1, SourceRecordV1, SourceSpanBatchV1,
+    SourceSpanRecordV1,
 };
 pub use status::{corpus_status, list_videos, CorpusStatusReport, VideoStatus};
 pub use subscriptions::{
