@@ -188,10 +188,7 @@ async fn multimodal_evidence_preserves_separate_but_aligned_channels() {
         .find(|span| span.id == track.id.to_string())
         .expect("OCR span");
     assert_eq!(ocr_span.source_id, ocr_source.id);
-    assert_eq!(
-        ocr_span.metadata["mediaEvidenceRef"],
-        track.id.to_string()
-    );
+    assert_eq!(ocr_span.metadata["mediaEvidenceRef"], track.id.to_string());
 
     sqlx::query("DELETE FROM videos WHERE id = $1")
         .bind(video_id)
