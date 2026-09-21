@@ -29,6 +29,38 @@
    - Expose stable cursors/batching where necessary.
    - Record export counts and rejected/missing transcript cases for observability.
 
+## Multimodal video evidence
+
+1. [ ] **Reconcile the existing scene/OCR evidence stack onto the current corpus foundation.**
+   - Preserve the direction already explored by PR #6: first-class scene spans, raw OCR observations, derived visual-text tracks, and links between tracks, observations, and scenes.
+   - Preserve the direction already explored by PR #7: run canonical scene analysis through the visual-analysis adapter backed by `scenedetect-rs`; do not copy scene-detection algorithms into this repository.
+   - Rebase/reconcile those older stacked branches instead of creating a second scene/OCR authority.
+
+2. [ ] **Run scene-aware OCR for retained media.**
+   - Use representative scene frames from `visual-analysis` rather than blindly OCRing every decoded frame.
+   - Keep raw OCR observations distinct from deduplicated/derived visual-text tracks.
+   - Preserve timestamp/frame, scene identity, bounding box, language, confidence, processor/model revision, input hash, and configuration hash.
+   - Treat presentation slides, quotations, diagrams with labels, end credits, subtitles, and incidental scene text as distinguishable roles rather than one undifferentiated transcript.
+
+3. [ ] **Ingest SponsorBlock as external temporal annotations.**
+   - Fetch segment annotations for a video without mutating or deleting the underlying transcript/media.
+   - Preserve segment UUID, raw category/action vocabulary, start/end times, video-duration context, fetch time, API/source revision where available, and the exact request policy.
+   - Treat SponsorBlock as community annotation evidence: useful for identifying sponsors, intros/outros, self-promotion, interaction reminders, and other non-core intervals, but never authoritative proof that content is philosophically irrelevant.
+   - Make network-backed refresh explicit and keep deterministic fixtures for tests.
+
+4. [ ] **Export one aligned media-evidence companion contract.**
+   - Keep `source_span_interchange@1` focused on textual evidence.
+   - Export scene boundaries, SponsorBlock segments, OCR provenance/geometry, and other non-text timeline facts in a separate versioned evidence bundle keyed to the same video/source revisions.
+   - Allow OCR-derived visual text to also appear as timed source spans while retaining links to its raw observations and scene evidence.
+   - Preserve raw versus derived evidence and all producing revisions so downstream staleness checks remain deterministic.
+
+5. [ ] **Use the aligned timeline for downstream research without collapsing evidence channels.**
+   - Give `philosophy-extractor` transcript spans plus aligned scene/OCR/SponsorBlock evidence.
+   - Let scene boundaries guide coherent context windows.
+   - Let OCR enrich slide-heavy lectures and recover quotations/names/formulas absent from speech transcripts.
+   - Let SponsorBlock inform relevance/routing policy while keeping the original material available for audit.
+   - Never silently merge OCR text into a transcript or silently remove SponsorBlock-marked intervals.
+
 ## Philosophy pipeline integration
 
 The intended architecture is:
@@ -36,7 +68,7 @@ The intended architecture is:
 ```text
 YouTube / local media
   -> youtube-corpus
-  -> transcript spans + provenance
+  -> transcript spans + OCR text + aligned scene/SponsorBlock evidence
   -> philosophy-extractor
   -> Jev screening and typed assessments
   -> source-grounded statement candidates
@@ -47,7 +79,9 @@ Jev integration belongs in `philosophy-extractor`, not here. `youtube-corpus` sh
 
 ## Acceptance principles
 
-- Transcript ingestion, source selection, timestamps, metadata, and search remain authoritative in `youtube-corpus`.
+- Transcript ingestion, source selection, timestamps, metadata, cross-modal alignment, and search remain authoritative in `youtube-corpus`.
+- Scene algorithms remain authoritative in `scenedetect-rs`; OCR/visual algorithms remain authoritative in `visual-analysis`.
+- SponsorBlock data remains externally sourced community evidence and must retain its own provenance.
 - Export contracts are versioned and deterministic.
 - No downstream philosophical model may rewrite transcript truth in place.
 - Network-backed discovery/ingest stays separable from deterministic export and verification.
