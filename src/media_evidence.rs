@@ -7,7 +7,6 @@ use uuid::Uuid;
 use crate::sponsorblock::{
     latest_sponsorblock_snapshot, SPONSORBLOCK_ATTRIBUTION, SPONSORBLOCK_DATA_LICENSE,
 };
-use crate::visual_timeline::VisualTextRole;
 
 pub const MEDIA_EVIDENCE_SCHEMA: &str = "media_evidence";
 pub const MEDIA_EVIDENCE_VERSION_V1: u32 = 1;
@@ -318,14 +317,6 @@ async fn ocr_track_evidence(
         .collect();
 
         let role: String = row.try_get("role")?;
-        VisualTextRole::as_str(
-            match role.as_str() {
-                "subtitle" => VisualTextRole::Subtitle,
-                "end_credit" => VisualTextRole::EndCredit,
-                "presentation_slide" => VisualTextRole::PresentationSlide,
-                _ => VisualTextRole::SceneText,
-            }
-        );
         tracks.push(OcrTrackEvidenceV1 {
             id: track_id.to_string(),
             text: row.try_get("text")?,
