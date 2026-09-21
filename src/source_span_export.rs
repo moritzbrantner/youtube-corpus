@@ -512,6 +512,7 @@ fn validate_timed_range(input: &TranscriptSpanExportInput) -> anyhow::Result<()>
         input.segment_id
     );
     Ok(())
+}
 
 fn validate_optional_timed_range(
     id: Uuid,
@@ -534,8 +535,6 @@ fn validate_optional_timed_range(
         "{kind} {id} has reversed timestamps"
     );
     Ok(())
-}
-
 }
 
 fn sha256(value: &str) -> String {
