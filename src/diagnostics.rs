@@ -38,6 +38,7 @@ pub async fn run(
             yt_dlp_diagnostic(),
             command_diagnostic("ffmpeg", &["-version"]),
             command_diagnostic("ffprobe", &["-version"]),
+            command_diagnostic("curl", &["--version"]),
             command_diagnostic(
                 transcriber_command.as_deref().unwrap_or("whisper"),
                 &["--help"],
