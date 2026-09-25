@@ -98,12 +98,12 @@ jobs:
         shell: bash
     steps:
       - name: Check out youtube-corpus
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           path: youtube-corpus
 
       - name: Check out nlp-stack
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: moritzbrantner/nlp-stack
           ref: 057689ca1df031d677f4afd9d65eed181c6fca06
@@ -111,7 +111,7 @@ jobs:
           token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Check out moenarch-foundation
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: moritzbrantner/moenarch-foundation
           ref: ead588f27d130d775524db31189b734a224843d5
@@ -119,7 +119,7 @@ jobs:
           token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Check out visual-analysis
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: moritzbrantner/visual-analysis
           ref: 6f1c3f09c6f01005ea30644377b5e44df9fd1e60
