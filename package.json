@@ -26,7 +26,7 @@
     "build:prepared": "tsc && vite build"
   },
   "dependencies": {
-    "@moritzbrantner/ui": "1.0.0",
+    "@moritzbrantner/ui": "1.1.0",
     "@tanstack/react-query": "^5.100.6",
     "lucide-react": "^1.7.0",
     "react": "^19.2.5",
