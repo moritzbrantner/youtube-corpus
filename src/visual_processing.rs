@@ -81,6 +81,15 @@ pub async fn analyze_and_persist_scenes(
         request.threshold,
         request.min_scene_len,
     )?;
+    drop(source);
+    // Detection reopens the path, so make sure the recorded hash still describes the bytes
+    // that were analyzed (for example if retained media was replaced concurrently).
+    if fingerprint_file(&request.media_path)? != input_hash {
+        anyhow::bail!(
+            "scene analysis media changed during detection: {}",
+            request.media_path.display()
+        );
+    }
 
     // The run and its full scene list commit together; a failed scene write never leaves a
     // partial timeline that evidence readers would treat as complete.
