@@ -96,4 +96,4 @@ This slice reuses the existing ingest path for metadata, captions, optional ASR,
 
 ## Compatibility
 
-Ingest checks whether migration `0009_discovery_frontier.sql` is present before recording discoveries. Existing databases that have not migrated therefore keep the previous ingest behavior instead of failing mid-ingest.
+Ingest checks whether the discovery tables from migration `0012_discovery_frontier.sql` exist before recording discoveries. Existing databases that have not migrated therefore keep the previous ingest behavior instead of failing mid-ingest.
