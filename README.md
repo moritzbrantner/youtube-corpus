@@ -248,9 +248,9 @@ and the initial `ingestRun`. Poll `GET /api/ingest-runs/{id}` for status and
 older synchronous response behavior.
 
 The persistent `ingest_runs.status` values remain `running`, `completed`, and
-`failed`. Responses also include `ingestRun.job.status`, which uses the
-structured job lifecycle values `running`, `succeeded`, and `failed` for the
-current database states.
+`failed`. Responses also include the corpus-owned `ingestRun.job.status`
+projection: `running`, `succeeded`, or `failed`. The web/API layer owns this
+small lifecycle directly instead of depending on a generic job framework.
 
 ## Verification
 

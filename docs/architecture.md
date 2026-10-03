@@ -83,9 +83,11 @@ metadata.
 The web API can run ingest synchronously or as a background job. For async
 requests, `/api/sources` inserts a running row in `ingest_runs`, returns the
 `jobId`, and a spawned task updates the same run to `completed` or `failed`.
-The database status vocabulary is kept for compatibility; API responses add a
-nested `job` object using `jobs-core` lifecycle values such as `running`,
-`succeeded`, and `failed`.
+The database status vocabulary is kept for persistence compatibility. The
+corpus web/API layer projects it directly into the only three job states it
+actually exposes: `running`, `succeeded`, and `failed`. Scheduling, task
+spawning, progress, and failure ownership stay with `youtube-corpus`; there is
+no generic job-framework authority in this path.
 
 Generated media, captions, metadata, and transcripts should stay under
 `use-case-output/`.

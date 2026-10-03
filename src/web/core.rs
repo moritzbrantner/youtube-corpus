@@ -994,7 +994,6 @@ enum StatusQueryError {
     Sql(sqlx::Error),
     InvalidSourceKind(String),
     InvalidJobStatus(String),
-    InvalidJobId(String),
 }
 
 impl std::fmt::Display for StatusQueryError {
@@ -1005,7 +1004,6 @@ impl std::fmt::Display for StatusQueryError {
             Self::InvalidJobStatus(value) => {
                 write!(formatter, "invalid ingest_run status: {value}")
             }
-            Self::InvalidJobId(value) => write!(formatter, "invalid job id: {value}"),
         }
     }
 }
@@ -1171,19 +1169,18 @@ fn ingest_job_from_status(
         .map(serde_json::from_value)
         .transpose()
         .unwrap_or(None);
-    let failure = if job_status == jobs_core::JobStatus::Failed {
-        failure_message(report).map(|message| jobs_core::JobFailure { message })
+    let failure = if job_status == IngestJobStatus::Failed {
+        failure_message(report).map(|message| IngestJobFailure { message })
     } else {
         None
     };
-    let ingest = if job_status == jobs_core::JobStatus::Succeeded {
+    let ingest = if job_status == IngestJobStatus::Succeeded {
         serde_json::from_value(report.clone()).ok()
     } else {
         None
     };
     Ok(IngestJob {
-        id: jobs_core::JobId::new(id.to_string())
-            .map_err(|error| StatusQueryError::InvalidJobId(error.to_string()))?,
+        id,
         status: job_status,
         progress,
         failure,
