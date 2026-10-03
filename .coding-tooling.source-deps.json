@@ -120,13 +120,13 @@
       {
         "package": "moenarch-video-analysis-ffmpeg",
         "git": "https://github.com/moritzbrantner/visual-analysis",
-        "rev": "a25d3e540d2ed90f1001fe76704ebc11815bc9db",
+        "rev": "8852f257de6ddc4580698ad00d4c9a9ab8461b70",
         "localPath": "../visual-analysis/crates/video/video-analysis-ffmpeg"
       },
       {
         "package": "moenarch-video-analysis-ingest",
         "git": "https://github.com/moritzbrantner/visual-analysis",
-        "rev": "a25d3e540d2ed90f1001fe76704ebc11815bc9db",
+        "rev": "8852f257de6ddc4580698ad00d4c9a9ab8461b70",
         "localPath": "../visual-analysis/crates/video/video-analysis-ingest"
       }
     ]

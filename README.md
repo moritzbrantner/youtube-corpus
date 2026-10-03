@@ -26,9 +26,9 @@ repositories as siblings at the pinned revisions used by CI:
 git clone https://github.com/moritzbrantner/nlp-stack.git
 git -C nlp-stack checkout 057689ca1df031d677f4afd9d65eed181c6fca06
 git clone https://github.com/moritzbrantner/moenarch-foundation.git
-git -C moenarch-foundation checkout ead588f27d130d775524db31189b734a224843d5
+git -C moenarch-foundation checkout b7533cd02269124deece75b76477ca55a853cd77
 git clone https://github.com/moritzbrantner/visual-analysis.git
-git -C visual-analysis checkout d341c668f1baa14cd3d4e99c8ce8f5d39e43a974
+git -C visual-analysis checkout 8852f257de6ddc4580698ad00d4c9a9ab8461b70
 git clone https://github.com/moritzbrantner/youtube-corpus.git
 cd youtube-corpus
 bun install --frozen-lockfile
