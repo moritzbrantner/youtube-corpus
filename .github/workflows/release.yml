@@ -108,7 +108,6 @@ jobs:
           repository: moritzbrantner/nlp-stack
           ref: 057689ca1df031d677f4afd9d65eed181c6fca06
           path: nlp-stack
-          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Check out moenarch-foundation
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -116,7 +115,6 @@ jobs:
           repository: moritzbrantner/moenarch-foundation
           ref: b7533cd02269124deece75b76477ca55a853cd77
           path: moenarch-foundation
-          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Check out visual-analysis
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
@@ -124,7 +122,6 @@ jobs:
           repository: moritzbrantner/visual-analysis
           ref: 8852f257de6ddc4580698ad00d4c9a9ab8461b70
           path: visual-analysis
-          token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
