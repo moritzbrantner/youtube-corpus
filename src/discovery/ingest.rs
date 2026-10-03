@@ -70,6 +70,33 @@ pub async fn record_ingest_discoveries(
     let ingest_run_id = report.run_id.to_string();
     for item in &report.items {
         if item.status == "failed" {
+            // Completing a collection seed below would drop failed items for good, so
+            // keep them in the frontier as retryable children of the seed.
+            if let Some(target) = canonicalize_youtube_target(&item.source_url)
+                .filter(|target| target.canonical_key != seed.canonical_key)
+            {
+                enqueue_discovery(
+                    pool,
+                    EnqueueDiscoveryRequest {
+                        kind: target.kind,
+                        canonical_key: target.canonical_key,
+                        target_url: target.target_url,
+                        source_video_id: None,
+                        parent_target_id: Some(seed.id),
+                        method: DiscoveryMethod::SourceExpansion,
+                        evidence: json!({
+                            "ingestRunId": report.run_id,
+                            "ingestStatus": "failed",
+                        }),
+                        depth: seed.depth.saturating_add(1),
+                        confidence: 1.0,
+                        relevance: 1.0,
+                        novelty: 1.0,
+                    },
+                    policy,
+                )
+                .await?;
+            }
             continue;
         }
         let Some(video_id) = item.video_id else {

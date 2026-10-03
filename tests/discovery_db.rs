@@ -295,6 +295,60 @@ async fn discovery_frontier_is_idempotent_prioritized_and_expands_ingest_evidenc
     assert_eq!(target_count, 1);
     assert_eq!(evidence_count, 1);
 
+    let mixed_report = IngestReport {
+        workflow: "youtube_corpus_ingest".to_string(),
+        run_id: Uuid::new_v4(),
+        videos_seen: 2,
+        videos_indexed: 1,
+        segments_indexed: 0,
+        items: vec![
+            IngestItemReport {
+                video_id: Some(video_id),
+                source_url: "https://www.youtube.com/watch?v=mixed_ok".to_string(),
+                title: Some("Discovery fixture".to_string()),
+                status: "no_transcript".to_string(),
+                streams_indexed: 0,
+                segments_indexed: 0,
+                message: None,
+            },
+            IngestItemReport {
+                video_id: None,
+                source_url: "https://www.youtube.com/watch?v=mixed_failed".to_string(),
+                title: None,
+                status: "failed".to_string(),
+                streams_indexed: 0,
+                segments_indexed: 0,
+                message: Some("transient fixture failure".to_string()),
+            },
+        ],
+    };
+    record_ingest_discoveries(
+        &pool,
+        &CorpusSource::YoutubeUrl {
+            url: "https://www.youtube.com/playlist?list=PL_mixed".to_string(),
+        },
+        &mixed_report,
+        &policy,
+    )
+    .await
+    .unwrap();
+    let (failed_child_state, failed_child_depth): (String, i32) = sqlx::query_as(
+        "SELECT state, depth FROM discovery_targets
+         WHERE canonical_key = 'youtube:video:mixed_failed'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(failed_child_state, "pending");
+    assert_eq!(failed_child_depth, 1);
+    let mixed_seed_state: String = sqlx::query_scalar(
+        "SELECT state FROM discovery_targets WHERE canonical_key = 'youtube:playlist:PL_mixed'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(mixed_seed_state, "completed");
+
     sqlx::query("DELETE FROM videos WHERE id = $1")
         .bind(video_id)
         .execute(&pool)
