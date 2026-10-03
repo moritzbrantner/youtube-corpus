@@ -93,6 +93,16 @@ async fn migrations_run_against_postgres() {
     .unwrap();
     assert_eq!(multimodal_tables, 14);
 
+    let discovery_tables: i64 = sqlx::query_scalar(
+        "SELECT count(*)
+         FROM information_schema.tables
+         WHERE table_name IN ('discovery_targets', 'discovery_evidence')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(discovery_tables, 2);
+
     let annotation_checksum: i64 = sqlx::query_scalar(
         "SELECT count(*)
          FROM information_schema.columns

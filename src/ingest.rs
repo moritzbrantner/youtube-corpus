@@ -9,10 +9,12 @@ pub use core::{
 
 pub async fn ingest_corpus(request: IngestRequest) -> anyhow::Result<IngestReport> {
     let database_url = request.database_url.clone();
+    let source = request.source.clone();
     let provenance = crate::provenance::IngestProvenance::from_request(&request);
     let report = core::ingest_corpus(request).await?;
     crate::provenance::record_ingest_report(&database_url, &report, &provenance).await?;
     refresh_ingest_quality(&database_url, &report).await?;
+    record_ingest_discoveries(&database_url, &source, &report).await?;
     Ok(report)
 }
 
@@ -21,10 +23,12 @@ pub async fn ingest_video_items(
     items: Vec<crate::youtube::VideoItem>,
 ) -> anyhow::Result<IngestReport> {
     let database_url = request.database_url.clone();
+    let source = request.source.clone();
     let provenance = crate::provenance::IngestProvenance::from_request(&request);
     let report = core::ingest_video_items(request, items).await?;
     crate::provenance::record_ingest_report(&database_url, &report, &provenance).await?;
     refresh_ingest_quality(&database_url, &report).await?;
+    record_ingest_discoveries(&database_url, &source, &report).await?;
     Ok(report)
 }
 
@@ -42,4 +46,19 @@ async fn refresh_ingest_quality(database_url: &str, report: &IngestReport) -> an
         crate::transcript_quality::refresh_video_quality(&pool, video_id).await?;
     }
     Ok(())
+}
+
+async fn record_ingest_discoveries(
+    database_url: &str,
+    source: &crate::config::CorpusSource,
+    report: &IngestReport,
+) -> anyhow::Result<()> {
+    let pool = crate::db::connect(database_url).await?;
+    crate::discovery::record_ingest_discoveries(
+        &pool,
+        source,
+        report,
+        &crate::discovery::DiscoveryPolicy::default(),
+    )
+    .await
 }
