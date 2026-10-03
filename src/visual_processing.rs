@@ -10,7 +10,7 @@ use video_analysis_ffmpeg::FfmpegVideoSource;
 
 use crate::multimodal::ProcessingProvenance;
 use crate::visual_timeline::{
-    begin_visual_processing_run, upsert_video_scene, BeginVisualProcessingRunRequest,
+    begin_visual_processing_run_with, upsert_video_scene_with, BeginVisualProcessingRunRequest,
     UpsertVideoSceneRequest, VideoScene, VisualProcessingKind,
 };
 
@@ -73,8 +73,20 @@ pub async fn analyze_and_persist_scenes(
         request.min_scene_len
     );
     let config_hash = fingerprint_bytes(config_identity.as_bytes());
-    let run_id = begin_visual_processing_run(
-        pool,
+
+    // Decode before touching the database so no transaction stays open during analysis.
+    let mut source = FfmpegVideoSource::open(&request.media_path)?;
+    let result = video_analysis_ingest::surface::detect_content_scenes(
+        &mut source,
+        request.threshold,
+        request.min_scene_len,
+    )?;
+
+    // The run and its full scene list commit together; a failed scene write never leaves a
+    // partial timeline that evidence readers would treat as complete.
+    let mut transaction = pool.begin().await?;
+    let run_id = begin_visual_processing_run_with(
+        &mut transaction,
         BeginVisualProcessingRunRequest {
             video_id: request.video_id,
             kind: VisualProcessingKind::Scene,
@@ -96,20 +108,13 @@ pub async fn analyze_and_persist_scenes(
     )
     .await?;
 
-    let mut source = FfmpegVideoSource::open(&request.media_path)?;
-    let result = video_analysis_ingest::surface::detect_content_scenes(
-        &mut source,
-        request.threshold,
-        request.min_scene_len,
-    )?;
-
     let mut scenes = Vec::with_capacity(result.scenes.len());
     for (index, scene) in result.scenes.into_iter().enumerate() {
         let scene_index =
             u64::try_from(index).map_err(|_| anyhow::anyhow!("scene index exceeds u64 range"))?;
         scenes.push(
-            upsert_video_scene(
-                pool,
+            upsert_video_scene_with(
+                &mut transaction,
                 UpsertVideoSceneRequest {
                     run_id,
                     video_id: request.video_id,
@@ -128,6 +133,7 @@ pub async fn analyze_and_persist_scenes(
             .await?,
         );
     }
+    transaction.commit().await?;
 
     Ok(SceneAnalysisReport {
         video_id: request.video_id,

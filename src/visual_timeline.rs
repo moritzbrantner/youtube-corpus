@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::{PgPool, Row};
+use sqlx::{PgConnection, PgPool, Postgres, Row};
 use text_embeddings::{HashedTextEmbedder, TextEmbeddingConfig};
 use text_lexical::CorpusOptions;
 use uuid::Uuid;
@@ -170,6 +170,15 @@ pub async fn begin_visual_processing_run(
     pool: &PgPool,
     request: BeginVisualProcessingRunRequest,
 ) -> anyhow::Result<Uuid> {
+    let mut connection = pool.acquire().await?;
+    begin_visual_processing_run_with(&mut connection, request).await
+}
+
+/// Same as [`begin_visual_processing_run`], on a caller-owned connection or transaction.
+pub async fn begin_visual_processing_run_with(
+    connection: &mut PgConnection,
+    request: BeginVisualProcessingRunRequest,
+) -> anyhow::Result<Uuid> {
     validate_provenance(&request.provenance)?;
     let identity = format!(
         "youtube-corpus:visual-run:{}:{}:{}:{}:{}:{}:{}:{}",
@@ -207,7 +216,7 @@ pub async fn begin_visual_processing_run(
     .bind(request.provenance.input_hash)
     .bind(request.provenance.config_hash)
     .bind(request.provenance.processing_config)
-    .fetch_one(pool)
+    .fetch_one(&mut *connection)
     .await?;
     Ok(row.try_get("id")?)
 }
@@ -216,8 +225,17 @@ pub async fn upsert_video_scene(
     pool: &PgPool,
     request: UpsertVideoSceneRequest,
 ) -> anyhow::Result<VideoScene> {
+    let mut connection = pool.acquire().await?;
+    upsert_video_scene_with(&mut connection, request).await
+}
+
+/// Same as [`upsert_video_scene`], on a caller-owned connection or transaction.
+pub async fn upsert_video_scene_with(
+    connection: &mut PgConnection,
+    request: UpsertVideoSceneRequest,
+) -> anyhow::Result<VideoScene> {
     validate_visual_run(
-        pool,
+        &mut *connection,
         request.run_id,
         request.video_id,
         VisualProcessingKind::Scene,
@@ -256,7 +274,7 @@ pub async fn upsert_video_scene(
     .bind(request.start_seconds)
     .bind(request.end_seconds)
     .bind(request.metadata)
-    .fetch_one(pool)
+    .fetch_one(&mut *connection)
     .await?;
     scene_from_row(row)
 }
@@ -500,18 +518,21 @@ pub async fn list_visual_text_tracks(
     .collect()
 }
 
-async fn validate_visual_run(
-    pool: &PgPool,
+async fn validate_visual_run<'e, E>(
+    executor: E,
     run_id: Uuid,
     video_id: Uuid,
     expected: VisualProcessingKind,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<()>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
     let modality = sqlx::query_scalar::<_, String>(
         "SELECT modality FROM media_processing_runs WHERE id = $1 AND video_id = $2",
     )
     .bind(run_id)
     .bind(video_id)
-    .fetch_optional(pool)
+    .fetch_optional(executor)
     .await?
     .ok_or_else(|| {
         anyhow::anyhow!("processing run {run_id} does not belong to video {video_id}")
