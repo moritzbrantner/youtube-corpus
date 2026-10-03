@@ -22,7 +22,7 @@ bash scripts/source-deps activate
 bash scripts/source-deps status
 ```
 
-Local-only source mode fails if a required sibling checkout is missing or at a different revision. It never falls back to authenticated Git and ordinary development does not require package publication or `GH_PACKAGES_TOKEN`.
+Local-only source mode fails if a required sibling checkout is missing or at a different revision. It never falls back to authenticated Git and ordinary development does not require package publication or a registry token.
 
 ```bash
 bun install --frozen-lockfile
