@@ -14,11 +14,38 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-web-artifact:
+    name: Build or reuse embedded web artifact
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+    uses: moritzbrantner/reusable-workflows/.github/workflows/build-artifact.yml@5291d5162b128faca9dd83edba24e7342730e604
+    with:
+      source_sha: ${{ github.event.pull_request.head.sha || github.sha }}
+      artifact_key: youtube-corpus-embedded-web-v1
+      bun_version: "1.3.14"
+      rust_toolchain: "1.98.1"
+      rust_targets: wasm32-unknown-unknown
+      cache_bun: true
+      bun_cache_dependency_path: bun.lock
+      cache_cargo: true
+      cargo_cache_dependency_path: Cargo.lock
+      use_environment_v1: false
+      setup_command: |
+        bun install --frozen-lockfile
+        cargo install wasm-pack --version 0.14.0 --locked
+      build_command: bun run build
+      artifact_paths: dist
+      reuse_across_runs: true
+      artifact_retention_days: 7
+      timeout_minutes: 30
+
   repository-validation:
     name: Repository-local validation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Verify local-only source contract
         run: |
@@ -28,7 +55,13 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: "1.3.14"
+          bun-version: "1.4.2"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: rustfmt
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
@@ -36,79 +69,53 @@ jobs:
       - name: Check frontend formatting
         run: bun run format:check
 
-      - name: Build frontend
-        run: bun run build
+      - name: Check browser Wasm formatting
+        run: cargo fmt --manifest-path crates/youtube-browser-wasm/Cargo.toml --check
 
-      - name: Install Rust formatter
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
+      - name: Test browser extraction core
+        run: bun run test:browser-wasm
 
-      - name: Check Rust formatting
+      - name: Test standalone browser analysis
+        run: bun run test:frontend
+
+      - name: Check repository Rust formatting
         run: cargo fmt --check
 
       - name: Explain source verification boundary
         run: |
-          echo "Repository-local validation is intentionally independent of sibling source availability."
-          echo "The source-graph job below separately verifies the exact pinned cross-repository graph."
+          echo "The standalone browser extractor is repository-owned and fully validated here, including its Rust/Wasm build."
+          echo "The larger Rust server graph, clippy, tests, and Postgres integration checks still run in the local coding workspace against the exact sibling source graph."
 
-  source-graph-validation:
-    name: Exact source graph
+  artifact-validation:
+    name: Embedded web artifact validation
+    needs: build-web-artifact
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: youtube_corpus_verify
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d youtube_corpus_verify"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/youtube_corpus_verify
+    permissions:
+      actions: read
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Check out exact sibling sources
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/moritzbrantner/nlp-stack.git ../nlp-stack
-          git -C ../nlp-stack checkout 057689ca1df031d677f4afd9d65eed181c6fca06
-          git clone --filter=blob:none https://github.com/moritzbrantner/moenarch-foundation.git ../moenarch-foundation
-          git -C ../moenarch-foundation checkout b7533cd02269124deece75b76477ca55a853cd77
-          git clone --filter=blob:none https://github.com/moritzbrantner/visual-analysis.git ../visual-analysis
-          git -C ../visual-analysis checkout a25d3e540d2ed90f1001fe76704ebc11815bc9db
-
-      - name: Activate exact source overrides
-        run: |
-          set -euo pipefail
-          mkdir -p .cargo
-          jq -r --arg root "$PWD" '[.cargo.patches[].localPath | ($root + "/" + .)] | "paths = [\n" + (map("  \"" + . + "\"") | join(",\n")) + "\n]"' .coding-tooling.source-deps.json > .cargo/config.toml
-          cat .cargo/config.toml
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Checkout exact source
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
-          components: clippy,rustfmt
+          ref: ${{ needs.build-web-artifact.outputs.source_sha }}
 
-      - name: Verify visual adapters
+      - name: Consume verified embedded web artifact
+        uses: moritzbrantner/reusable-workflows/.github/actions/consume-build-artifact@5291d5162b128faca9dd83edba24e7342730e604
+        with:
+          producer_run_id: ${{ needs.build-web-artifact.outputs.producer_run_id }}
+          receipt_artifact_name: ${{ needs.build-web-artifact.outputs.receipt_artifact_name }}
+          artifact_name: ${{ needs.build-web-artifact.outputs.artifact_name }}
+          artifact_digest: ${{ needs.build-web-artifact.outputs.artifact_digest }}
+          source_sha: ${{ needs.build-web-artifact.outputs.source_sha }}
+          artifact_key: ${{ needs.build-web-artifact.outputs.artifact_key }}
+          identity_digest: ${{ needs.build-web-artifact.outputs.identity_digest }}
+          destination_path: dist
+          github_token: ${{ github.token }}
+
+      - name: Verify embedded web artifact
         run: |
-          cargo test --manifest-path ../visual-analysis/Cargo.toml -p moenarch-video-analysis-recognition --features ocr
-          cargo test --manifest-path ../visual-analysis/Cargo.toml -p moenarch-video-analysis-ingest
-
-      - name: Verify source graph compiles
-        run: cargo check --locked
-
-      - name: Verify source graph tests
-        run: cargo test --locked
-
-      - name: Verify source graph lint
-        run: cargo clippy --all-targets --locked -- -D warnings
-
-      - name: Verify Postgres contracts
-        run: bash scripts/verify-postgres.sh
+          test -s dist/index.html
+          test -s dist/analysis-capabilities.json
+          grep -q 'youtube-corpus' dist/index.html
+          jq -e '.pagesStandalone == true and .backend.requiredForPages == false and .browser.captionAcquisition.directYoutube == true' dist/analysis-capabilities.json >/dev/null
+          find dist -type f -name '*.wasm' -size +0c | grep -q .

@@ -1,16 +1,26 @@
-import { Button } from "@moritzbrantner/ui";
 import * as React from "react";
 
 import LegacyApp from "./LegacyApp";
+import {
+  DirectBrowserYouTubeAnalyzer,
+  shouldUseDirectBrowserAnalyzer,
+} from "./app/features/analyzer/DirectBrowserYouTubeAnalyzer";
+import { YouTubeAnalyzer } from "./app/features/analyzer/YouTubeAnalyzer";
 import { CorpusWorkspace } from "./app/features/corpora/CorpusWorkspace";
 
-type AppRoute = "corpora" | "legacy";
+type AppRoute = "analyzer" | "corpora" | "legacy";
 
 function routeFromLocation(): AppRoute {
   if (typeof window === "undefined") {
+    return "analyzer";
+  }
+  if (window.location.hash === "#corpora") {
+    return "corpora";
+  }
+  if (window.location.hash === "#legacy") {
     return "legacy";
   }
-  return window.location.hash === "#corpora" ? "corpora" : "legacy";
+  return "analyzer";
 }
 
 export default function App() {
@@ -22,18 +32,17 @@ export default function App() {
     return () => window.removeEventListener("hashchange", syncRoute);
   }, []);
 
+  if (shouldUseDirectBrowserAnalyzer()) {
+    return <DirectBrowserYouTubeAnalyzer />;
+  }
+
   if (route === "corpora") {
     return <CorpusWorkspace />;
   }
 
-  return (
-    <>
-      <div className="fixed bottom-4 right-4 z-50">
-        <Button asChild variant="outline" size="sm">
-          <a href="#corpora">Research corpora</a>
-        </Button>
-      </div>
-      <LegacyApp />
-    </>
-  );
+  if (route === "legacy") {
+    return <LegacyApp />;
+  }
+
+  return <YouTubeAnalyzer />;
 }

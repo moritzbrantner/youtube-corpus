@@ -44,9 +44,41 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag_name=v$version" >> "$GITHUB_OUTPUT"
 
+  web-artifact:
+    name: Build or reuse embedded web artifact
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+    uses: moritzbrantner/reusable-workflows/.github/workflows/build-artifact.yml@5291d5162b128faca9dd83edba24e7342730e604
+    with:
+      source_sha: ${{ github.sha }}
+      artifact_key: youtube-corpus-embedded-web-v1
+      bun_version: "1.3.14"
+      rust_toolchain: "1.98.1"
+      rust_targets: wasm32-unknown-unknown
+      cache_bun: true
+      bun_cache_dependency_path: bun.lock
+      cache_cargo: true
+      cargo_cache_dependency_path: Cargo.lock
+      use_environment_v1: false
+      setup_command: |
+        bun install --frozen-lockfile
+        cargo install wasm-pack --version 0.14.0 --locked
+      build_command: bun run build
+      artifact_paths: dist
+      reuse_across_runs: true
+      artifact_retention_days: 7
+      timeout_minutes: 30
+
   build:
     name: Build ${{ matrix.target }}
-    needs: prepare
+    needs:
+      - prepare
+      - web-artifact
+    permissions:
+      actions: read
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -66,12 +98,12 @@ jobs:
         shell: bash
     steps:
       - name: Check out youtube-corpus
-        uses: actions/checkout@v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           path: youtube-corpus
 
       - name: Check out nlp-stack
-        uses: actions/checkout@v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           repository: moritzbrantner/nlp-stack
           ref: 057689ca1df031d677f4afd9d65eed181c6fca06
@@ -79,7 +111,7 @@ jobs:
           token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Check out moenarch-foundation
-        uses: actions/checkout@v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           repository: moritzbrantner/moenarch-foundation
           ref: ead588f27d130d775524db31189b734a224843d5
@@ -87,17 +119,12 @@ jobs:
           token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
       - name: Check out visual-analysis
-        uses: actions/checkout@v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           repository: moritzbrantner/visual-analysis
           ref: 6f1c3f09c6f01005ea30644377b5e44df9fd1e60
           path: visual-analysis
           token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
-
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.14"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -113,11 +140,18 @@ jobs:
             exit 1
           fi
 
-      - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build embedded web UI
-        run: bun run build
+      - name: Consume verified embedded web artifact
+        uses: moritzbrantner/reusable-workflows/.github/actions/consume-build-artifact@5291d5162b128faca9dd83edba24e7342730e604
+        with:
+          producer_run_id: ${{ needs.web-artifact.outputs.producer_run_id }}
+          receipt_artifact_name: ${{ needs.web-artifact.outputs.receipt_artifact_name }}
+          artifact_name: ${{ needs.web-artifact.outputs.artifact_name }}
+          artifact_digest: ${{ needs.web-artifact.outputs.artifact_digest }}
+          source_sha: ${{ needs.web-artifact.outputs.source_sha }}
+          artifact_key: ${{ needs.web-artifact.outputs.artifact_key }}
+          identity_digest: ${{ needs.web-artifact.outputs.identity_digest }}
+          destination_path: youtube-corpus/dist
+          github_token: ${{ github.token }}
 
       - name: Check formatting
         run: cargo fmt --check
@@ -163,7 +197,7 @@ jobs:
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Upload release artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: youtube-corpus-${{ matrix.target }}
           path: ${{ github.workspace }}/youtube-corpus/${{ steps.package.outputs.archive }}
@@ -177,7 +211,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: release-artifacts
           merge-multiple: true

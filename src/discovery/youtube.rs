@@ -59,10 +59,14 @@ pub fn canonicalize_youtube_target(raw_url: &str) -> Option<DiscoveredYouTubeTar
     }
 
     match segments.as_slice() {
-        ["channel", channel_id, ..] => channel_target(&format!("channel/{channel_id}")),
-        ["c", channel_name, ..] => channel_target(&format!("c/{channel_name}")),
-        ["user", user_name, ..] => channel_target(&format!("user/{user_name}")),
-        [handle, ..] if handle.starts_with('@') => channel_target(handle),
+        ["channel", channel_id, ..] => {
+            // Channel IDs are case-sensitive; only legacy names and handles fold case.
+            let channel_id = clean_identifier(channel_id)?;
+            channel_target(&format!("channel/{channel_id}"), false)
+        }
+        ["c", channel_name, ..] => channel_target(&format!("c/{channel_name}"), true),
+        ["user", user_name, ..] => channel_target(&format!("user/{user_name}"), true),
+        [handle, ..] if handle.starts_with('@') => channel_target(handle, true),
         _ => None,
     }
 }
@@ -102,12 +106,16 @@ fn playlist_target(playlist_id: &str) -> Option<DiscoveredYouTubeTarget> {
     })
 }
 
-fn channel_target(channel_path: &str) -> Option<DiscoveredYouTubeTarget> {
+fn channel_target(channel_path: &str, fold_case: bool) -> Option<DiscoveredYouTubeTarget> {
     let channel_path = channel_path.trim_matches('/').trim();
     if channel_path.is_empty() {
         return None;
     }
-    let canonical_path = channel_path.to_ascii_lowercase();
+    let canonical_path = if fold_case {
+        channel_path.to_ascii_lowercase()
+    } else {
+        channel_path.to_owned()
+    };
     Some(DiscoveredYouTubeTarget {
         kind: DiscoveryKind::Channel,
         canonical_key: format!("youtube:channel:{canonical_path}"),
@@ -158,6 +166,20 @@ mod tests {
             assert_eq!(target.kind, kind);
             assert_eq!(target.canonical_key, key);
         }
+    }
+
+    #[test]
+    fn preserves_case_sensitive_channel_ids() {
+        let upper =
+            canonicalize_youtube_target("https://www.youtube.com/channel/UCAbcDEF").unwrap();
+        let lower =
+            canonicalize_youtube_target("https://www.youtube.com/channel/UCabcdef").unwrap();
+        assert_eq!(upper.canonical_key, "youtube:channel:channel/UCAbcDEF");
+        assert_eq!(lower.canonical_key, "youtube:channel:channel/UCabcdef");
+        assert_ne!(upper.canonical_key, lower.canonical_key);
+
+        let user = canonicalize_youtube_target("https://www.youtube.com/user/SomeName").unwrap();
+        assert_eq!(user.canonical_key, "youtube:channel:user/somename");
     }
 
     #[test]

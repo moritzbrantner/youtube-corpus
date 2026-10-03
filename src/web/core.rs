@@ -28,6 +28,11 @@ pub const REQUIRED_TABLES: &[&str] = &[
     "transcript_segments",
     "ingest_runs",
     "corpus_subscriptions",
+    "video_scenes",
+    "visual_text_observations",
+    "visual_text_tracks",
+    "sponsorblock_snapshots",
+    "sponsorblock_segments",
 ];
 
 #[derive(RustEmbed)]
@@ -308,7 +313,12 @@ async fn transcript_context(
 
     let match_row = match match_row {
         Some(row) => row,
-        None => return Err(ApiError::not_found("Segment not found.")),
+        None => {
+            return visual_text_context(&pool, segment_id, before, after)
+                .await?
+                .map(Json)
+                .ok_or_else(|| ApiError::not_found("Segment not found."));
+        }
     };
 
     let stream_id: Uuid = match_row.try_get("stream_id").map_err(ApiError::internal)?;
@@ -397,6 +407,96 @@ async fn transcript_context(
         .map_err(ApiError::internal)?;
 
     Ok(Json(TranscriptContextReport {
+        match_segment,
+        segments,
+    }))
+}
+
+async fn visual_text_context(
+    pool: &PgPool,
+    segment_id: Uuid,
+    before: i64,
+    after: i64,
+) -> Result<Option<TranscriptContextReport>, ApiError> {
+    let match_row = sqlx::query(
+        "SELECT t.id, t.video_id, t.run_id AS stream_id, t.language,
+                t.start_seconds, t.end_seconds, t.text, v.source_url, v.title
+         FROM visual_text_tracks t
+         JOIN videos v ON v.id = t.video_id
+         WHERE t.id = $1",
+    )
+    .bind(segment_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(ApiError::internal)?;
+
+    let Some(match_row) = match_row else {
+        return Ok(None);
+    };
+    let stream_id: Uuid = match_row.try_get("stream_id").map_err(ApiError::internal)?;
+
+    let rows = sqlx::query(
+        "SELECT t.id, t.video_id, t.run_id AS stream_id, t.language,
+                t.start_seconds, t.end_seconds, t.text
+         FROM visual_text_tracks t
+         WHERE t.run_id = $1
+         ORDER BY t.start_seconds NULLS LAST, t.track_key, t.id",
+    )
+    .bind(stream_id)
+    .fetch_all(pool)
+    .await
+    .map_err(ApiError::internal)?;
+
+    let match_index = rows
+        .iter()
+        .position(|row| row.try_get::<Uuid, _>("id").ok() == Some(segment_id))
+        .ok_or_else(|| ApiError::internal("visual OCR match disappeared during context lookup"))?;
+    let start_index = match_index.saturating_sub(usize::try_from(before).unwrap_or_default());
+    let end_index = (match_index + usize::try_from(after).unwrap_or_default())
+        .min(rows.len().saturating_sub(1));
+
+    let segments = rows
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index >= start_index && *index <= end_index)
+        .map(|(index, row)| {
+            Ok(TranscriptContextSegment {
+                segment_id: row.try_get("id")?,
+                video_id: row.try_get("video_id")?,
+                stream_id: row.try_get("stream_id")?,
+                segment_index: i64::try_from(index).map_err(|_| {
+                    StatusQueryError::InvalidSourceKind("visual OCR context index overflow".to_string())
+                })?,
+                source_kind: SourceKind::VisualOcr,
+                language: row.try_get("language")?,
+                start_seconds: row.try_get("start_seconds")?,
+                end_seconds: row.try_get("end_seconds")?,
+                text: row.try_get("text")?,
+                is_match: row.try_get::<Uuid, _>("id")? == segment_id,
+            })
+        })
+        .collect::<Result<Vec<_>, StatusQueryError>>()
+        .map_err(ApiError::internal)?;
+
+    let match_segment = SearchResult {
+        segment_id,
+        video_id: match_row.try_get("video_id").map_err(ApiError::internal)?,
+        stream_id,
+        source_kind: "visual_ocr".to_string(),
+        language: match_row.try_get("language").map_err(ApiError::internal)?,
+        start_seconds: match_row
+            .try_get("start_seconds")
+            .map_err(ApiError::internal)?,
+        end_seconds: match_row.try_get("end_seconds").map_err(ApiError::internal)?,
+        text: match_row.try_get("text").map_err(ApiError::internal)?,
+        source_url: match_row.try_get("source_url").map_err(ApiError::internal)?,
+        title: match_row.try_get("title").map_err(ApiError::internal)?,
+        score: 0.0,
+        fts_score: 0.0,
+        semantic_score: 0.0,
+    };
+
+    Ok(Some(TranscriptContextReport {
         match_segment,
         segments,
     }))
@@ -921,6 +1021,7 @@ fn parse_source_kind(value: &str) -> Result<SourceKind, StatusQueryError> {
         "caption_manual" => Ok(SourceKind::CaptionManual),
         "caption_auto" => Ok(SourceKind::CaptionAuto),
         "asr" => Ok(SourceKind::Asr),
+        "visual_ocr" => Ok(SourceKind::VisualOcr),
         _ => Err(StatusQueryError::InvalidSourceKind(value.to_string())),
     }
 }

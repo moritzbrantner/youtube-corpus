@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 3,
+  "surface": "youtube-video-analyzer",
+  "delivery": "static-github-pages",
+  "input": "youtube-video-url",
+  "pagesStandalone": true,
+  "browser": {
+    "owns": [
+      "youtube-url-validation",
+      "canonical-video-url",
+      "privacy-enhanced-preview",
+      "innertube-player-request",
+      "caption-track-selection",
+      "signed-timedtext-fetch",
+      "json3-to-webvtt-wasm-normalization",
+      "loopback-yt-dlp-fallback-selection",
+      "plain-transcript-import",
+      "webvtt-import",
+      "srt-import",
+      "timed-segment-parsing",
+      "browser-local-lexical-analysis",
+      "analysis-report-rendering"
+    ],
+    "doesNotOwn": [
+      "yt-dlp-execution",
+      "youtube-media-download",
+      "youtube-authentication",
+      "youtube-proof-of-origin-generation",
+      "whisper-asr",
+      "postgres-persistence",
+      "nlp-stack-authoritative-analysis",
+      "multimodal-analysis"
+    ],
+    "captionAcquisition": {
+      "directYoutube": true,
+      "bestEffort": true,
+      "thirdPartyProxy": false,
+      "clients": ["ios", "android", "web_embedded"],
+      "originFailureShortCircuit": true,
+      "localYtDlpFallback": {
+        "enabled": true,
+        "origin": "loopback-only",
+        "defaultUrl": "http://127.0.0.1:1420",
+        "postgresRequired": false,
+        "profiles": ["default", "web_embedded", "mweb", "tv"],
+        "respectsExplicitPlayerClient": true
+      },
+      "manualFallback": ["paste", "vtt", "srt", "txt"],
+      "failureModes": [
+        "cors-policy",
+        "proof-of-origin-enforcement",
+        "authentication-required",
+        "captions-disabled",
+        "embedding-disabled",
+        "local-helper-unavailable"
+      ]
+    },
+    "persistence": "none",
+    "extractionEngine": "youtube-browser-wasm@1",
+    "analysisEngine": "youtube-corpus-browser-lexical@1"
+  },
+  "backend": {
+    "requiredForPages": false,
+    "localCaptionBridgeRequiredForYtDlpFallback": true,
+    "localCaptionBridgePersistence": "temporary-files-only",
+    "requiredForPersistentCorpusIngest": true,
+    "requiredForFullAnalysis": true,
+    "operations": [
+      "loopback-yt-dlp-caption-fallback",
+      "yt-dlp-metadata-and-caption-fallback",
+      "manual-and-auto-caption-ingest",
+      "transcript-normalization-and-indexing",
+      "text-lexical-analysis",
+      "optional-whisper-asr",
+      "available-multimodal-evidence",
+      "postgres-corpus-search"
+    ]
+  },
+  "transcriptPreference": ["caption_manual", "caption_auto", "asr"],
+  "analysis": {
+    "pagesTranscript": "direct-youtube-when-allowed-with-loopback-ytdlp-and-user-import-fallbacks",
+    "pagesLexical": "deterministic-browser-advisory",
+    "metadata": "best-effort-from-player-response-or-local-ytdlp-metadata",
+    "transcript": "available-from-direct-browser-captions-loopback-ytdlp-user-import-or-persistent-ingest",
+    "lexical": "authoritative-text-lexical-after-local-ingest",
+    "visualTimeline": "reported-only-when-evidence-exists",
+    "audioFeatures": "reported-only-when-evidence-exists"
+  },
+  "privacy": {
+    "staticSiteStoresMedia": false,
+    "staticSitePersistsTranscript": false,
+    "thirdPartyCaptionProxy": false,
+    "previewHost": "youtube-nocookie.com",
+    "directCaptionHosts": ["youtube.com"],
+    "localCaptionBridgeHost": "loopback-only",
+    "localCaptionBridgePersistence": "temporary-files-only",
+    "persistentBackendPersistence": "configured-youtube-corpus-work-directory-and-postgres"
+  }
+}

@@ -308,4 +308,32 @@ async fn discovery_frontier_is_idempotent_prioritized_and_expands_ingest_evidenc
         .execute(&pool)
         .await
         .unwrap();
+
+    let orphan = enqueue_discovery(
+        &pool,
+        EnqueueDiscoveryRequest {
+            kind: DiscoveryKind::Video,
+            canonical_key: "youtube:video:orphan-evidence".to_string(),
+            target_url: "https://www.youtube.com/watch?v=orphan-evidence".to_string(),
+            source_video_id: Some(Uuid::new_v4()),
+            parent_target_id: None,
+            method: DiscoveryMethod::Manual,
+            evidence: json!({"fixture": "missing source video"}),
+            depth: 1,
+            confidence: 1.0,
+            relevance: 1.0,
+            novelty: 1.0,
+        },
+        &policy,
+    )
+    .await;
+    assert!(orphan.is_err());
+    let orphan_targets: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM discovery_targets
+         WHERE canonical_key = 'youtube:video:orphan-evidence'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(orphan_targets, 0);
 }

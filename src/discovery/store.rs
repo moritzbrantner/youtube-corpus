@@ -44,6 +44,9 @@ pub async fn enqueue_discovery(
     validate_request(&request)?;
     let decision = admission_decision(&request, policy);
     let target_id = stable_target_id(request.kind, &request.canonical_key);
+    // The target and its provenance commit together so a failed evidence write
+    // never leaves a claimable target without evidence.
+    let mut transaction = pool.begin().await?;
     let row = sqlx::query(
         "INSERT INTO discovery_targets (
            id, kind, canonical_key, target_url, state, depth, priority,
@@ -82,7 +85,7 @@ pub async fn enqueue_discovery(
     .bind(request.confidence)
     .bind(request.relevance)
     .bind(request.novelty)
-    .fetch_one(pool)
+    .fetch_one(&mut *transaction)
     .await?;
     let target = target_from_row(row)?;
 
@@ -119,9 +122,10 @@ pub async fn enqueue_discovery(
     .bind(request.relevance)
     .bind(request.novelty)
     .bind(i32::try_from(request.depth)?)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
 
+    transaction.commit().await?;
     Ok(target)
 }
 
