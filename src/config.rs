@@ -100,6 +100,7 @@ pub enum SourceKind {
     CaptionManual,
     CaptionAuto,
     Asr,
+    VisualOcr,
 }
 
 impl SourceKind {
@@ -108,6 +109,7 @@ impl SourceKind {
             Self::CaptionManual => "caption_manual",
             Self::CaptionAuto => "caption_auto",
             Self::Asr => "asr",
+            Self::VisualOcr => "visual_ocr",
         }
     }
 }

@@ -62,6 +62,14 @@ pub fn package_surface() -> PackageSurface {
                     "limit": 20
                 }),
             ),
+            surface_operation(
+                "corpus.videoAnalysis",
+                "Analyze video",
+                "Composes ingested video metadata, the preferred transcript, deterministic lexical analysis, and available multimodal evidence into one report.",
+                serde_json::json!({
+                    "sourceUrl": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                }),
+            ),
             surface_operation_with_execution_plan(
                 "corpus.addSource",
                 "Add source",
