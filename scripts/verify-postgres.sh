@@ -14,3 +14,5 @@ fi
 cargo test --test db_schema -- --ignored
 cargo test --test db_behavior -- --ignored
 cargo test --test multimodal_db -- --ignored
+cargo test --test visual_timeline_db -- --ignored
+cargo test --test media_evidence_db -- --ignored

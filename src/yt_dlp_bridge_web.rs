@@ -165,6 +165,7 @@ async fn extract_with_yt_dlp(
         SourceKind::CaptionManual => format!("{language} manual captions"),
         SourceKind::CaptionAuto => format!("{language} automatic captions"),
         SourceKind::Asr => format!("{language} ASR"),
+        SourceKind::VisualOcr => format!("{language} visual OCR"),
     };
     let metadata = &item.metadata;
 
@@ -311,6 +312,7 @@ fn stream_rank(
         SourceKind::CaptionManual => 0,
         SourceKind::CaptionAuto => 1,
         SourceKind::Asr => 2,
+        SourceKind::VisualOcr => 3,
     };
     (language_rank, source_rank, language)
 }
