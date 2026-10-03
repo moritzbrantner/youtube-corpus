@@ -114,7 +114,7 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           repository: moritzbrantner/moenarch-foundation
-          ref: ead588f27d130d775524db31189b734a224843d5
+          ref: b7533cd02269124deece75b76477ca55a853cd77
           path: moenarch-foundation
           token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
@@ -122,7 +122,7 @@ jobs:
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           repository: moritzbrantner/visual-analysis
-          ref: 6f1c3f09c6f01005ea30644377b5e44df9fd1e60
+          ref: 8852f257de6ddc4580698ad00d4c9a9ab8461b70
           path: visual-analysis
           token: ${{ secrets.GH_PACKAGES_TOKEN || github.token }}
 
