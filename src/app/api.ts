@@ -169,7 +169,7 @@ export interface IngestReport {
   items: IngestItemReport[];
 }
 
-export type JobStatus = "queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
+export type JobStatus = "running" | "succeeded" | "failed";
 
 export interface JobProgress {
   completed: number;

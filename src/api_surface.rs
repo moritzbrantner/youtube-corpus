@@ -306,7 +306,7 @@ pub fn typescript_declarations() -> &'static str {
     r#"export type SearchMode = "hybrid" | "fts" | "semantic";
 export type SourceKind = "caption_manual" | "caption_auto" | "asr";
 export type AddSourceKind = "video" | "channel" | "playlist";
-export type JobStatus = "queued" | "running" | "cancelling" | "succeeded" | "failed" | "cancelled";
+export type JobStatus = "running" | "succeeded" | "failed";
 export type ReprocessStage = "metadata" | "captions" | "asr" | "segments" | "embeddings" | "all";
 export type AnnotationSourceKind = "user" | "processor";
 

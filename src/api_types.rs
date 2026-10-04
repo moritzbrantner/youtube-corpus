@@ -173,13 +173,35 @@ pub struct IngestRunStatus {
     pub job: Option<IngestJob>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IngestJobStatus {
+    Running,
+    Succeeded,
+    Failed,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IngestJobProgress {
+    pub completed: u64,
+    pub total: Option<u64>,
+    pub unit: String,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct IngestJobFailure {
+    pub message: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IngestJob {
-    pub id: jobs_core::JobId,
-    pub status: jobs_core::JobStatus,
-    pub progress: Option<jobs_core::JobProgress>,
-    pub failure: Option<jobs_core::JobFailure>,
+    pub id: Uuid,
+    pub status: IngestJobStatus,
+    pub progress: Option<IngestJobProgress>,
+    pub failure: Option<IngestJobFailure>,
     pub ingest: Option<IngestReport>,
     pub source_url: Option<String>,
     pub created_at: String,
@@ -258,11 +280,11 @@ pub struct LastIngestRun {
     pub created_at: String,
 }
 
-pub fn ingest_status_to_job_status(status: &str) -> Option<jobs_core::JobStatus> {
+pub fn ingest_status_to_job_status(status: &str) -> Option<IngestJobStatus> {
     match status {
-        "running" => Some(jobs_core::JobStatus::Running),
-        "completed" => Some(jobs_core::JobStatus::Succeeded),
-        "failed" => Some(jobs_core::JobStatus::Failed),
+        "running" => Some(IngestJobStatus::Running),
+        "completed" => Some(IngestJobStatus::Succeeded),
+        "failed" => Some(IngestJobStatus::Failed),
         _ => None,
     }
 }
@@ -275,15 +297,15 @@ mod tests {
     fn maps_db_ingest_status_to_job_status() {
         assert_eq!(
             ingest_status_to_job_status("running"),
-            Some(jobs_core::JobStatus::Running)
+            Some(super::IngestJobStatus::Running)
         );
         assert_eq!(
             ingest_status_to_job_status("completed"),
-            Some(jobs_core::JobStatus::Succeeded)
+            Some(super::IngestJobStatus::Succeeded)
         );
         assert_eq!(
             ingest_status_to_job_status("failed"),
-            Some(jobs_core::JobStatus::Failed)
+            Some(super::IngestJobStatus::Failed)
         );
         assert_eq!(ingest_status_to_job_status("succeeded"), None);
     }
