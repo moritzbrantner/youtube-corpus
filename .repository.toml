@@ -49,7 +49,12 @@ must_not_own = [
 # Frontend + browser WASM only; the native server still resolves sibling path dependencies
 # (see #40), so the clean-checkout source graph cannot pass until that is decided.
 [bootstrap]
-command = ["bun", "install", "--frozen-lockfile"]
+# wasm-pack is a build prerequisite (pages.yml installs the same pinned version); keep an existing one.
+command = [
+  "sh",
+  "-c",
+  "bun install --frozen-lockfile && (command -v wasm-pack >/dev/null || cargo install wasm-pack --version 0.14.0 --locked)",
+]
 check = ["bun", "run", "build"]
 timeout_seconds = 1200
 
@@ -59,6 +64,6 @@ command = ["bun", "run", "build"]
 check = [
   "sh",
   "-c",
-  "jq -e '.schemaVersion == 3 and .pagesStandalone == true and .backend.requiredForPages == false' dist/analysis-capabilities.json >/dev/null && test -s dist/index.html && find dist -type f -name '*.wasm' -size +0c | grep -q .",
+  "jq -e '.schemaVersion == 3 and .pagesStandalone == true and .backend.requiredForPages == false and .browser.captionAcquisition.directYoutube == true and .browser.captionAcquisition.thirdPartyProxy == false' dist/analysis-capabilities.json >/dev/null && test -s dist/index.html && find dist -type f -name '*.wasm' -size +0c | grep -q .",
 ]
 timeout_seconds = 1200
