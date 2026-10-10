@@ -1,0 +1,16 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>moritzbrantner/coding-agent-conventions"],
+  "packageRules": [
+    {
+      "description": "Capability crates are exact git revisions bumped deliberately and together (one rev per repository, [patch.crates-io] aligned; see AGENTS.md and scripts/check_capability_pins.py). Per-crate digest PRs would always fail that check.",
+      "matchManagers": ["cargo"],
+      "matchSourceUrls": [
+        "https://github.com/moritzbrantner/nlp-stack",
+        "https://github.com/moritzbrantner/moenarch-foundation",
+        "https://github.com/moritzbrantner/visual-analysis"
+      ],
+      "enabled": false
+    }
+  ]
+}
