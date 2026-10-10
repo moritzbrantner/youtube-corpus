@@ -41,8 +41,9 @@ def main() -> int:
             if package.startswith("moenarch-"):
                 entries.append((f"[{table}] {key}", package, spec))
     for key, spec in manifest.get("patch", {}).get("crates-io", {}).items():
-        if key.startswith("moenarch-"):
-            entries.append((f"[patch.crates-io] {key}", key, spec))
+        package = spec.get("package", key) if isinstance(spec, dict) else key
+        if package.startswith("moenarch-"):
+            entries.append((f"[patch.crates-io] {key}", package, spec))
 
     for label, _package, spec in entries:
         if not isinstance(spec, dict):
