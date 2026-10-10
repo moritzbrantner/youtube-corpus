@@ -382,7 +382,7 @@ fn optional_u64(value: Option<i64>, name: &str) -> anyhow::Result<Option<u64>> {
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    crate::lower_hex(&hasher.finalize())
 }
 
 #[cfg(test)]
