@@ -43,7 +43,7 @@ text-core = { package = "moenarch-text-core", git = "https://github.com/moritzbr
 text-embeddings = { package = "moenarch-text-embeddings", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
 text-lexical = { package = "moenarch-text-lexical", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
 text-transcripts = { package = "moenarch-text-transcripts", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
-runtime-core = { package = "moenarch-runtime-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+runtime-core = { package = "moenarch-runtime-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9" }
 video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", git = "https://github.com/moritzbrantner/visual-analysis", rev = "8852f257de6ddc4580698ad00d4c9a9ab8461b70" }
 video-analysis-ingest = { package = "moenarch-video-analysis-ingest", git = "https://github.com/moritzbrantner/visual-analysis", rev = "8852f257de6ddc4580698ad00d4c9a9ab8461b70" }
 
