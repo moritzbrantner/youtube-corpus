@@ -102,27 +102,6 @@ jobs:
         with:
           path: youtube-corpus
 
-      - name: Check out nlp-stack
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: moritzbrantner/nlp-stack
-          ref: 057689ca1df031d677f4afd9d65eed181c6fca06
-          path: nlp-stack
-
-      - name: Check out moenarch-foundation
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: moritzbrantner/moenarch-foundation
-          ref: b7533cd02269124deece75b76477ca55a853cd77
-          path: moenarch-foundation
-
-      - name: Check out visual-analysis
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: moritzbrantner/visual-analysis
-          ref: 8852f257de6ddc4580698ad00d4c9a9ab8461b70
-          path: visual-analysis
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -251,4 +230,4 @@ jobs:
 
             ## Notes
 
-            The release binaries include the browser UI. Source builds use pinned sibling checkouts of `nlp-stack`, `moenarch-foundation`, and `visual-analysis`.
+            The release binaries include the browser UI. Source builds fetch the capability crates from exact public git revisions pinned in `Cargo.toml`.

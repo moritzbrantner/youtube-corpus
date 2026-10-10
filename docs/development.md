@@ -2,27 +2,14 @@
 
 ## Setup
 
-Cross-repository Rust development uses exact sibling source repositories. Keep the repositories next to one another so `scripts/source-deps` can validate the declared local-only source graph:
+Capability crates come from exact public git revisions pinned in `Cargo.toml` (owner decision, #40), so a plain clone builds and tests without sibling repositories, credentials or source mode:
 
 ```bash
-mkdir youtube-corpus-src
-cd youtube-corpus-src
 git clone https://github.com/moritzbrantner/youtube-corpus.git
-git clone https://github.com/moritzbrantner/nlp-stack.git
-git clone https://github.com/moritzbrantner/moenarch-foundation.git
-git clone https://github.com/moritzbrantner/visual-analysis.git
-git clone https://github.com/moritzbrantner/coding-tooling.git
 cd youtube-corpus
 ```
 
-The outer coding workspace or agent loop should place each sibling repository at the exact revision declared in `.coding-tooling.source-deps.json`. Activate the graph with:
-
-```bash
-bash scripts/source-deps activate
-bash scripts/source-deps status
-```
-
-Local-only source mode fails if a required sibling checkout is missing or at a different revision. It never falls back to authenticated Git and ordinary development does not require package publication or a registry token.
+Testing against an _unpushed_ change in a sibling repository is not supported by `scripts/source-deps` yet: it only generates `[patch.crates-io]`, which does not apply to git dependencies (moritzbrantner/coding-tooling#313). `.coding-tooling.source-deps.json` therefore declares no patches. Push the upstream commit and bump the `rev` instead.
 
 ```bash
 bun install --frozen-lockfile
@@ -30,7 +17,7 @@ docker compose up -d postgres
 cp .env.example .env
 ```
 
-Binary release users do not need sibling source repositories; release archives include the CLI binary and embedded browser UI.
+Binary release users only need the release archive; it includes the CLI binary and embedded browser UI.
 
 The default local database URL is:
 
@@ -106,13 +93,13 @@ skip when tools or environment variables are missing.
 
 ## Dependency Updates
 
-The exact source-development owners are `nlp-stack`, `moenarch-foundation`, and `visual-analysis`.
+Capability crates are pinned to exact git revisions of `nlp-stack`, `moenarch-foundation` and `visual-analysis` in `Cargo.toml`.
 
-1. Move the relevant sibling repository to the intended reviewed commit.
-2. Update its exact `rev` in `.coding-tooling.source-deps.json`.
-3. Run `bash scripts/source-deps activate`; it verifies every local checkout before writing the Cargo patch config.
-4. Run `bun run build`, the relevant Cargo checks/tests, and Postgres integration checks when affected.
-5. Commit application changes and the reviewed source revision pin, but never the generated `.cargo/config.toml`.
+1. Land and push the reviewed upstream commit.
+2. Update the matching `rev` values in `Cargo.toml` (all crates from one repository share one rev).
+3. Keep `[patch.crates-io]` aligned: the foundation rev must be the one the pinned nlp-stack and visual-analysis declare, and the `moenarch-text-core` patch must match the nlp-stack rev. Cargo must report no unused patches.
+4. Run `cargo update` for the changed crates, `bun run build`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked`, and Postgres integration checks when affected.
+5. Commit `Cargo.toml` and `Cargo.lock` together.
 
 Do not publish upstream packages simply to unblock this workflow. Registry-only or release-binary proof is a separate explicit distribution concern.
 
@@ -120,10 +107,9 @@ The GitHub release workflow is intentionally separate from ordinary development.
 
 ## Validation
 
-Canonical local source validation:
+Canonical local validation:
 
 ```bash
-bash scripts/source-deps activate
 bun run verify
 ```
 
@@ -136,12 +122,6 @@ cargo check --locked
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 bun run verify:postgres
-```
-
-When finished with source development:
-
-```bash
-bash scripts/source-deps deactivate
 ```
 
 For a faster loop without Docker, use `bun run verify:fast`. Network-backed

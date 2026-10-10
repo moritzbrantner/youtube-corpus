@@ -47,10 +47,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Verify local-only source contract
+      - name: Verify exact-revision capability dependencies
         run: |
-          jq -e '.schemaVersion == 2 and .cargo.localOnly == true' .coding-tooling.source-deps.json >/dev/null
-          jq -e '.cargo.patches | length > 0 and all(.[]; (.package | length > 0) and (.git | length > 0) and (.rev | test("^[0-9a-f]{40}$")) and (.localPath | length > 0))' .coding-tooling.source-deps.json >/dev/null
+          jq -e '.schemaVersion == 2 and .cargo.localOnly == true and (.cargo.patches | length == 0)' .coding-tooling.source-deps.json >/dev/null
+          python3 scripts/check_capability_pins.py
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -61,7 +61,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
-          components: rustfmt
+          components: rustfmt, clippy
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
@@ -81,10 +81,11 @@ jobs:
       - name: Check repository Rust formatting
         run: cargo fmt --check
 
-      - name: Explain source verification boundary
-        run: |
-          echo "The standalone browser extractor is repository-owned and fully validated here, including its Rust/Wasm build."
-          echo "The larger Rust server graph, clippy, tests, and Postgres integration checks still run in the local coding workspace against the exact sibling source graph."
+      - name: Lint Rust server
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test Rust server
+        run: cargo test --locked
 
   artifact-validation:
     name: Embedded web artifact validation
