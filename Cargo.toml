@@ -39,14 +39,34 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2.5.8"
 uuid = { version = "1.11", features = ["v4", "v5", "serde"] }
 
-text-core = { package = "moenarch-text-core", path = "../nlp-stack/crates/text/text-core" }
-text-embeddings = { package = "moenarch-text-embeddings", path = "../nlp-stack/crates/text/text-embeddings" }
-text-lexical = { package = "moenarch-text-lexical", path = "../nlp-stack/crates/text/text-lexical" }
-text-transcripts = { package = "moenarch-text-transcripts", path = "../nlp-stack/crates/text/text-transcripts" }
-runtime-core = { package = "moenarch-runtime-core", path = "../moenarch-foundation/crates/runtime/runtime-core" }
-video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", path = "../visual-analysis/crates/video/video-analysis-ffmpeg" }
-video-analysis-ingest = { package = "moenarch-video-analysis-ingest", path = "../visual-analysis/crates/video/video-analysis-ingest" }
+text-core = { package = "moenarch-text-core", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
+text-embeddings = { package = "moenarch-text-embeddings", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
+text-lexical = { package = "moenarch-text-lexical", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
+text-transcripts = { package = "moenarch-text-transcripts", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
+runtime-core = { package = "moenarch-runtime-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", git = "https://github.com/moritzbrantner/visual-analysis", rev = "8852f257de6ddc4580698ad00d4c9a9ab8461b70" }
+video-analysis-ingest = { package = "moenarch-video-analysis-ingest", git = "https://github.com/moritzbrantner/visual-analysis", rev = "8852f257de6ddc4580698ad00d4c9a9ab8461b70" }
 
 [dev-dependencies]
 tempfile = "3.23"
 tower = { version = "0.5.3", features = ["util"] }
+
+# Owner decision #40 (option B): capability crates come from exact public git revisions. The
+# pinned nlp-stack and visual-analysis revisions declare registry requirements on foundation (and
+# visual-analysis on text-core); these patches resolve them to the same exact revisions, so the
+# graph holds one copy of each crate. Keep the foundation rev aligned with the foundation revision
+# those repositories declare (648e3ef for nlp-stack 057689c / visual-analysis 8852f25).
+[patch.crates-io]
+moenarch-audio-contracts = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+moenarch-jobs-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+moenarch-math-geometry-2d = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+moenarch-math-linear = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+moenarch-math-sparse-data = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+moenarch-media-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+moenarch-numbers-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+moenarch-runtime-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+moenarch-runtime-onnx = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+moenarch-tensor-data = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+moenarch-vector-analysis-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+moenarch-vector-analysis-index = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "648e3ef18dc5d32d5fcbb211ed7a118b2731a387" }
+moenarch-text-core = { git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }

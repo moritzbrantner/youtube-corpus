@@ -4,8 +4,12 @@
 
 This repository is a Rust CLI for building a searchable YouTube transcript
 corpus in Postgres. Running the binary with no subcommand starts a local browser
-UI served by the Rust process. It uses exact sibling source checkouts from `nlp-stack`, `moenarch-foundation`,
-and `visual-analysis` for transcript parsing, embeddings, runtime, and ingest.
+UI served by the Rust process. It consumes `nlp-stack`, `moenarch-foundation` and `visual-analysis` through
+exact-revision git dependencies on their public repositories (owner decision,
+#40) for transcript parsing, embeddings, runtime, and ingest. Bump a `rev` only
+to a pushed, reviewed commit; keep the `[patch.crates-io]` foundation/text-core
+revisions aligned with what the pinned nlp-stack and visual-analysis declare;
+never add sibling `path` dependencies or publish crates to unblock work.
 
 ## Authority boundaries
 

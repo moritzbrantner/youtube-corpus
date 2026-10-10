@@ -19,21 +19,16 @@ search plus `pgvector` for semantic search.
 Binary release users only need the downloadable CLI archive with its embedded
 browser UI.
 
-Source builds consume the extracted package owners directly. Check out these
-repositories as siblings at the pinned revisions used by CI:
+Source builds fetch the capability crates (`nlp-stack`, `moenarch-foundation`,
+`visual-analysis`) from exact public git revisions pinned in `Cargo.toml`, so a
+plain clone builds without sibling checkouts:
 
 ```bash
-git clone https://github.com/moritzbrantner/nlp-stack.git
-git -C nlp-stack checkout 057689ca1df031d677f4afd9d65eed181c6fca06
-git clone https://github.com/moritzbrantner/moenarch-foundation.git
-git -C moenarch-foundation checkout b7533cd02269124deece75b76477ca55a853cd77
-git clone https://github.com/moritzbrantner/visual-analysis.git
-git -C visual-analysis checkout 8852f257de6ddc4580698ad00d4c9a9ab8461b70
 git clone https://github.com/moritzbrantner/youtube-corpus.git
 cd youtube-corpus
 bun install --frozen-lockfile
 bun run build
-cargo build --release
+cargo build --release --locked
 ```
 
 This source graph does not depend on `rust-packages` or on publishing a new
