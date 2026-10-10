@@ -1186,6 +1186,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "moenarch-text-core"
+version = "0.1.1"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=1fc6b19c651eef98257d51c946852f2ade121aeb#1fc6b19c651eef98257d51c946852f2ade121aeb"
+dependencies = [
+ "moenarch-media-core",
+ "moenarch-runtime-core",
+ "serde",
+ "serde_json",
+ "unicode-casefold",
+ "unicode-normalization",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "moenarch-text-embeddings"
 version = "0.1.1"
 source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
@@ -1193,7 +1207,7 @@ dependencies = [
  "moenarch-math-sparse-data",
  "moenarch-runtime-core",
  "moenarch-runtime-onnx",
- "moenarch-text-core",
+ "moenarch-text-core 0.1.1 (git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06)",
  "moenarch-text-lexical",
  "moenarch-text-model-runtime",
  "moenarch-vector-analysis-core",
@@ -1209,7 +1223,7 @@ source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677
 dependencies = [
  "moenarch-math-sparse-data",
  "moenarch-runtime-core",
- "moenarch-text-core",
+ "moenarch-text-core 0.1.1 (git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06)",
  "serde",
  "serde_json",
 ]
@@ -1232,7 +1246,7 @@ version = "0.1.3"
 source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
 dependencies = [
  "moenarch-runtime-core",
- "moenarch-text-core",
+ "moenarch-text-core 0.1.1 (git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06)",
  "serde",
  "serde_json",
  "thiserror",
@@ -1270,7 +1284,7 @@ dependencies = [
  "moenarch-math-geometry-2d",
  "moenarch-media-core",
  "moenarch-runtime-core",
- "moenarch-text-core",
+ "moenarch-text-core 0.1.1 (git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06)",
  "num-rational",
  "num-traits",
  "scenedetect-core",
@@ -3018,7 +3032,7 @@ dependencies = [
  "clap",
  "mime_guess",
  "moenarch-runtime-core",
- "moenarch-text-core",
+ "moenarch-text-core 0.1.1 (git+https://github.com/moritzbrantner/nlp-stack?rev=1fc6b19c651eef98257d51c946852f2ade121aeb)",
  "moenarch-text-embeddings",
  "moenarch-text-lexical",
  "moenarch-text-transcripts",

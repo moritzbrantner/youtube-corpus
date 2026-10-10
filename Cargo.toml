@@ -39,7 +39,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2.5.8"
 uuid = { version = "1.11", features = ["v4", "v5", "serde"] }
 
-text-core = { package = "moenarch-text-core", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
+text-core = { package = "moenarch-text-core", git = "https://github.com/moritzbrantner/nlp-stack", rev = "1fc6b19c651eef98257d51c946852f2ade121aeb" }
 text-embeddings = { package = "moenarch-text-embeddings", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
 text-lexical = { package = "moenarch-text-lexical", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
 text-transcripts = { package = "moenarch-text-transcripts", git = "https://github.com/moritzbrantner/nlp-stack", rev = "057689ca1df031d677f4afd9d65eed181c6fca06" }
