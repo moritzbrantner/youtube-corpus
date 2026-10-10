@@ -1,0 +1,64 @@
+schema_version = 1
+id = "moritzbrantner/youtube-corpus"
+kind = "app"
+status = "active"
+summary = "Media corpus for YouTube and local media: ingest orchestration, aligned Postgres persistence, stable corpus identities, retrieval, subscriptions and the relationships between producer-owned evidence on one media timeline."
+depends_on = [
+  "moritzbrantner/nlp-stack",
+  "moritzbrantner/moenarch-foundation",
+  "moritzbrantner/visual-analysis",
+  "moritzbrantner/audio-analysis",
+]
+consumed_by = ["moritzbrantner/philosophy-extractor", "moritzbrantner/belief-lab"]
+supersedes = []
+replaced_by = []
+
+# The corpus owns orchestration, persistence, identity, alignment and retrieval. ASR, OCR, scene
+# detection, face/voice and generic NLP algorithms are producer capabilities whose evidence the corpus
+# stores with provenance; it must not implement them.
+[architecture]
+owns = [
+  "youtube-corpus/media-ingest-orchestration",
+  "youtube-corpus/corpus-persistence",
+  "youtube-corpus/corpus-identity",
+  "youtube-corpus/timeline-alignment",
+  "youtube-corpus/corpus-retrieval",
+  "youtube-corpus/subscriptions",
+]
+consumes = [
+  "audio-analysis/transcription",
+  "visual-analysis/video-ingest",
+  "visual-analysis/ocr",
+  "visual-analysis/scene-detection",
+  "nlp-stack/text-transcripts",
+  "nlp-stack/text-embeddings",
+  "nlp-stack/text-lexical",
+  "moenarch-foundation/runtime",
+]
+must_not_own = [
+  "audio-analysis/transcription",
+  "audio-analysis/speakers",
+  "visual-analysis/ocr",
+  "visual-analysis/scene-detection",
+  "visual-analysis/faces",
+  "nlp-stack/text-transcripts",
+  "nlp-stack/text-embeddings",
+  "nlp-stack/text-lexical",
+]
+
+# Frontend + browser WASM only; the native server still resolves sibling path dependencies
+# (see #40), so the clean-checkout source graph cannot pass until that is decided.
+[bootstrap]
+command = ["bun", "install", "--frozen-lockfile"]
+check = ["bun", "run", "build"]
+timeout_seconds = 1200
+
+[pages]
+status = "enabled"
+command = ["bun", "run", "build"]
+check = [
+  "sh",
+  "-c",
+  "jq -e '.schemaVersion == 3 and .pagesStandalone == true and .backend.requiredForPages == false' dist/analysis-capabilities.json >/dev/null && test -s dist/index.html && find dist -type f -name '*.wasm' -size +0c | grep -q .",
+]
+timeout_seconds = 1200

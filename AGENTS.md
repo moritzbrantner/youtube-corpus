@@ -7,6 +7,14 @@ corpus in Postgres. Running the binary with no subcommand starts a local browser
 UI served by the Rust process. It uses exact sibling source checkouts from `nlp-stack`, `moenarch-foundation`,
 and `visual-analysis` for transcript parsing, embeddings, runtime, and ingest.
 
+## Authority boundaries
+
+Machine-readable in `.repository.toml` (`[architecture]`); keep both lists identical.
+
+- Owns: `youtube-corpus/media-ingest-orchestration`, `youtube-corpus/corpus-persistence`, `youtube-corpus/corpus-identity`, `youtube-corpus/timeline-alignment`, `youtube-corpus/corpus-retrieval`, `youtube-corpus/subscriptions`
+- Adapts: `audio-analysis/transcription`, `visual-analysis/video-ingest`, `visual-analysis/ocr`, `visual-analysis/scene-detection`, `nlp-stack/text-transcripts`, `nlp-stack/text-embeddings`, `nlp-stack/text-lexical`, `moenarch-foundation/runtime`
+- Non-authoritative: `audio-analysis/transcription`, `audio-analysis/speakers`, `visual-analysis/ocr`, `visual-analysis/scene-detection`, `visual-analysis/faces`, `nlp-stack/text-transcripts`, `nlp-stack/text-embeddings`, `nlp-stack/text-lexical`
+
 ## Local Services
 
 This project uses Docker services for local development or tests: `postgres`.
