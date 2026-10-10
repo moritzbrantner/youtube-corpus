@@ -221,7 +221,7 @@ jobs:
           sha256sum youtube-corpus-v${{ needs.prepare.outputs.version }}-* > SHA256SUMS
 
       - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag_name }}
           name: youtube-corpus ${{ needs.prepare.outputs.tag_name }}
