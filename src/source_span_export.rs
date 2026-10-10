@@ -557,7 +557,7 @@ fn validate_optional_timed_range(
 fn sha256(value: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(value.as_bytes());
-    format!("sha256:{:x}", hasher.finalize())
+    format!("sha256:{}", crate::lower_hex(&hasher.finalize()))
 }
 
 #[cfg(test)]

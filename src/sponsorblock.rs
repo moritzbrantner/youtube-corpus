@@ -337,7 +337,7 @@ fn normalized_categories(categories: &[String]) -> Vec<String> {
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    crate::lower_hex(&hasher.finalize())
 }
 
 #[cfg(test)]

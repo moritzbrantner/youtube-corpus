@@ -364,13 +364,20 @@ async fn load_subscriptions(
 ) -> anyhow::Result<Vec<Subscription>> {
     let rows = if let Some(id) = id {
         let sql = subscription_select_sql("WHERE id = $1");
-        sqlx::query(&sql).bind(id).fetch_all(pool).await?
+        sqlx::query(sqlx::AssertSqlSafe(sql))
+            .bind(id)
+            .fetch_all(pool)
+            .await?
     } else if include_disabled {
         let sql = subscription_select_sql("");
-        sqlx::query(&sql).fetch_all(pool).await?
+        sqlx::query(sqlx::AssertSqlSafe(sql))
+            .fetch_all(pool)
+            .await?
     } else {
         let sql = subscription_select_sql("WHERE enabled = true");
-        sqlx::query(&sql).fetch_all(pool).await?
+        sqlx::query(sqlx::AssertSqlSafe(sql))
+            .fetch_all(pool)
+            .await?
     };
 
     rows.into_iter().map(subscription_from_row).collect()
@@ -378,11 +385,16 @@ async fn load_subscriptions(
 
 async fn get_subscription_by_url(pool: &PgPool, source_url: &str) -> anyhow::Result<Subscription> {
     let sql = subscription_select_sql("WHERE source_url = $1");
-    let row = sqlx::query(&sql).bind(source_url).fetch_one(pool).await?;
+    let row = sqlx::query(sqlx::AssertSqlSafe(sql))
+        .bind(source_url)
+        .fetch_one(pool)
+        .await?;
     subscription_from_row(row)
 }
 
-fn subscription_select_sql(where_clause: &str) -> String {
+/// Only static `WHERE` clauses are interpolated (callers bind every value), so the resulting SQL is
+/// safe to assert for sqlx's dynamic-query check.
+fn subscription_select_sql(where_clause: &'static str) -> String {
     format!(
         "SELECT id, source_kind, source_url, name, enabled, work_dir, caption, asr_enabled,
           yt_dlp, transcriber_command, transcriber_args, transcriber_timeout_seconds,

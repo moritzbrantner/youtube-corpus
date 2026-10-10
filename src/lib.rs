@@ -100,3 +100,15 @@ pub use sponsorblock::{
     SponsorBlockSnapshot, DEFAULT_SPONSORBLOCK_CATEGORIES, SPONSORBLOCK_API_BASE,
     SPONSORBLOCK_ATTRIBUTION, SPONSORBLOCK_DATA_LICENSE,
 };
+
+/// Lowercase hexadecimal encoding of a digest (sha2 0.11 digests no longer implement `LowerHex`).
+pub(crate) fn lower_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes.iter().fold(
+        String::with_capacity(bytes.len() * 2),
+        |mut output, byte| {
+            let _ = write!(output, "{byte:02x}");
+            output
+        },
+    )
+}
