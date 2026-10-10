@@ -50,12 +50,7 @@ jobs:
       - name: Verify exact-revision capability dependencies
         run: |
           jq -e '.schemaVersion == 2 and .cargo.localOnly == true and (.cargo.patches | length == 0)' .coding-tooling.source-deps.json >/dev/null
-          # No sibling path dependencies; every moenarch capability crate is pinned to a full git rev.
-          if grep -nE 'path = "\.\./' Cargo.toml; then echo "Sibling path dependencies are not allowed (#40)." >&2; exit 1; fi
-          if grep -nE '^[a-z0-9-]+ = \{ package = "moenarch-' Cargo.toml | grep -vE 'git = "https://github.com/moritzbrantner/[a-z-]+", rev = "[0-9a-f]{40}"'; then
-            echo "Capability dependencies must use exact git revisions." >&2; exit 1
-          fi
-          test "$(grep -oE 'moenarch-foundation", rev = "[0-9a-f]{40}"' Cargo.toml | sort -u | wc -l)" -eq 1
+          python3 scripts/check_capability_pins.py
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
