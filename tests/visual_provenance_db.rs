@@ -109,6 +109,7 @@ async fn changed_producer_config_creates_a_distinguishable_evidence_set() {
         .map(|scene| {
             assert_eq!(scene.provenance.processor, "visual-analysis");
             assert_eq!(scene.provenance.processor_version, "rev-0123abc");
+            assert_eq!(scene.provenance.model, "scenedetect-core-content");
             assert_eq!(scene.provenance.model_version, "0.1.0");
             (
                 scene.provenance.run_id.clone(),
@@ -128,4 +129,11 @@ async fn changed_producer_config_creates_a_distinguishable_evidence_set() {
     assert!(configs
         .iter()
         .all(|c| c.2 == "sha256:visual-provenance-fixture"));
+
+    // Deleting the video cascades to its runs and scenes, so reruns on a shared database stay clean.
+    sqlx::query("DELETE FROM videos WHERE id = $1")
+        .bind(video_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 }
