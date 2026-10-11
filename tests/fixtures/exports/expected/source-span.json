@@ -1,0 +1,277 @@
+{
+  "schema": "source_span_interchange",
+  "schemaVersion": 1,
+  "producer": {
+    "name": "youtube-corpus",
+    "revision": "git:fixture"
+  },
+  "sources": [
+    {
+      "id": "0a200000-0000-4000-8000-000000000002",
+      "kind": "youtube_transcript",
+      "revision": "sha256:7c48d4d0b9acb97ca158fb5b76a275bd5582effed5f0856ee1b938058abcff02",
+      "uri": "https://www.youtube.com/watch?v=abc123XYZ_0",
+      "title": "Aquinas on Being — Lecture 1",
+      "creators": [
+        "Philosophy Channel"
+      ],
+      "language": "en",
+      "contentHash": "sha256:c11f60d3a7f47465283068b7cac9122c39126e7265a6aef4d54f9aea6b48771a",
+      "metadata": {
+        "channelId": "UC0000philosophy",
+        "streamId": "0a200000-0000-4000-8000-000000000002",
+        "transcriptSource": "asr",
+        "uploaderId": "@philosophy",
+        "videoId": "11111111-1111-4111-8111-111111111111",
+        "youtubeId": "abc123XYZ_0"
+      }
+    },
+    {
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "kind": "youtube_transcript",
+      "revision": "sha256:f982ae4d68a725188089bc811ae0ff228ddd11a9c4bd1fb10afcb3e7ec86b1ab",
+      "uri": "https://www.youtube.com/watch?v=abc123XYZ_0",
+      "title": "Aquinas on Being — Lecture 1",
+      "creators": [
+        "Philosophy Channel"
+      ],
+      "language": "en",
+      "contentHash": "sha256:d74fed8e2279e97be4045f5654de9520f6a01d5c37b755a9454c42b566977d76",
+      "metadata": {
+        "channelId": "UC0000philosophy",
+        "streamId": "a1000000-0000-4000-8000-000000000001",
+        "transcriptSource": "caption_manual",
+        "uploaderId": "@philosophy",
+        "videoId": "11111111-1111-4111-8111-111111111111",
+        "youtubeId": "abc123XYZ_0"
+      }
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000003",
+      "kind": "youtube_transcript",
+      "revision": "sha256:3a34b8046e996e9ba6dc175e96552f409e692da9cbaa9170e6e510710400e315",
+      "uri": "/corpus/local/seminar.mp4",
+      "title": "Seminar (local recording)",
+      "creators": [
+        "Dr. Müller"
+      ],
+      "contentHash": "sha256:bc37c45423229994a5e650f248afa3def49ed5d0a6f323e30a9abf6ad38e6ac9",
+      "metadata": {
+        "streamId": "b1000000-0000-4000-8000-000000000003",
+        "transcriptSource": "caption_auto",
+        "videoId": "22222222-2222-4222-8222-222222222222"
+      }
+    },
+    {
+      "id": "ocr:c0000000-0000-4000-8000-000000000004",
+      "kind": "youtube_visual_text",
+      "revision": "sha256:703dff0df6ab0bcbdfe6a1539e385cab42f928e6ee5cf634dd684296c7511f70",
+      "uri": "https://www.youtube.com/watch?v=abc123XYZ_0",
+      "title": "Aquinas on Being — Lecture 1",
+      "creators": [
+        "Philosophy Channel"
+      ],
+      "language": "la",
+      "contentHash": "sha256:18654ac074957059da3745865f47a4240684bee58d55f311fd762ea144732622",
+      "metadata": {
+        "configHash": "sha256:ocr-config",
+        "inputHash": "sha256:video-a-frames",
+        "model": "paddleocr",
+        "modelVersion": "3.0",
+        "processor": "visual-analysis",
+        "processorVersion": "git:visual-analysis-fixture",
+        "runId": "c0000000-0000-4000-8000-000000000004",
+        "videoId": "11111111-1111-4111-8111-111111111111"
+      }
+    }
+  ],
+  "spans": [
+    {
+      "id": "5e000000-0000-4000-8000-0000000000c0",
+      "sourceId": "0a200000-0000-4000-8000-000000000002",
+      "sequence": 0,
+      "text": "so the question is what being means",
+      "contentHash": "sha256:6928f1c1f8acfe5cc2b8e7ad15b286e1e2d908fd7447b6e8471492bac3ace413",
+      "language": "en",
+      "locator": {
+        "kind": "timed",
+        "segmentIndex": 0,
+        "startSeconds": 0.0,
+        "endSeconds": 3.125
+      },
+      "metadata": {
+        "streamId": "0a200000-0000-4000-8000-000000000002",
+        "transcriptSource": "asr",
+        "videoId": "11111111-1111-4111-8111-111111111111"
+      }
+    },
+    {
+      "id": "5e000000-0000-4000-8000-0000000000c1",
+      "sourceId": "0a200000-0000-4000-8000-000000000002",
+      "sequence": 1,
+      "text": "essence comes first",
+      "contentHash": "sha256:ff1b8012b02cb5b756d019bb19e25c6268999cde61ee5f36f2c27f83c3a2856e",
+      "language": "en",
+      "locator": {
+        "kind": "timed",
+        "segmentIndex": 1,
+        "startSeconds": 3.125,
+        "endSeconds": 6.0
+      },
+      "metadata": {
+        "streamId": "0a200000-0000-4000-8000-000000000002",
+        "transcriptSource": "asr",
+        "videoId": "11111111-1111-4111-8111-111111111111"
+      }
+    },
+    {
+      "id": "5e000000-0000-4000-8000-0000000000c2",
+      "sourceId": "0a200000-0000-4000-8000-000000000002",
+      "sequence": 2,
+      "text": "and existence follows.",
+      "contentHash": "sha256:fd3b630e1005321c43deaf027e6991cbfd3b8b34c62cb0c99a1076ed71319b04",
+      "language": "en",
+      "locator": {
+        "kind": "timed",
+        "segmentIndex": 2,
+        "startSeconds": 6.0
+      },
+      "metadata": {
+        "streamId": "0a200000-0000-4000-8000-000000000002",
+        "transcriptSource": "asr",
+        "videoId": "11111111-1111-4111-8111-111111111111"
+      }
+    },
+    {
+      "id": "5e000000-0000-4000-8000-0000000000a0",
+      "sourceId": "a1000000-0000-4000-8000-000000000001",
+      "sequence": 0,
+      "text": "First claim about being.",
+      "contentHash": "sha256:50c09da6c4880b14e719f243093b142029c05728971923fe9f6957b5f516da62",
+      "language": "en",
+      "locator": {
+        "kind": "timed",
+        "segmentIndex": 0,
+        "startSeconds": 0.0,
+        "endSeconds": 2.5
+      },
+      "metadata": {
+        "streamId": "a1000000-0000-4000-8000-000000000001",
+        "transcriptSource": "caption_manual",
+        "videoId": "11111111-1111-4111-8111-111111111111"
+      }
+    },
+    {
+      "id": "5e000000-0000-4000-8000-0000000000a1",
+      "sourceId": "a1000000-0000-4000-8000-000000000001",
+      "sequence": 1,
+      "text": "Second claim: essence ≠ existence.",
+      "contentHash": "sha256:f807573ce075a98de6a8e6eb8ceae2142f64b4839d65e8da9440a1bd4dac46e1",
+      "language": "en",
+      "locator": {
+        "kind": "timed",
+        "segmentIndex": 1,
+        "startSeconds": 2.5,
+        "endSeconds": 5.25
+      },
+      "metadata": {
+        "streamId": "a1000000-0000-4000-8000-000000000001",
+        "transcriptSource": "caption_manual",
+        "videoId": "11111111-1111-4111-8111-111111111111"
+      }
+    },
+    {
+      "id": "5e000000-0000-4000-8000-0000000000b0",
+      "sourceId": "b1000000-0000-4000-8000-000000000003",
+      "sequence": 0,
+      "text": "Café 😀 naïve.",
+      "contentHash": "sha256:809e75fb78f4802cbd590b32bea1522e5cd799807eb0d73eac89237b160a962c",
+      "locator": {
+        "kind": "timed",
+        "segmentIndex": 0,
+        "startSeconds": 1.0,
+        "endSeconds": 3.0
+      },
+      "metadata": {
+        "streamId": "b1000000-0000-4000-8000-000000000003",
+        "transcriptSource": "caption_auto",
+        "videoId": "22222222-2222-4222-8222-222222222222"
+      }
+    },
+    {
+      "id": "5e000000-0000-4000-8000-0000000000b1",
+      "sourceId": "b1000000-0000-4000-8000-000000000003",
+      "sequence": 1,
+      "text": "Zweiter Satz.",
+      "contentHash": "sha256:330ecac0b89f54c13a4b1f5d6095be388668d10c417def30add5a049db93dba2",
+      "language": "de",
+      "locator": {
+        "kind": "timed",
+        "segmentIndex": 1,
+        "startSeconds": 3.0,
+        "endSeconds": 4.75
+      },
+      "metadata": {
+        "streamId": "b1000000-0000-4000-8000-000000000003",
+        "transcriptSource": "caption_auto",
+        "videoId": "22222222-2222-4222-8222-222222222222"
+      }
+    },
+    {
+      "id": "7a000000-0000-4000-8000-000000000002",
+      "sourceId": "ocr:c0000000-0000-4000-8000-000000000004",
+      "sequence": 0,
+      "text": "Being — esse",
+      "contentHash": "sha256:3ffcbb999ca72c770ff216c0e6ed4fb556a1a23e6a23f6bc992797cc4b9771ea",
+      "locator": {
+        "kind": "timed",
+        "segmentIndex": 0,
+        "startSeconds": 2.0,
+        "endSeconds": 4.5
+      },
+      "metadata": {
+        "mediaEvidenceRef": "7a000000-0000-4000-8000-000000000002",
+        "runId": "c0000000-0000-4000-8000-000000000004",
+        "videoId": "11111111-1111-4111-8111-111111111111",
+        "visualTextRole": "subtitle"
+      }
+    },
+    {
+      "id": "7a000000-0000-4000-8000-000000000001",
+      "sourceId": "ocr:c0000000-0000-4000-8000-000000000004",
+      "sequence": 1,
+      "text": "Ens et essentia",
+      "contentHash": "sha256:9f4ebd136a8ee4b07df9fa69ae38cbb4d1e2a13bb8c722dfda3eb1b716ce88ad",
+      "language": "la",
+      "locator": {
+        "kind": "timed",
+        "segmentIndex": 1,
+        "startSeconds": 10.0,
+        "endSeconds": 20.0
+      },
+      "metadata": {
+        "mediaEvidenceRef": "7a000000-0000-4000-8000-000000000001",
+        "runId": "c0000000-0000-4000-8000-000000000004",
+        "videoId": "11111111-1111-4111-8111-111111111111",
+        "visualTextRole": "presentation_slide"
+      }
+    },
+    {
+      "id": "7a000000-0000-4000-8000-000000000003",
+      "sourceId": "ocr:c0000000-0000-4000-8000-000000000004",
+      "sequence": 2,
+      "text": "Thanks for watching",
+      "contentHash": "sha256:2179829c978cbe0ee8b3b69e681949c576e0bd3e172b007490033312391cb2be",
+      "locator": {
+        "kind": "timed",
+        "segmentIndex": 2
+      },
+      "metadata": {
+        "mediaEvidenceRef": "7a000000-0000-4000-8000-000000000003",
+        "runId": "c0000000-0000-4000-8000-000000000004",
+        "videoId": "11111111-1111-4111-8111-111111111111",
+        "visualTextRole": "end_credit"
+      }
+    }
+  ]
+}

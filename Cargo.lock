@@ -1116,6 +1116,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "moenarch-corpus-core"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+dependencies = [
+ "serde",
+ "sha2 0.10.9",
+]
+
+[[package]]
 name = "moenarch-jobs-core"
 version = "0.1.2"
 source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=648e3ef18dc5d32d5fcbb211ed7a118b2731a387#648e3ef18dc5d32d5fcbb211ed7a118b2731a387"
@@ -2832,6 +2841,7 @@ dependencies = [
  "chrono",
  "clap",
  "mime_guess",
+ "moenarch-corpus-core",
  "moenarch-runtime-core",
  "moenarch-text-core",
  "moenarch-text-embeddings",
