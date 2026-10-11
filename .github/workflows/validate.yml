@@ -34,7 +34,7 @@ jobs:
       use_environment_v1: false
       setup_command: |
         bun install --frozen-lockfile
-        cargo install wasm-pack --version 0.14.0 --locked
+        bash scripts/install-wasm-pack-ci.sh
       build_command: bun run build
       artifact_paths: dist
       reuse_across_runs: true
@@ -46,6 +46,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify pinned binary bootstrap and artifact consumers
+        run: python3 -m unittest scripts/test_wasm_pack_ci_bootstrap.py
 
       - name: Verify exact-revision capability dependencies
         run: |

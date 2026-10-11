@@ -64,7 +64,7 @@ jobs:
       use_environment_v1: false
       setup_command: |
         bun install --frozen-lockfile
-        cargo install wasm-pack --version 0.14.0 --locked
+        bash scripts/install-wasm-pack-ci.sh
       build_command: bun run build
       artifact_paths: dist
       reuse_across_runs: true
