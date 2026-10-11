@@ -128,6 +128,8 @@ pub enum Command {
     Search(SearchArgs),
     Diagnostics(DiagnosticsArgs),
     ApiSchema(ApiSchemaArgs),
+    /// Writes a deterministic, versioned downstream export of the corpus.
+    Export(ExportArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -692,6 +694,37 @@ pub struct DiagnosticsArgs {
 pub struct ApiSchemaArgs {
     #[arg(long)]
     pub typescript: bool,
+}
+
+/// Downstream export formats (see `youtube_corpus::corpus_export`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum ExportFormat {
+    /// `source_span_interchange@1` source and span records.
+    SourceSpan,
+    /// `moenarch_corpus_core_batch@1` JSONL for philosophy-extractor.
+    CorpusCore,
+    /// `belief_evidence_interchange@1` evidence references for belief-lab.
+    BeliefEvidence,
+}
+
+#[derive(Debug, Parser)]
+#[command(args_override_self = true)]
+pub struct ExportArgs {
+    #[arg(long, value_enum)]
+    pub format: ExportFormat,
+    /// Revision of the producing code recorded in the export (for example `git:<sha>`).
+    #[arg(long)]
+    pub producer_revision: String,
+    #[arg(long)]
+    pub video_id: Option<Uuid>,
+    /// Writes the export to this file instead of stdout.
+    #[arg(long)]
+    pub output: Option<PathBuf>,
+    /// Reads the corpus snapshot from this JSON file instead of Postgres.
+    #[arg(long)]
+    pub snapshot: Option<PathBuf>,
+    #[arg(long)]
+    pub migrate: bool,
 }
 
 fn validate_positive_option(name: &str, value: Option<u64>) -> anyhow::Result<()> {
