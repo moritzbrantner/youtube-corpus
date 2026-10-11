@@ -47,6 +47,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Verify pinned binary bootstrap and artifact consumers
+        run: python3 -m unittest scripts/test_wasm_pack_ci_bootstrap.py
+
       - name: Verify exact-revision capability dependencies
         run: |
           jq -e '.schemaVersion == 2 and .cargo.localOnly == true and (.cargo.patches | length == 0)' .coding-tooling.source-deps.json >/dev/null
