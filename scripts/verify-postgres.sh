@@ -19,3 +19,4 @@ cargo test --test visual_timeline_db -- --ignored
 cargo test --test media_evidence_db -- --ignored
 cargo test --test visual_provenance_db -- --ignored
 cargo test --test corpus_exports -- --ignored
+cargo test --test corpus_export_db -- --ignored

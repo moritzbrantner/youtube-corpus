@@ -130,8 +130,10 @@ pub(crate) fn build_source_span_batch(
         .iter()
         .filter(|stream| !stream.segments.is_empty())
     {
-        let stream = ordered_stream.stream;
-        let video = ordered.video(stream.video_id)?;
+        // The source describes the video of its first segment, as the source-span export always
+        // did (a segment row may name a different video than its stream).
+        let first = ordered_stream.segments[0];
+        let video = ordered.video(first.effective_video_id(ordered_stream.stream))?;
         sources.push(transcript_source(video, ordered_stream)?);
     }
     for ordered_stream in &ordered.streams {
@@ -240,7 +242,7 @@ fn transcript_span(
     let mut metadata = BTreeMap::new();
     metadata.insert(
         "videoId".to_string(),
-        Value::String(stream.video_id.to_string()),
+        Value::String(segment.effective_video_id(stream).to_string()),
     );
     metadata.insert("streamId".to_string(), Value::String(stream.id.to_string()));
     metadata.insert(
@@ -394,6 +396,7 @@ mod tests {
             end_seconds: Some(end),
             text: text.to_string(),
             language: Some("en".to_string()),
+            video_id: None,
         }
     }
 

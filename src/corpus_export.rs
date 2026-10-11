@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
@@ -97,6 +98,19 @@ pub struct ExportTranscriptSegment {
     pub text: String,
     #[serde(default)]
     pub language: Option<String>,
+    /// The segment's own video when its database row names a different video than its stream
+    /// (the schema allows this). `None` means the stream's video. The source-span and
+    /// belief-evidence records of the segment use this video, as the source-span export always
+    /// did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_id: Option<Uuid>,
+}
+
+impl ExportTranscriptSegment {
+    /// The video the segment belongs to: its own `video_id`, else its stream's.
+    pub fn effective_video_id(&self, stream: &ExportTranscriptStream) -> Uuid {
+        self.video_id.unwrap_or(stream.video_id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -126,15 +140,39 @@ pub struct ExportVisualTextTrack {
     pub start_seconds: Option<f64>,
     #[serde(default)]
     pub end_seconds: Option<f64>,
+    /// Position of the track in its run as the database orders it (`start_seconds NULLS LAST,
+    /// track_key, id` under the database collation). Tracks with an ordinal sort by it first;
+    /// the start/key/id order in byte order is the fallback, so a snapshot without ordinals
+    /// still exports deterministically.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ordinal: Option<u64>,
 }
 
 impl CorpusExportSnapshot {
-    /// Keeps only the given video and the streams and runs that belong to it.
+    /// Restricts the snapshot to one video the way [`load_export_snapshot`] does: segments whose
+    /// (effective) video is `video_id`, the streams that still have segments (or belong to the
+    /// video and had none), the video's runs, and every video those reference.
     pub fn retain_video(&mut self, video_id: Uuid) {
-        self.videos.retain(|video| video.id == video_id);
-        self.transcript_streams
-            .retain(|stream| stream.video_id == video_id);
+        self.transcript_streams.retain_mut(|stream| {
+            let had_segments = !stream.segments.is_empty();
+            let stream_video = stream.video_id;
+            stream
+                .segments
+                .retain(|segment| segment.video_id.unwrap_or(stream_video) == video_id);
+            !stream.segments.is_empty() || (!had_segments && stream_video == video_id)
+        });
         self.visual_text_runs.retain(|run| run.video_id == video_id);
+        let mut referenced = BTreeSet::from([video_id]);
+        for stream in &self.transcript_streams {
+            referenced.insert(stream.video_id);
+            referenced.extend(
+                stream
+                    .segments
+                    .iter()
+                    .filter_map(|segment| segment.video_id),
+            );
+        }
+        self.videos.retain(|video| referenced.contains(&video.id));
     }
 }
 
@@ -214,6 +252,14 @@ pub(crate) fn order_snapshot<'a>(
             );
         }
         for segment in &segments {
+            if let Some(segment_video) = segment.video_id {
+                ensure!(
+                    videos.contains_key(&segment_video),
+                    "transcript segment {} references unknown video {}",
+                    segment.id,
+                    segment_video
+                );
+            }
             validate_optional_timed_range(
                 segment.id,
                 segment.start_seconds,
@@ -248,21 +294,7 @@ pub(crate) fn order_snapshot<'a>(
             run.video_id
         );
         let mut tracks = run.tracks.iter().collect::<Vec<_>>();
-        tracks.sort_by(|left, right| {
-            let start = |track: &ExportVisualTextTrack| {
-                (
-                    track.start_seconds.is_none(),
-                    track.start_seconds.unwrap_or(0.0),
-                )
-            };
-            let (left_none, left_start) = start(left);
-            let (right_none, right_start) = start(right);
-            left_none
-                .cmp(&right_none)
-                .then(left_start.total_cmp(&right_start))
-                .then_with(|| left.track_key.cmp(&right.track_key))
-                .then_with(|| left.id.cmp(&right.id))
-        });
+        tracks.sort_by(|left, right| compare_tracks(left, right));
         if include_visual_text {
             for track in &tracks {
                 validate_optional_timed_range(
@@ -292,6 +324,23 @@ pub(crate) fn order_snapshot<'a>(
         streams,
         runs,
     })
+}
+
+/// Track order inside a run: the database ordinal when present, then `start_seconds` ascending
+/// with `None` last (`-0.0` equal to `0.0`, as in SQL), then `track_key`, then `id`.
+fn compare_tracks(left: &ExportVisualTextTrack, right: &ExportVisualTextTrack) -> Ordering {
+    // Adding +0.0 turns -0.0 into +0.0 and leaves every other value unchanged.
+    let start = |track: &ExportVisualTextTrack| track.start_seconds.map(|value| value + 0.0);
+    let (left_start, right_start) = (start(left), start(right));
+    (left.ordinal.is_none(), left.ordinal)
+        .cmp(&(right.ordinal.is_none(), right.ordinal))
+        .then(left_start.is_none().cmp(&right_start.is_none()))
+        .then_with(|| match (left_start, right_start) {
+            (Some(left), Some(right)) => left.total_cmp(&right),
+            _ => Ordering::Equal,
+        })
+        .then_with(|| left.track_key.cmp(&right.track_key))
+        .then_with(|| left.id.cmp(&right.id))
 }
 
 /// Lowercase hex SHA-256 of the UTF-8 bytes.
@@ -788,7 +837,7 @@ pub fn export_belief_evidence(
                 family_id: format!("family:transcript-segment:{}", segment.id),
                 source: BeliefSource {
                     repository: PRODUCER_NAME,
-                    scope_id: format!("video:{}", stream.video_id),
+                    scope_id: format!("video:{}", segment.effective_video_id(stream)),
                     record_id: format!("transcript-segment:{}", segment.id),
                     revision,
                 },
@@ -822,23 +871,170 @@ pub fn export_belief_evidence(
 
 /// Loads the export snapshot from Postgres, optionally for one video.
 ///
-/// It reads what the source-span export has always read: transcript streams that have
-/// segments, OCR visual-text runs that have tracks, and the videos they belong to. A stream's
-/// `processing_config_hash` is `sha256:` of the canonical JSON of its `processing_config`.
+/// It reads exactly what the source-span export has always read, with the same scope:
+///
+/// - transcript segments, filtered by the segment row's own `video_id` (which the schema allows
+///   to differ from its stream's; such a segment carries its own [`ExportTranscriptSegment::video_id`]);
+/// - the transcript streams of those segments;
+/// - OCR visual-text tracks, filtered by their `video_id`, with their runs, each track carrying
+///   its database order ([`ExportVisualTextTrack::ordinal`]: `start_seconds NULLS LAST,
+///   track_key, id` under the database collation);
+/// - every video those rows reference.
+///
+/// A stream's `processing_config_hash` is `sha256:` of the canonical JSON of its
+/// `processing_config`.
 pub async fn load_export_snapshot(
     pool: &PgPool,
     video_id: Option<Uuid>,
 ) -> anyhow::Result<CorpusExportSnapshot> {
+    let segment_rows = sqlx::query(
+        "SELECT ts.id, ts.stream_id, ts.video_id, ts.segment_index, ts.start_seconds,
+                ts.end_seconds, ts.text, ts.language
+         FROM transcript_segments ts
+         WHERE ($1::uuid IS NULL OR ts.video_id = $1)
+         ORDER BY ts.stream_id, ts.segment_index",
+    )
+    .bind(video_id)
+    .fetch_all(pool)
+    .await?;
+    let mut segments_by_stream = BTreeMap::<Uuid, Vec<(Uuid, ExportTranscriptSegment)>>::new();
+    for row in segment_rows {
+        let segment_index: i64 = row.try_get("segment_index")?;
+        let segment_video: Uuid = row.try_get("video_id")?;
+        segments_by_stream
+            .entry(row.try_get("stream_id")?)
+            .or_default()
+            .push((
+                segment_video,
+                ExportTranscriptSegment {
+                    id: row.try_get("id")?,
+                    segment_index: segment_index
+                        .try_into()
+                        .context("transcript segment index must be non-negative")?,
+                    start_seconds: row.try_get("start_seconds")?,
+                    end_seconds: row.try_get("end_seconds")?,
+                    text: row.try_get("text")?,
+                    language: row.try_get("language")?,
+                    video_id: None,
+                },
+            ));
+    }
+
+    let stream_ids = segments_by_stream.keys().copied().collect::<Vec<_>>();
+    let stream_rows = sqlx::query(
+        "SELECT st.id, st.video_id, st.source_kind, st.language, st.full_text,
+                st.processor, st.processor_version, st.processing_config
+         FROM transcript_streams st
+         WHERE st.id = ANY($1)
+         ORDER BY st.id",
+    )
+    .bind(&stream_ids)
+    .fetch_all(pool)
+    .await?;
+    let mut referenced_videos = BTreeSet::new();
+    let mut transcript_streams = Vec::with_capacity(stream_rows.len());
+    for row in stream_rows {
+        let id: Uuid = row.try_get("id")?;
+        let stream_video: Uuid = row.try_get("video_id")?;
+        let processing_config: Value = row.try_get("processing_config")?;
+        let segments = segments_by_stream
+            .remove(&id)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(segment_video, mut segment)| {
+                referenced_videos.insert(segment_video);
+                if segment_video != stream_video {
+                    segment.video_id = Some(segment_video);
+                }
+                segment
+            })
+            .collect();
+        referenced_videos.insert(stream_video);
+        transcript_streams.push(ExportTranscriptStream {
+            id,
+            video_id: stream_video,
+            source_kind: row.try_get("source_kind")?,
+            language: row.try_get("language")?,
+            full_text: row.try_get("full_text")?,
+            processor: row.try_get("processor")?,
+            processor_version: row.try_get("processor_version")?,
+            processing_config_hash: Some(sha256_prefixed(&canonical_json(&processing_config)?)),
+            segments,
+        });
+    }
+    ensure!(
+        segments_by_stream.is_empty(),
+        "transcript segments reference missing streams"
+    );
+
+    let track_rows = sqlx::query(
+        "SELECT t.id, t.run_id, t.track_key, t.text, t.role, t.language,
+                t.start_seconds, t.end_seconds
+         FROM visual_text_tracks t
+         WHERE ($1::uuid IS NULL OR t.video_id = $1)
+         ORDER BY t.run_id, t.start_seconds NULLS LAST, t.track_key, t.id",
+    )
+    .bind(video_id)
+    .fetch_all(pool)
+    .await?;
+    let mut tracks_by_run = BTreeMap::<Uuid, Vec<ExportVisualTextTrack>>::new();
+    for row in track_rows {
+        let tracks = tracks_by_run.entry(row.try_get("run_id")?).or_default();
+        let ordinal = u64::try_from(tracks.len()).context("visual text track count")?;
+        tracks.push(ExportVisualTextTrack {
+            id: row.try_get("id")?,
+            track_key: row.try_get("track_key")?,
+            text: row.try_get("text")?,
+            role: row.try_get("role")?,
+            language: row.try_get("language")?,
+            start_seconds: row.try_get("start_seconds")?,
+            end_seconds: row.try_get("end_seconds")?,
+            ordinal: Some(ordinal),
+        });
+    }
+
+    let run_ids = tracks_by_run.keys().copied().collect::<Vec<_>>();
+    let run_rows = sqlx::query(
+        "SELECT r.id, r.video_id, r.processor, r.processor_version, r.model, r.model_version,
+                r.input_hash, r.config_hash
+         FROM media_processing_runs r
+         WHERE r.id = ANY($1)
+         ORDER BY r.id",
+    )
+    .bind(&run_ids)
+    .fetch_all(pool)
+    .await?;
+    let mut visual_text_runs = Vec::with_capacity(run_rows.len());
+    for row in run_rows {
+        let id: Uuid = row.try_get("id")?;
+        let run_video: Uuid = row.try_get("video_id")?;
+        referenced_videos.insert(run_video);
+        visual_text_runs.push(ExportVisualTextRun {
+            id,
+            video_id: run_video,
+            processor: row.try_get("processor")?,
+            processor_version: row.try_get("processor_version")?,
+            model: row.try_get("model")?,
+            model_version: row.try_get("model_version")?,
+            input_hash: row.try_get("input_hash")?,
+            config_hash: row.try_get("config_hash")?,
+            tracks: tracks_by_run.remove(&id).unwrap_or_default(),
+        });
+    }
+    ensure!(
+        tracks_by_run.is_empty(),
+        "visual text tracks reference missing runs"
+    );
+
+    let referenced_videos = referenced_videos.into_iter().collect::<Vec<_>>();
     let video_rows = sqlx::query(
         "SELECT v.id, v.youtube_id, v.source_url, v.title, v.channel, v.channel_id,
                 v.uploader, v.uploader_id
          FROM videos v
-         WHERE ($1::uuid IS NULL OR v.id = $1)
-           AND (EXISTS (SELECT 1 FROM transcript_segments ts WHERE ts.video_id = v.id)
-                OR EXISTS (SELECT 1 FROM visual_text_tracks t WHERE t.video_id = v.id))
+         WHERE v.id = ANY($1)
          ORDER BY v.id",
     )
-    .bind(video_id)
+    .bind(&referenced_videos)
     .fetch_all(pool)
     .await?;
     let mut videos = Vec::with_capacity(video_rows.len());
@@ -855,125 +1051,121 @@ pub async fn load_export_snapshot(
         });
     }
 
-    let stream_rows = sqlx::query(
-        "SELECT st.id, st.video_id, st.source_kind, st.language, st.full_text,
-                st.processor, st.processor_version, st.processing_config
-         FROM transcript_streams st
-         WHERE ($1::uuid IS NULL OR st.video_id = $1)
-           AND EXISTS (SELECT 1 FROM transcript_segments ts WHERE ts.stream_id = st.id)
-         ORDER BY st.id",
-    )
-    .bind(video_id)
-    .fetch_all(pool)
-    .await?;
-    let mut streams = BTreeMap::new();
-    for row in stream_rows {
-        let id: Uuid = row.try_get("id")?;
-        let processing_config: Value = row.try_get("processing_config")?;
-        streams.insert(
-            id,
-            ExportTranscriptStream {
-                id,
-                video_id: row.try_get("video_id")?,
-                source_kind: row.try_get("source_kind")?,
-                language: row.try_get("language")?,
-                full_text: row.try_get("full_text")?,
-                processor: row.try_get("processor")?,
-                processor_version: row.try_get("processor_version")?,
-                processing_config_hash: Some(sha256_prefixed(&canonical_json(&processing_config)?)),
-                segments: Vec::new(),
-            },
-        );
-    }
-
-    let segment_rows = sqlx::query(
-        "SELECT ts.id, ts.stream_id, ts.segment_index, ts.start_seconds, ts.end_seconds,
-                ts.text, ts.language
-         FROM transcript_segments ts
-         JOIN transcript_streams st ON st.id = ts.stream_id
-         WHERE ($1::uuid IS NULL OR st.video_id = $1)
-         ORDER BY ts.stream_id, ts.segment_index",
-    )
-    .bind(video_id)
-    .fetch_all(pool)
-    .await?;
-    for row in segment_rows {
-        let stream_id: Uuid = row.try_get("stream_id")?;
-        let segment_index: i64 = row.try_get("segment_index")?;
-        let stream = streams
-            .get_mut(&stream_id)
-            .with_context(|| format!("transcript segment of unloaded stream {stream_id}"))?;
-        stream.segments.push(ExportTranscriptSegment {
-            id: row.try_get("id")?,
-            segment_index: segment_index
-                .try_into()
-                .context("transcript segment index must be non-negative")?,
-            start_seconds: row.try_get("start_seconds")?,
-            end_seconds: row.try_get("end_seconds")?,
-            text: row.try_get("text")?,
-            language: row.try_get("language")?,
-        });
-    }
-
-    let run_rows = sqlx::query(
-        "SELECT r.id, r.video_id, r.processor, r.processor_version, r.model, r.model_version,
-                r.input_hash, r.config_hash
-         FROM media_processing_runs r
-         WHERE ($1::uuid IS NULL OR r.video_id = $1)
-           AND EXISTS (SELECT 1 FROM visual_text_tracks t WHERE t.run_id = r.id)
-         ORDER BY r.id",
-    )
-    .bind(video_id)
-    .fetch_all(pool)
-    .await?;
-    let mut runs = BTreeMap::new();
-    for row in run_rows {
-        let id: Uuid = row.try_get("id")?;
-        runs.insert(
-            id,
-            ExportVisualTextRun {
-                id,
-                video_id: row.try_get("video_id")?,
-                processor: row.try_get("processor")?,
-                processor_version: row.try_get("processor_version")?,
-                model: row.try_get("model")?,
-                model_version: row.try_get("model_version")?,
-                input_hash: row.try_get("input_hash")?,
-                config_hash: row.try_get("config_hash")?,
-                tracks: Vec::new(),
-            },
-        );
-    }
-
-    let track_rows = sqlx::query(
-        "SELECT t.id, t.run_id, t.track_key, t.text, t.role, t.language,
-                t.start_seconds, t.end_seconds
-         FROM visual_text_tracks t
-         WHERE ($1::uuid IS NULL OR t.video_id = $1)
-         ORDER BY t.run_id, t.start_seconds NULLS LAST, t.track_key, t.id",
-    )
-    .bind(video_id)
-    .fetch_all(pool)
-    .await?;
-    for row in track_rows {
-        let run_id: Uuid = row.try_get("run_id")?;
-        let run = runs
-            .get_mut(&run_id)
-            .with_context(|| format!("visual text track of unloaded run {run_id}"))?;
-        run.tracks.push(ExportVisualTextTrack {
-            id: row.try_get("id")?,
-            track_key: row.try_get("track_key")?,
-            text: row.try_get("text")?,
-            role: row.try_get("role")?,
-            language: row.try_get("language")?,
-            start_seconds: row.try_get("start_seconds")?,
-            end_seconds: row.try_get("end_seconds")?,
-        });
-    }
-
     Ok(CorpusExportSnapshot {
         videos,
-        transcript_streams: streams.into_values().collect(),
-        visual_text_runs: runs.into_values().collect(),
+        transcript_streams,
+        visual_text_runs,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn track(
+        id: u128,
+        key: &str,
+        start: Option<f64>,
+        ordinal: Option<u64>,
+    ) -> ExportVisualTextTrack {
+        ExportVisualTextTrack {
+            id: Uuid::from_u128(id),
+            track_key: key.to_string(),
+            text: format!("text {key}"),
+            role: "subtitle".to_string(),
+            language: None,
+            start_seconds: start,
+            end_seconds: start,
+            ordinal,
+        }
+    }
+
+    fn keys(tracks: &mut [ExportVisualTextTrack]) -> Vec<String> {
+        tracks.sort_by(compare_tracks);
+        tracks.iter().map(|track| track.track_key.clone()).collect()
+    }
+
+    #[test]
+    fn negative_zero_start_ties_with_zero() {
+        let mut tracks = vec![
+            track(1, "b", Some(0.0), None),
+            track(2, "a", Some(-0.0), None),
+        ];
+        assert_eq!(keys(&mut tracks), ["a", "b"]);
+        tracks.reverse();
+        assert_eq!(keys(&mut tracks), ["a", "b"]);
+    }
+
+    #[test]
+    fn database_ordinal_wins_over_byte_order_and_is_input_order_independent() {
+        // Collation order ("a" before "B") differs from byte order ("B" before "a").
+        let mut tracks = vec![
+            track(1, "B", Some(1.0), Some(1)),
+            track(2, "a", Some(1.0), Some(0)),
+            track(3, "late", None, Some(2)),
+        ];
+        assert_eq!(keys(&mut tracks), ["a", "B", "late"]);
+        tracks.reverse();
+        assert_eq!(keys(&mut tracks), ["a", "B", "late"]);
+
+        let mut without = tracks
+            .into_iter()
+            .map(|track| ExportVisualTextTrack {
+                ordinal: None,
+                ..track
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(keys(&mut without), ["B", "a", "late"]);
+    }
+
+    #[test]
+    fn retain_video_follows_the_segment_video() {
+        let (stream_video, other_video) = (Uuid::from_u128(10), Uuid::from_u128(11));
+        let video = |id| ExportVideo {
+            id,
+            youtube_id: None,
+            source_url: format!("https://youtube.test/{id}"),
+            title: None,
+            channel: None,
+            channel_id: None,
+            uploader: None,
+            uploader_id: None,
+        };
+        let segment = |index: u64, video_id| ExportTranscriptSegment {
+            id: Uuid::from_u128(100 + u128::from(index)),
+            segment_index: index,
+            start_seconds: None,
+            end_seconds: None,
+            text: format!("segment {index}"),
+            language: None,
+            video_id,
+        };
+        let snapshot = CorpusExportSnapshot {
+            videos: vec![video(stream_video), video(other_video)],
+            transcript_streams: vec![ExportTranscriptStream {
+                id: Uuid::from_u128(20),
+                video_id: stream_video,
+                source_kind: "asr".to_string(),
+                language: None,
+                full_text: None,
+                processor: "youtube-corpus".to_string(),
+                processor_version: "0.1.0".to_string(),
+                processing_config_hash: None,
+                segments: vec![segment(0, None), segment(1, Some(other_video))],
+            }],
+            visual_text_runs: Vec::new(),
+        };
+
+        let mut other = snapshot.clone();
+        other.retain_video(other_video);
+        assert_eq!(other.transcript_streams.len(), 1);
+        assert_eq!(other.transcript_streams[0].segments.len(), 1);
+        assert_eq!(other.transcript_streams[0].segments[0].segment_index, 1);
+        assert_eq!(other.videos.len(), 2, "the stream's video stays referenced");
+
+        let mut own = snapshot;
+        own.retain_video(stream_video);
+        assert_eq!(own.transcript_streams[0].segments.len(), 1);
+        assert_eq!(own.videos.len(), 1);
+    }
 }
