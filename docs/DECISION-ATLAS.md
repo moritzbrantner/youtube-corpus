@@ -1,6 +1,6 @@
 # YouTube Corpus Decision Atlas
 
-This is the repository-owned, feature-oriented source for **what YouTube Corpus should do**. Entries describe product intent, not claims that a feature is implemented or independently accepted. These initial Decisions capture the owner's direction given on 2026-10-13; existing technical boundaries remain in [AGENTS.md](../AGENTS.md) and [.repository.toml](../.repository.toml).
+This is the repository-owned, feature-oriented source for **what YouTube Corpus should do**. Entries describe product intent, not claims that a feature is implemented or independently accepted. The initial entries consolidate the owner's direction from 2026-10-13 and a previously documented evidence boundary (identified by its Status). Existing technical authority remains in [AGENTS.md](../AGENTS.md) and [.repository.toml](../.repository.toml).
 
 ## Editing rules
 
