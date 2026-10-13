@@ -46,7 +46,15 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
   When the same canonical video belongs to both automatic and review-first tracked sources, **any automatic source is sufficient to initiate analysis**, without asking for another approval. Review-first mode delays automatic processing only while no applicable source requests it. Combine the effective detector requests from applicable profiles (2.8), reuse unchanged results (2.2), and process each identical video/input/detector/configuration once rather than once per source. Preserve all source memberships and show each source's policy alongside the video's actual pending/running/completed state. A video previously awaiting review can transition into automatic processing if later discovered by an automatic source, without duplicating the video or silently erasing its review history.
 
 - **1.9** [question] **How much of a channel or playlist's existing history should be processed when first tracked?**  
+  Resolved 2026-10-13 by 1.10.  
   When adding a source with hundreds or thousands of existing videos, should the app automatically work through the entire back catalog, track only videos published after the source is added, or let the user choose an initial backfill scope (for example: none, recent items, or entire history)? The answer determines the first-use experience and amount of analysis triggered; the approved source processing mode from 1.6 and overlap rule 1.8 still govern any selected items.
+
+- **1.10 Configure the initial historical backfill when tracking a source.**  
+  Status: adopted 2026-10-13. Answers 1.9 (option C).  
+  When registering a channel or playlist, users can choose which already-published videos to backfill: **none**, a **recent-history** selection, a **limited number** of videos, or the **entire available history**. Show the requested scope before starting historical discovery/analysis and keep that initial backfill choice distinct from ongoing checks for newly published videos. Videos selected for backfill obey the source's automatic or review-first processing policy (1.6), automatic precedence for shared videos (1.8), and effective detector profiles (2.6 and 2.8); previously known videos and unchanged results must not be duplicated (2.2). The initial scope must not silently truncate the user's requested full-history selection or trigger an unselected full backfill. The preselected/default initial scope remains unresolved in 1.11.
+
+- **1.11** [question] **What initial backfill option should be preselected?**  
+  When the user first adds a channel or playlist, should the default backfill selection be **none**, **recent/limited history**, or **full history**? Users retain the explicit alternatives in 1.10. This choice determines the risk of expensive surprise processing during first-time source setup.
 
 ## 2. Parsing and detector configuration
 
