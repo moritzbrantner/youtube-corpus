@@ -51,10 +51,18 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
 
 - **1.10 Configure the initial historical backfill when tracking a source.**  
   Status: adopted 2026-10-13. Answers 1.9 (option C).  
-  When registering a channel or playlist, users can choose which already-published videos to backfill: **none**, a **recent-history** selection, a **limited number** of videos, or the **entire available history**. Show the requested scope before starting historical discovery/analysis and keep that initial backfill choice distinct from ongoing checks for newly published videos. Videos selected for backfill obey the source's automatic or review-first processing policy (1.6), automatic precedence for shared videos (1.8), and effective detector profiles (2.6 and 2.8); previously known videos and unchanged results must not be duplicated (2.2). The initial scope must not silently truncate the user's requested full-history selection or trigger an unselected full backfill. The preselected/default initial scope remains unresolved in 1.11.
+  When registering a channel or playlist, users can choose which already-published videos to backfill: **none**, a **recent-history** selection, a **limited number** of videos, or the **entire available history**. Show the requested scope before starting historical discovery/analysis and keep that initial backfill choice distinct from ongoing checks for newly published videos. Videos selected for backfill obey the source's automatic or review-first processing policy (1.6), automatic precedence for shared videos (1.8), and effective detector profiles (2.6 and 2.8); previously known videos and unchanged results must not be duplicated (2.2). The initial scope must not silently truncate the user's requested full-history selection or trigger an unselected full backfill. The initial selection defaults to full history under 1.12.
 
 - **1.11** [question] **What initial backfill option should be preselected?**  
+  Resolved 2026-10-13 by 1.12.  
   When the user first adds a channel or playlist, should the default backfill selection be **none**, **recent/limited history**, or **full history**? Users retain the explicit alternatives in 1.10. This choice determines the risk of expensive surprise processing during first-time source setup.
+
+- **1.12 Full available history is the preselected initial backfill.**  
+  Status: adopted 2026-10-13. Answers 1.11 (option C).  
+  The channel/playlist setup initially selects **all available historical videos** rather than none or a limited recent selection. The full-history scope is plainly visible and can be changed to any alternative from 1.10 **before the user adds the source**. Adding the source explicitly with this selected scope starts the requested historical discovery/backfill; merely opening the app must not trigger it. Do not silently impose the ordinary per-check item limit as a cap on full history. Respect the selected source's automatic or review-first processing policy (1.6), shared-video precedence (1.8), deduplication and per-stage reuse (2.2). Show the scope and progress truthfully, including provider restrictions or partially available history; never silently report an incomplete backfill as complete. Background execution and controls for potentially extensive backfills are unresolved in 1.13.
+
+- **1.13** [question] **How should extensive initial backfills execute and be controlled?**  
+  When a newly added channel has thousands of videos and full history is selected, should the backfill run progressively in the background with visible progress and pause/resume/cancel controls, run as a blocking operation until complete, or process only user-launched batches? The decision should preserve the full-history selection (1.12), review-first policy (1.6), and idempotent reuse (2.2), without inventing a hidden item cap.
 
 ## 2. Parsing and detector configuration
 
