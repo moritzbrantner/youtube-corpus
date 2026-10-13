@@ -41,13 +41,14 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
 
 - **2.3 Let users configure which detectors enrich a video.**  
   Status: adopted 2026-10-13.  
-  The product offers configurable text, audio, and visual analysis capabilities rather than one fixed parse. Detector selection and its produced evidence are inspectable. The default scope and inheritance of detector settings remain open in 2.5.
+  The product offers configurable text, audio, and visual analysis capabilities rather than one fixed parse. Detector selection and its produced evidence are inspectable. The default scope and inheritance are defined by 2.6 (Answers 2.5).
 
 - **2.4 Align spoken text, visible text, and scene evidence on the video timeline.**  
   Status: adopted 2026-10-13.  
   Transcripts, OCR of text displayed in the video, and useful scene boundaries can all contribute time-linked searchable evidence. Keep spoken words, on-screen text, raw observations, and derived evidence distinguishable rather than silently replacing one another. Reuse existing scene-detection capability where it helps; the corpus does not implement a second scene detector.
 
 - **2.5** [question] **Where should detector settings apply by default?**  
+  Resolved 2026-10-13 by 2.6.  
   Should a processing profile primarily be selected for a corpus/group, for each tracked source, or for individual videos? Inheritance and override behavior are not yet approved.
 
 - **2.6 Detector profiles default to the corpus or group, with scoped overrides.**  
