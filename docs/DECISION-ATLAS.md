@@ -86,7 +86,12 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
   Every enabled, monitored channel or playlist has its **own configurable checking interval**, initially populated with a sensible default. With the local corpus server running, due checks happen automatically without a separate CLI watch process. Users can inspect and change each source's interval and see its last-check result and upcoming or overdue check, while retaining a **Check now** action. Disabled or unmonitored sources are not checked periodically. Repeated, overlapping, or retried checks must not create duplicate canonical videos or duplicate unchanged detector work (1.1, 1.2, 2.2). Newly discovered videos follow automatic/review-first processing (1.6 and 1.8) and fair interleaving with historical backfill (1.16); routine new-upload checks must not silently turn a selected limited/none initial backfill into full historical analysis (1.10). Source-check scheduling belongs to existing corpus-owned subscriptions and runtime, not a second monitoring service. The precise default interval is a routine configuration value, not an owner-approved numeric SLA.
 
 - **1.19** [question] **What should happen to missed checks after the local server restarts?**  
+  Resolved 2026-10-13 by 1.20.  
   If the server has been off for several days and a channel's next scheduled check was missed, should it check the source promptly on restart and then resume its normal schedule, simply start a new interval from the restart time, or replay every missed scheduled check? Preserve discovery deduplication and avoid redundant repeated checks.
+
+- **1.20 Catch up once per overdue monitored source after restart.**  
+  Status: adopted 2026-10-13. Answers 1.19 (option A).  
+  When the local corpus server resumes after downtime, each **enabled, monitored source with a missed due check** is checked promptly **once**, regardless of how many scheduled intervals were missed. After that catch-up, the source returns to its independently configured monitoring interval (1.18). Do not replay every missed polling occurrence or defer the first overdue check until a full new interval elapses. Show accurate last-check outcome and subsequent due time; preserve source memberships and deduplicate overlapping/manual/retried checks, videos, and unchanged analysis (1.1, 1.2, 2.2). Disabled or unmonitored sources remain unscheduled. Newly found videos still follow their automatic/review-first policy (1.6 and 1.8) and fairness with historical backfill (1.16). The checks are server-owned; merely opening the browser UI is not a separate request to run a check.
 
 ## 2. Parsing and detector configuration
 
@@ -135,6 +140,9 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
 - **3.3 Filter evidence using both corpus organization and source metadata.**  
   Status: adopted 2026-10-13.  
   Search and browsing can narrow results by tracked sources, user-defined categories/groups, and relevant available YouTube metadata, while retaining source and timestamp context.
+
+- **3.4** [question] **How should transcript and on-screen OCR search appear in the interface?**  
+  When users search text across their corpus, should one unified results list include both spoken passages and visible on-screen text with modality labels/filters, should transcripts and OCR have separate result views, or should transcript results appear by default with OCR only when explicitly enabled? All options retain timestamp links and source/provenance distinctions from 3.1–3.3.
 
 ## 4. People, places, and other entities
 
