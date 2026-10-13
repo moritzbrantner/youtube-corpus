@@ -11,6 +11,8 @@ to a pushed, reviewed commit; keep the `[patch.crates-io]` foundation/text-core
 revisions aligned with what the pinned nlp-stack and visual-analysis declare;
 never add sibling `path` dependencies or publish crates to unblock work.
 
+Product intent lives in [docs/DECISION-ATLAS.md](docs/DECISION-ATLAS.md). Read applicable Decisions and open Questions before changing the product; the Atlas does not claim implementation or human acceptance. The roadmap sequences work rather than replacing product intent.
+
 ## Authority boundaries
 
 Machine-readable in `.repository.toml` (`[architecture]`); keep both lists identical.
