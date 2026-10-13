@@ -50,6 +50,13 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
 - **2.5** [question] **Where should detector settings apply by default?**  
   Should a processing profile primarily be selected for a corpus/group, for each tracked source, or for individual videos? Inheritance and override behavior are not yet approved.
 
+- **2.6 Detector profiles default to the corpus or group, with scoped overrides.**  
+  Status: adopted 2026-10-13. Answers 2.5 (option A).  
+  A corpus or research group supplies the common detector profile by default. Users can optionally override that selection for a tracked channel/playlist or an individual video. The effective detector selection for a video must be inspectable so users understand which analyses will run. Existing results should be reused, and a changed profile should not needlessly rerun unrelated unchanged stages (see 2.2). Resolving conflicting inherited profiles for material belonging to more than one group/source is not decided here; see 2.7.
+
+- **2.7** [question] **How should overlapping source or group detector profiles be resolved?**  
+  When the same video belongs to multiple tracked sources or research groups whose detector configurations differ, should the applicable detectors be combined, should the user choose one effective profile, or should the corpus default prevail until a video override is set? An explicit per-video override remains supported under 2.6.
+
 ## 3. Finding material inside videos
 
 - **3.1 Search transcript words, phrases, and passages across the corpus.**  
