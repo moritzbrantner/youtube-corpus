@@ -89,7 +89,15 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
 
 - **4.3 Do not silently turn uncertain matches into verified identities.**  
   Status: existing repository evidence boundary (see `docs/architecture.md`, Multimodal Analysis Boundary).  
-  Cross-video face/voice similarity clusters and textual mentions are evidence, not automatic proof that the system identified the same real-world person. Preserve provenance and uncertainty; the owner has not yet selected the cross-video identity-linking policy in 4.4.
+  Cross-video face/voice similarity clusters and textual mentions are evidence, not automatic proof that the system identified the same real-world person. Preserve provenance and uncertainty. Decision 4.5 permits explicitly marked inferred identity links, not a silent promotion to verified real-world identity.
 
 - **4.4** [question] **How should possible person matches become one cross-video identity?**  
+  Resolved 2026-10-13 by 4.5.  
   Should the corpus only link explicitly confirmed people, suggest uncertain links for confirmation, or automatically combine high-confidence matches while exposing uncertainty? Until decided, keep candidate matches separate from verified person identities.
+
+- **4.5 Automatically link high-confidence matches, with inspectable uncertainty and correction.**  
+  Status: adopted 2026-10-13. Answers 4.4 (option C).  
+  The corpus may automatically associate high-confidence matching face/voice observations or clusters across videos into a shared **inferred, corpus-local person identity**, without requiring user confirmation for every match. These matches are visibly identified as automatic inferences rather than verified real-world identities; retain confidence, source observations, timestamps, and producing algorithm/model/configuration provenance. Users can inspect the supporting evidence, correct, unlink or split incorrect associations, and see updated cross-video results without destroying the original evidence. Reprocessing must not silently reinstate a user-rejected association. Low-confidence or contradictory evidence remains unresolved rather than forcing a match. This does not authorize automatic assignment of a real-world person's name solely from similarity; that cross-modal/name-linking behavior remains open in 4.6.
+
+- **4.6** [question] **When may text mentions give an inferred person a real-world name?**  
+  Should the corpus avoid automatically attaching a spoken/written person's name to a face/voice identity, attach one only when additional time-aligned evidence supports that link, or infer a name from simple co-occurrence in the same video? Such an attribution is separate from recognizing repeated face/voice observations as an inferred individual (4.5).
