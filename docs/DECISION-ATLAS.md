@@ -30,7 +30,15 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
   Available metadata such as channel, playlist relation, title, description, publication date, supplied categories/tags, and engagement fields enrich discovery, browsing, filtering, and search. The original source of metadata remains distinguishable from user annotations.
 
 - **1.5** [question] **What should happen when monitoring discovers a new video?**  
+  Resolved 2026-10-13 by 1.6.  
   Should all newly discovered videos immediately run the applicable detector profile, should they be cataloged until the user explicitly approves analysis, or should each tracked source allow automatic versus review-first processing (with a chosen default)? Regardless of the policy, preserve discovery without duplicate corpus identities and distinguish known-but-unprocessed videos from analyzed ones.
+
+- **1.6 Automatically process discovered videos by default, with review-first per source.**  
+  Status: adopted 2026-10-13. Answers 1.5 (option C).  
+  Each monitored channel or playlist offers an **automatic** (default) or **review-first** processing policy for newly discovered videos. Discovery always records the video and its source membership without introducing duplicate corpus identities. When a source uses automatic processing, a normal monitoring check can initiate the video's effective configured detectors (2.6 and 2.8), reusing unchanged prior evidence (2.2). When a source uses review-first, its newly discovered videos are visible as known/pending review; content analysis awaits an explicit user action to approve or start it. The source's current policy and pending/processed status must be inspectable, and merely opening the app must not trigger surprise downloads or analysis. If multiple tracked sources with different policies discover the same video, apply the answer to Question 1.7 rather than arbitrarily choosing a policy.
+
+- **1.7** [question] **What processing policy wins when sources overlap?**  
+  If the same video is discovered by one automatic source and one review-first source, should the automatic source trigger processing, should review-first hold processing until the user approves, or should the user choose an explicit per-video policy for this conflict? Keep one video identity and do not discard its source memberships.
 
 ## 2. Parsing and detector configuration
 
