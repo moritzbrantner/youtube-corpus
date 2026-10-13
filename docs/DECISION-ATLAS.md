@@ -53,10 +53,15 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
 
 - **2.6 Detector profiles default to the corpus or group, with scoped overrides.**  
   Status: adopted 2026-10-13. Answers 2.5 (option A).  
-  A corpus or research group supplies the common detector profile by default. Users can optionally override that selection for a tracked channel/playlist or an individual video. The effective detector selection for a video must be inspectable so users understand which analyses will run. Existing results should be reused, and a changed profile should not needlessly rerun unrelated unchanged stages (see 2.2). Resolving conflicting inherited profiles for material belonging to more than one group/source is not decided here; see 2.7.
+  A corpus or research group supplies the common detector profile by default. Users can optionally override that selection for a tracked channel/playlist or an individual video. The effective detector selection for a video must be inspectable so users understand which analyses will run. Existing results should be reused, and a changed profile should not needlessly rerun unrelated unchanged stages (see 2.2). When multiple tracked sources/groups apply, combine their detector requests under 2.8.
 
 - **2.7** [question] **How should overlapping source or group detector profiles be resolved?**  
+  Resolved 2026-10-13 by 2.8.  
   When the same video belongs to multiple tracked sources or research groups whose detector configurations differ, should the applicable detectors be combined, should the user choose one effective profile, or should the corpus default prevail until a video override is set? An explicit per-video override remains supported under 2.6.
+
+- **2.8 Combine detector requests from overlapping sources and groups.**  
+  Status: adopted 2026-10-13. Answers 2.7 (option A).  
+  When one video belongs to multiple tracked sources or research groups, its effective inherited detector plan includes all detectors requested by any applicable profile, instead of arbitrarily selecting one profile or asking the user to choose. Identical work for the same video/input, detector, producer/model revision, and effective configuration is reused rather than executed separately for each requesting source/group. Different requested configurations and their results remain distinguishable by provenance, not silently conflated. Users can inspect which detectors will run and which profiles requested them. Explicit per-video overrides from 2.6 remain available to customize the effective selection.
 
 ## 3. Finding material inside videos
 
