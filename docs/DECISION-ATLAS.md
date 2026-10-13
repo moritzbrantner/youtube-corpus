@@ -142,7 +142,15 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
   Search and browsing can narrow results by tracked sources, user-defined categories/groups, and relevant available YouTube metadata, while retaining source and timestamp context.
 
 - **3.4** [question] **How should transcript and on-screen OCR search appear in the interface?**  
+  Resolved 2026-10-13 by 3.5.  
   When users search text across their corpus, should one unified results list include both spoken passages and visible on-screen text with modality labels/filters, should transcripts and OCR have separate result views, or should transcript results appear by default with OCR only when explicitly enabled? All options retain timestamp links and source/provenance distinctions from 3.1–3.3.
+
+- **3.5 Search spoken passages and visible OCR text together by default.**  
+  Status: adopted 2026-10-13. Answers 3.4 (option A).  
+  A single corpus text query searches **both transcript passages and on-screen OCR text by default** and presents their matches in **one unified results list**, not separate mandatory tabs or an opt-in visual-only mode. Each result clearly identifies whether its matching evidence was **spoken** or **visible in the video**, retains original video identity, correct timestamp/interval and corresponding context, and offers source-grounded navigation to that moment (3.1 and 3.2). Users can filter the unified results by modality and by the corpus/source metadata and user labels supported under 3.3, without losing the single-search experience. Preserve source evidence and producer provenance; an OCR observation is not silently treated as speech, and missing or unprocessed OCR must not be represented as evidence that no visible text exists. The specific default ordering of combined result hits remains unresolved in Question 3.6.
+
+- **3.6** [question] **How should matching moments be ordered in unified text search?**  
+  Should the combined transcript/OCR results be ranked by cross-modality relevance in one sequence, grouped primarily by video with its matching moments beneath, or prioritize one modality when its relevance competes with the other? All approaches preserve the modality labels, timestamp links and filters from 3.5.
 
 ## 4. People, places, and other entities
 
