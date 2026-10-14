@@ -114,6 +114,19 @@ export function CorpusWorkspace() {
                 corpusId={selectedCorpus.id}
                 submittedQuery={state.query}
                 selectedSegmentId={state.segmentId}
+                filters={{
+                  mode: state.mode,
+                  modality: state.modality,
+                  sourceKind: state.sourceKind,
+                  language: state.language,
+                  channelQuery: state.channelQuery,
+                  titleQuery: state.titleQuery,
+                  categoryQuery: state.categoryQuery,
+                  tagQuery: state.tagQuery,
+                  uploadDateFrom: state.uploadDateFrom,
+                  uploadDateTo: state.uploadDateTo,
+                }}
+                onUpdateFilters={(filters) => update(filters)}
                 onSubmitQuery={(query) => update({ query })}
                 onSelectSegment={(segmentId) => update({ segmentId })}
               />
