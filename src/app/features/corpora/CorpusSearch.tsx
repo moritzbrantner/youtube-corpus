@@ -55,8 +55,15 @@ export function CorpusSearch({
   React.useEffect(() => {
     setDraftFilters(filters);
   }, [
-    filters.mode, filters.modality, filters.sourceKind, filters.language, filters.channelQuery,
-    filters.titleQuery, filters.categoryQuery, filters.tagQuery, filters.uploadDateFrom,
+    filters.mode,
+    filters.modality,
+    filters.sourceKind,
+    filters.language,
+    filters.channelQuery,
+    filters.titleQuery,
+    filters.categoryQuery,
+    filters.tagQuery,
+    filters.uploadDateFrom,
     filters.uploadDateTo,
   ]);
   function changeFilter(patch: Partial<CorpusSearchFilters>) {
@@ -249,7 +256,10 @@ export function CorpusSearch({
                   type="date"
                   value={draftFilters.uploadDateFrom}
                   onChange={(event) =>
-                    setDraftFilters((current) => ({ ...current, uploadDateFrom: event.target.value }))
+                    setDraftFilters((current) => ({
+                      ...current,
+                      uploadDateFrom: event.target.value,
+                    }))
                   }
                 />
                 <Input
@@ -257,7 +267,10 @@ export function CorpusSearch({
                   type="date"
                   value={draftFilters.uploadDateTo}
                   onChange={(event) =>
-                    setDraftFilters((current) => ({ ...current, uploadDateTo: event.target.value }))
+                    setDraftFilters((current) => ({
+                      ...current,
+                      uploadDateTo: event.target.value,
+                    }))
                   }
                 />
               </div>
@@ -333,7 +346,9 @@ export function CorpusSearch({
                     <Badge variant="outline">{result.score.toFixed(3)}</Badge>
                   </div>
                   <p className="text-sm leading-6">{result.text}</p>
-                  {result.ocrEvidence ? <OcrEvidenceDetails evidence={result.ocrEvidence} /> : null}
+                  {result.ocrEvidence ? (
+                    <OcrEvidenceDetails evidence={result.ocrEvidence} />
+                  ) : null}
                   <div className="flex flex-wrap gap-2">
                     <Button asChild variant="outline" size="sm">
                       <a
@@ -507,7 +522,9 @@ function sourceLabel(kind: string) {
 }
 
 function OcrEvidenceDetails({ evidence }: { evidence: SearchResult["ocrEvidence"] }) {
-  if (!evidence) return null;
+  if (!evidence) {
+    return null;
+  }
   return (
     <details className="text-xs text-muted-foreground">
       <summary className="cursor-pointer">OCR observation and producer provenance</summary>
