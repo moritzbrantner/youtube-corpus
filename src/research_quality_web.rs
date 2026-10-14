@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::annotations::{AnnotationSourceKind, CreateAnnotationRequest, ResearchAnnotation};
 use crate::api_types::SearchTranscriptsInput;
 use crate::evaluation::{EvaluationCase, EvaluationRunReport, RecordJudgmentRequest};
-use crate::search::{SearchReport, SearchRequest};
+use crate::search::{OcrCoverage, SearchReport, SearchRequest};
 use crate::transcript_quality::TranscriptQualitySummary;
 
 #[derive(Clone)]
@@ -224,6 +224,7 @@ async fn preferred_search(
     })
     .await
     .map_err(ResearchQualityError::internal)?;
+    report.ocr_coverage = Some(ocr_coverage(&pool, &allowed_video_ids).await?);
     report.results.retain(|result| {
         allowed_video_ids.contains(&result.video_id)
             && (result.source_kind == "visual_ocr"
@@ -233,6 +234,41 @@ async fn preferred_search(
         .results
         .truncate(usize::try_from(requested_top_k).unwrap_or(usize::MAX));
     Ok(Json(report))
+}
+
+/// A missing OCR processing run is unknown coverage, never a negative finding.
+async fn ocr_coverage(
+    pool: &sqlx::PgPool,
+    video_ids: &std::collections::HashSet<Uuid>,
+) -> Result<OcrCoverage, ResearchQualityError> {
+    let ids: Vec<Uuid> = video_ids.iter().copied().collect();
+    let rows: Vec<(Uuid, bool, bool)> = sqlx::query_as(
+        "SELECT v.id,
+                EXISTS (SELECT 1 FROM media_processing_runs r
+                        WHERE r.video_id = v.id AND r.modality = 'ocr') AS attempted,
+                EXISTS (SELECT 1 FROM visual_text_tracks t
+                        WHERE t.video_id = v.id) AS indexed
+         FROM videos v WHERE v.id = ANY($1::uuid[])",
+    )
+    .bind(&ids)
+    .fetch_all(pool)
+    .await
+    .map_err(ResearchQualityError::internal)?;
+    let mut coverage = OcrCoverage {
+        indexed_videos: 0,
+        attempted_without_tracks: 0,
+        unprocessed_videos: 0,
+    };
+    for (_, attempted, indexed) in rows {
+        if indexed {
+            coverage.indexed_videos += 1;
+        } else if attempted {
+            coverage.attempted_without_tracks += 1;
+        } else {
+            coverage.unprocessed_videos += 1;
+        }
+    }
+    Ok(coverage)
 }
 
 async fn list_annotations(
