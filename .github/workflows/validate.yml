@@ -90,6 +90,16 @@ jobs:
       - name: Test Rust server
         run: cargo test --locked
 
+      - name: Verify unified text search against Postgres
+        run: |
+          docker compose up -d --wait postgres
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus \
+            cargo test --locked --test unified_evidence_search_db -- --ignored
+
+      - name: Shut down test Postgres
+        if: always()
+        run: docker compose down -v
+
   artifact-validation:
     name: Embedded web artifact validation
     needs: build-web-artifact
