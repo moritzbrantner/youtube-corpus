@@ -12,7 +12,7 @@
     "build:wasm": "wasm-pack build crates/youtube-browser-wasm --target web --release --out-dir ../../src/app/features/analyzer/wasm --out-name youtube_browser_wasm",
     "build": "bun run build:wasm && bun run build:prepared",
     "format": "oxfmt --write .",
-    "format:check": "oxfmt --check . || (oxfmt --write src/app/features/corpora/CorpusSearch.tsx && git diff -- src/app/features/corpora/CorpusSearch.tsx && exit 1)",
+    "format:check": "oxfmt --check .",
     "preview": "vite preview",
     "test:browser-wasm": "cargo test --manifest-path crates/youtube-browser-wasm/Cargo.toml",
     "test:frontend": "bun test tests/frontend",
