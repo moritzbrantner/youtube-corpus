@@ -36,9 +36,19 @@ async fn one_corpus_query_ranks_speech_and_ocr_tracks_with_provenance() {
         .await
         .unwrap();
     for (video, channel, date, title) in [
-        (spoken_video, "Speech Source", "20250201", "A spoken lecture"),
+        (
+            spoken_video,
+            "Speech Source",
+            "20250201",
+            "A spoken lecture",
+        ),
         (slide_video, "Slide Source", "20260401", "A projected slide"),
-        (unknown_video, "Unprocessed Source", "20260401", "OCR unavailable"),
+        (
+            unknown_video,
+            "Unprocessed Source",
+            "20260401",
+            "OCR unavailable",
+        ),
     ] {
         sqlx::query(
             "INSERT INTO videos (id, source_url, title, channel, upload_date, duration_seconds,
@@ -53,14 +63,12 @@ async fn one_corpus_query_ranks_speech_and_ocr_tracks_with_provenance() {
         .execute(&pool)
         .await
         .unwrap();
-        sqlx::query(
-            "INSERT INTO corpus_video_memberships (corpus_id, video_id) VALUES ($1, $2)",
-        )
-        .bind(corpus_id)
-        .bind(video)
-        .execute(&pool)
-        .await
-        .unwrap();
+        sqlx::query("INSERT INTO corpus_video_memberships (corpus_id, video_id) VALUES ($1, $2)")
+            .bind(corpus_id)
+            .bind(video)
+            .execute(&pool)
+            .await
+            .unwrap();
     }
 
     sqlx::query(
@@ -211,49 +219,100 @@ async fn one_corpus_query_ranks_speech_and_ocr_tracks_with_provenance() {
     .unwrap();
 
     let app = youtube_corpus::web::app_for_tests_with_research(Some(database_url));
-    let speech_favored = query(&app, corpus_id, json!({"query":"nova", "mode":"fts", "topK":20})).await;
+    let speech_favored = query(
+        &app,
+        corpus_id,
+        json!({"query":"nova", "mode":"fts", "topK":20}),
+    )
+    .await;
     let speech_results = speech_favored["results"].as_array().unwrap();
-    assert!(speech_results.iter().any(|r| r["segmentId"] == spoken_segment.to_string()));
-    assert!(speech_results.iter().any(|r| r["segmentId"] == primary_track.id.to_string()));
+    assert!(speech_results
+        .iter()
+        .any(|r| r["segmentId"] == spoken_segment.to_string()));
+    assert!(speech_results
+        .iter()
+        .any(|r| r["segmentId"] == primary_track.id.to_string()));
     assert_eq!(speech_results[0]["sourceKind"], "caption_manual");
 
-    let visual_favored = query(&app, corpus_id, json!({"query":"helios", "mode":"fts", "topK":20})).await;
+    let visual_favored = query(
+        &app,
+        corpus_id,
+        json!({"query":"helios", "mode":"fts", "topK":20}),
+    )
+    .await;
     let visual_results = visual_favored["results"].as_array().unwrap();
     assert_eq!(visual_results[0]["sourceKind"], "visual_ocr");
-    assert!(visual_results.iter().any(|r| r["segmentId"] == next_track.id.to_string()));
+    assert!(visual_results
+        .iter()
+        .any(|r| r["segmentId"] == next_track.id.to_string()));
     assert_eq!(
-        visual_results.iter().filter(|r| r["segmentId"] == primary_track.id.to_string()).count(),
+        visual_results
+            .iter()
+            .filter(|r| r["segmentId"] == primary_track.id.to_string())
+            .count(),
         1,
         "two observations of one track must yield one matching moment"
     );
-    let track_hit = visual_results.iter().find(|r| r["segmentId"] == primary_track.id.to_string()).unwrap();
+    let track_hit = visual_results
+        .iter()
+        .find(|r| r["segmentId"] == primary_track.id.to_string())
+        .unwrap();
     assert_eq!(track_hit["startSeconds"], 12.0);
     assert_eq!(track_hit["ocrEvidence"]["runId"], ocr_run.to_string());
     assert_eq!(track_hit["ocrEvidence"]["sampleCount"], 2);
-    assert_eq!(track_hit["ocrEvidence"]["observations"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        track_hit["ocrEvidence"]["observations"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
     assert_eq!(track_hit["ocrEvidence"]["scenes"][0]["sceneIndex"], 2);
-    assert_eq!(track_hit["ocrEvidence"]["processorVersion"], "test-revision");
+    assert_eq!(
+        track_hit["ocrEvidence"]["processorVersion"],
+        "test-revision"
+    );
     assert_eq!(visual_favored["ocrCoverage"]["indexedVideos"], 1);
     assert_eq!(visual_favored["ocrCoverage"]["unprocessedVideos"], 2);
 
-    let only_visible = query(&app, corpus_id, json!({"query":"nova", "mode":"fts", "topK":20, "modality":"visible"})).await;
+    let only_visible = query(
+        &app,
+        corpus_id,
+        json!({"query":"nova", "mode":"fts", "topK":20, "modality":"visible"}),
+    )
+    .await;
     assert_eq!(only_visible["results"].as_array().unwrap().len(), 1);
     assert_eq!(only_visible["results"][0]["sourceKind"], "visual_ocr");
-    let only_spoken = query(&app, corpus_id, json!({"query":"nova", "mode":"fts", "topK":20, "modality":"spoken"})).await;
+    let only_spoken = query(
+        &app,
+        corpus_id,
+        json!({"query":"nova", "mode":"fts", "topK":20, "modality":"spoken"}),
+    )
+    .await;
     assert_eq!(only_spoken["results"].as_array().unwrap().len(), 1);
     assert_eq!(only_spoken["results"][0]["sourceKind"], "caption_manual");
-    let metadata = query(&app, corpus_id, json!({
-        "query":"nova", "mode":"fts", "topK":20,
-        "channelQuery":"Slide Source", "categoryQuery":"Education",
-        "tagQuery":"history", "uploadDateFrom":"2026-01-01"
-    })).await;
+    let metadata = query(
+        &app,
+        corpus_id,
+        json!({
+            "query":"nova", "mode":"fts", "topK":20,
+            "channelQuery":"Slide Source", "categoryQuery":"Education",
+            "tagQuery":"history", "uploadDateFrom":"2026-01-01"
+        }),
+    )
+    .await;
     assert_eq!(metadata["results"].as_array().unwrap().len(), 1);
     assert_eq!(metadata["results"][0]["videoId"], slide_video.to_string());
 
-    let missing = query(&app, corpus_id, json!({
-        "query":"helios", "mode":"fts", "topK":20,
-        "modality":"visible", "channelQuery":"Unprocessed Source"
-    })).await;
+    let missing = query(
+        &app,
+        corpus_id,
+        json!({
+            "query":"helios", "mode":"fts", "topK":20,
+            "modality":"visible", "channelQuery":"Unprocessed Source"
+        }),
+    )
+    .await;
     assert!(missing["results"].as_array().unwrap().is_empty());
     assert_eq!(missing["ocrCoverage"]["unprocessedVideos"], 2);
 
@@ -265,7 +324,8 @@ async fn one_corpus_query_ranks_speech_and_ocr_tracks_with_provenance() {
         .await
         .unwrap();
     assert_eq!(context.status(), StatusCode::OK);
-    let body: Value = serde_json::from_slice(&to_bytes(context.into_body(), usize::MAX).await.unwrap()).unwrap();
+    let body: Value =
+        serde_json::from_slice(&to_bytes(context.into_body(), usize::MAX).await.unwrap()).unwrap();
     assert_eq!(body["match"]["sourceKind"], "visual_ocr");
     assert_eq!(body["match"]["startSeconds"], 12.0);
 
