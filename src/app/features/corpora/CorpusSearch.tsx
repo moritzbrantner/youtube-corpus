@@ -154,25 +154,118 @@ export function CorpusSearch({
           </SurfaceDescription>
         </SurfaceHeader>
         <SurfaceContent className="grid gap-4">
-          <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_auto]" onSubmit={submit}>
-            <Input
-              aria-label="Search corpus"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="Search transcript passages"
-            />
-            <NativeSelect
-              aria-label="Search mode"
-              value={mode}
-              onChange={(event) => setMode(event.target.value as SearchMode)}
-            >
-              <option value="hybrid">Hybrid</option>
-              <option value="fts">Full text</option>
-              <option value="semantic">Semantic</option>
-            </NativeSelect>
-            <Button type="submit" disabled={!draft.trim()}>
-              Search
-            </Button>
+          <form className="grid gap-3" onSubmit={submit}>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_140px_auto]">
+              <Input
+                aria-label="Search corpus"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="Search spoken and visible text"
+              />
+              <NativeSelect
+                aria-label="Search mode"
+                value={filters.mode}
+                onChange={(event) => changeFilter({ mode: event.target.value as SearchMode })}
+              >
+                <option value="hybrid">Hybrid</option>
+                <option value="fts">Full text</option>
+                <option value="semantic">Semantic</option>
+              </NativeSelect>
+              <NativeSelect
+                aria-label="Search modality"
+                value={filters.modality}
+                onChange={(event) =>
+                  changeFilter({ modality: event.target.value as CorpusSearchFilters["modality"] })
+                }
+              >
+                <option value="all">Spoken + visible</option>
+                <option value="spoken">Spoken</option>
+                <option value="visible">Visible text</option>
+              </NativeSelect>
+              <Button type="submit" disabled={!draft.trim()}>
+                Search
+              </Button>
+            </div>
+            <details className="rounded-md border border-border px-3 py-2">
+              <summary className="cursor-pointer text-sm">Source and metadata filters</summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <NativeSelect
+                  aria-label="Transcript or OCR source"
+                  value={filters.sourceKind}
+                  onChange={(event) =>
+                    changeFilter({
+                      sourceKind: event.target.value as CorpusSearchFilters["sourceKind"],
+                    })
+                  }
+                >
+                  <option value="all">All evidence sources</option>
+                  <option value="caption_manual">Manual captions</option>
+                  <option value="caption_auto">Automatic captions</option>
+                  <option value="asr">Speech recognition</option>
+                  <option value="visual_ocr">OCR tracks</option>
+                </NativeSelect>
+                <Input
+                  aria-label="Language filter"
+                  placeholder="Language (e.g. en)"
+                  value={draftFilters.language}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({ ...current, language: event.target.value }))
+                  }
+                />
+                <Input
+                  aria-label="Channel filter"
+                  placeholder="Channel or uploader"
+                  value={draftFilters.channelQuery}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({ ...current, channelQuery: event.target.value }))
+                  }
+                />
+                <Input
+                  aria-label="Video title filter"
+                  placeholder="Video title"
+                  value={draftFilters.titleQuery}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({ ...current, titleQuery: event.target.value }))
+                  }
+                />
+                <Input
+                  aria-label="YouTube category filter"
+                  placeholder="YouTube category"
+                  value={draftFilters.categoryQuery}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({ ...current, categoryQuery: event.target.value }))
+                  }
+                />
+                <Input
+                  aria-label="YouTube tag filter"
+                  placeholder="YouTube tag"
+                  value={draftFilters.tagQuery}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({ ...current, tagQuery: event.target.value }))
+                  }
+                />
+                <Input
+                  aria-label="Upload date from"
+                  type="date"
+                  value={draftFilters.uploadDateFrom}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({ ...current, uploadDateFrom: event.target.value }))
+                  }
+                />
+                <Input
+                  aria-label="Upload date to"
+                  type="date"
+                  value={draftFilters.uploadDateTo}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({ ...current, uploadDateTo: event.target.value }))
+                  }
+                />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Submit Search to apply metadata filters. User labels will use the corpus
+                organization feature when it is available.
+              </p>
+            </details>
           </form>
 
           {!submittedQuery ? (
