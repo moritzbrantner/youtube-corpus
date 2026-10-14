@@ -543,7 +543,9 @@ impl TryFrom<&SearchRequest> for SearchFilterParams {
     fn try_from(request: &SearchRequest) -> anyhow::Result<Self> {
         Ok(Self {
             source_kind: request.source_kind.map(|kind| kind.as_str().to_string()),
-            modality: request.modality.map(|modality| modality.as_str().to_string()),
+            modality: request
+                .modality
+                .map(|modality| modality.as_str().to_string()),
             video_id: request.video_id,
             language: trim_filter(&request.language),
             transcript_start_min: request.transcript_start_min,
