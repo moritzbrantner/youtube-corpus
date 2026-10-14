@@ -439,6 +439,7 @@ async fn search_corpus(
         top_k: candidate_top_k,
         mode: input.mode,
         source_kind: input.source_kind,
+        modality: input.modality,
         video_id: input.video_id,
         language: input.language,
         transcript_start_min: input.transcript_start_min,
