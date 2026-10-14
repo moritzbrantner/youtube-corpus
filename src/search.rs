@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgArguments;
 use sqlx::query::Query;
@@ -16,6 +18,7 @@ pub struct SearchRequest {
     pub top_k: i64,
     pub mode: SearchMode,
     pub source_kind: Option<SourceKind>,
+    pub modality: Option<SearchModality>,
     pub video_id: Option<Uuid>,
     pub language: Option<String>,
     pub transcript_start_min: Option<f64>,
@@ -33,12 +36,74 @@ pub struct SearchRequest {
     pub view_count_max: Option<i64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchModality {
+    Spoken,
+    Visible,
+}
+
+impl SearchModality {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Spoken => "spoken",
+            Self::Visible => "visible",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrObservationRef {
+    pub id: Uuid,
+    pub timestamp_seconds: Option<f64>,
+    pub frame_index: Option<i64>,
+    pub scene_index: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrSceneRef {
+    pub id: Uuid,
+    pub scene_index: i64,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrEvidence {
+    pub run_id: Uuid,
+    pub track_key: String,
+    pub role: String,
+    pub sample_count: i32,
+    pub processor: String,
+    pub processor_version: String,
+    pub model: String,
+    pub model_version: String,
+    pub input_hash: String,
+    pub config_hash: String,
+    pub processing_config: serde_json::Value,
+    pub observations: Vec<OcrObservationRef>,
+    pub scenes: Vec<OcrSceneRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrCoverage {
+    pub indexed_videos: usize,
+    pub attempted_without_tracks: usize,
+    pub unprocessed_videos: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchReport {
     pub query: String,
     pub mode: SearchMode,
     pub results: Vec<SearchResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ocr_coverage: Option<OcrCoverage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,19 +122,22 @@ pub struct SearchResult {
     pub score: f64,
     pub fts_score: f64,
     pub semantic_score: f64,
+    pub ocr_evidence: Option<OcrEvidence>,
 }
 
 pub async fn search_corpus(request: SearchRequest) -> anyhow::Result<SearchReport> {
     let pool = crate::db::connect(&request.database_url).await?;
-    let results = match request.mode {
+    let mut results = match request.mode {
         SearchMode::Fts => fts_search(&pool, &request).await?,
         SearchMode::Semantic => semantic_search(&pool, &request).await?,
         SearchMode::Hybrid => hybrid_search(&pool, &request).await?,
     };
+    attach_ocr_evidence(&pool, &mut results).await?;
     Ok(SearchReport {
         query: request.query,
         mode: request.mode,
         results,
+        ocr_coverage: None,
     })
 }
 
@@ -119,6 +187,9 @@ async fn fts_search(pool: &PgPool, request: &SearchRequest) -> anyhow::Result<Ve
                AND ($16::text IS NULL OR v.metadata::text ILIKE ('%' || $16 || '%'))
                AND ($17::bigint IS NULL OR v.view_count >= $17)
                AND ($18::bigint IS NULL OR v.view_count <= $18)
+               AND ($19::text IS NULL
+                    OR ($19 = 'visible' AND s.source_kind = 'visual_ocr')
+                    OR ($19 = 'spoken' AND s.source_kind <> 'visual_ocr'))
              ORDER BY score DESC
              LIMIT $2",
         )
@@ -180,6 +251,9 @@ async fn semantic_search(
                AND ($16::text IS NULL OR v.metadata::text ILIKE ('%' || $16 || '%'))
                AND ($17::bigint IS NULL OR v.view_count >= $17)
                AND ($18::bigint IS NULL OR v.view_count <= $18)
+               AND ($19::text IS NULL
+                    OR ($19 = 'visible' AND s.source_kind = 'visual_ocr')
+                    OR ($19 = 'spoken' AND s.source_kind <> 'visual_ocr'))
              ORDER BY s.embedding <=> $1::vector
              LIMIT $2",
         )
@@ -238,6 +312,9 @@ async fn hybrid_search(
                   AND ($17::text IS NULL OR v.metadata::text ILIKE ('%' || $17 || '%'))
                   AND ($18::bigint IS NULL OR v.view_count >= $18)
                   AND ($19::bigint IS NULL OR v.view_count <= $19)
+                  AND ($20::text IS NULL
+                    OR ($20 = 'visible' AND s.source_kind = 'visual_ocr')
+                    OR ($20 = 'spoken' AND s.source_kind <> 'visual_ocr'))
                 ORDER BY score DESC
                 LIMIT $3
               ),
@@ -280,6 +357,9 @@ async fn hybrid_search(
                   AND ($17::text IS NULL OR v.metadata::text ILIKE ('%' || $17 || '%'))
                   AND ($18::bigint IS NULL OR v.view_count >= $18)
                   AND ($19::bigint IS NULL OR v.view_count <= $19)
+                  AND ($20::text IS NULL
+                    OR ($20 = 'visible' AND s.source_kind = 'visual_ocr')
+                    OR ($20 = 'spoken' AND s.source_kind <> 'visual_ocr'))
                 ORDER BY s.embedding <=> $2::vector
                 LIMIT $3
               ),
@@ -329,6 +409,7 @@ impl<'q> BindSearchFilters<'q> for Query<'q, Postgres, PgArguments> {
             .bind(filters.metadata_query.as_deref())
             .bind(filters.view_count_min)
             .bind(filters.view_count_max)
+            .bind(filters.modality.as_deref())
     }
 }
 
@@ -349,8 +430,84 @@ fn rows_to_results(rows: Vec<sqlx::postgres::PgRow>) -> anyhow::Result<Vec<Searc
             score: row.get("score"),
             fts_score: row.get("fts_score"),
             semantic_score: row.get("semantic_score"),
+            ocr_evidence: None,
         })
         .collect())
+}
+
+/// Enrich already-ranked track hits from canonical OCR evidence. Observations are not
+/// independent search hits: one track is one relevant on-screen moment.
+async fn attach_ocr_evidence(pool: &PgPool, results: &mut [SearchResult]) -> anyhow::Result<()> {
+    let ids: Vec<Uuid> = results
+        .iter()
+        .filter(|result| result.source_kind == "visual_ocr")
+        .map(|result| result.segment_id)
+        .collect();
+    if ids.is_empty() {
+        return Ok(());
+    }
+
+    let rows = sqlx::query(
+        r#"SELECT t.id, t.run_id, t.track_key, t.role, t.sample_count,
+                  r.processor, r.processor_version, r.model, r.model_version,
+                  r.input_hash, r.config_hash, r.processing_config,
+                  coalesce((
+                    SELECT jsonb_agg(jsonb_build_object(
+                      'id', o.id,
+                      'timestampSeconds', o.timestamp_seconds,
+                      'frameIndex', o.frame_index,
+                      'sceneIndex', o.scene_index
+                    ) ORDER BY o.timestamp_seconds NULLS LAST, o.id)
+                    FROM visual_text_track_observations link
+                    JOIN visual_text_observations o ON o.id = link.observation_id
+                    WHERE link.track_id = t.id
+                  ), '[]'::jsonb) AS observations,
+                  coalesce((
+                    SELECT jsonb_agg(jsonb_build_object(
+                      'id', scene.id,
+                      'sceneIndex', scene.scene_index,
+                      'startSeconds', scene.start_seconds,
+                      'endSeconds', scene.end_seconds
+                    ) ORDER BY scene.start_seconds, scene.id)
+                    FROM visual_text_track_scenes link
+                    JOIN video_scenes scene ON scene.id = link.scene_id
+                    WHERE link.track_id = t.id
+                  ), '[]'::jsonb) AS scenes
+           FROM visual_text_tracks t
+           JOIN media_processing_runs r ON r.id = t.run_id AND r.modality = 'ocr'
+           WHERE t.id = ANY($1::uuid[])"#,
+    )
+    .bind(&ids)
+    .fetch_all(pool)
+    .await?;
+
+    let mut by_id = HashMap::new();
+    for row in rows {
+        let observations: serde_json::Value = row.try_get("observations")?;
+        let scenes: serde_json::Value = row.try_get("scenes")?;
+        by_id.insert(
+            row.try_get::<Uuid, _>("id")?,
+            OcrEvidence {
+                run_id: row.try_get("run_id")?,
+                track_key: row.try_get("track_key")?,
+                role: row.try_get("role")?,
+                sample_count: row.try_get("sample_count")?,
+                processor: row.try_get("processor")?,
+                processor_version: row.try_get("processor_version")?,
+                model: row.try_get("model")?,
+                model_version: row.try_get("model_version")?,
+                input_hash: row.try_get("input_hash")?,
+                config_hash: row.try_get("config_hash")?,
+                processing_config: row.try_get("processing_config")?,
+                observations: serde_json::from_value(observations)?,
+                scenes: serde_json::from_value(scenes)?,
+            },
+        );
+    }
+    for result in results {
+        result.ocr_evidence = by_id.remove(&result.segment_id);
+    }
+    Ok(())
 }
 
 fn query_vector(query: &str) -> anyhow::Result<String> {
@@ -362,6 +519,7 @@ fn query_vector(query: &str) -> anyhow::Result<String> {
 
 struct SearchFilterParams {
     source_kind: Option<String>,
+    modality: Option<String>,
     video_id: Option<Uuid>,
     language: Option<String>,
     transcript_start_min: Option<f64>,
@@ -385,6 +543,7 @@ impl TryFrom<&SearchRequest> for SearchFilterParams {
     fn try_from(request: &SearchRequest) -> anyhow::Result<Self> {
         Ok(Self {
             source_kind: request.source_kind.map(|kind| kind.as_str().to_string()),
+            modality: request.modality.map(|modality| modality.as_str().to_string()),
             video_id: request.video_id,
             language: trim_filter(&request.language),
             transcript_start_min: request.transcript_start_min,
