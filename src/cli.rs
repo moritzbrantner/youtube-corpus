@@ -661,6 +661,7 @@ impl SearchArgs {
             top_k: self.top_k,
             mode: self.mode,
             source_kind: self.source_kind,
+            modality: None,
             video_id: self.video_id,
             language: self.language,
             transcript_start_min: self.transcript_start_min,

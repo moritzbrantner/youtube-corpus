@@ -10,7 +10,7 @@ use uuid::Uuid;
 use crate::annotations::{AnnotationSourceKind, CreateAnnotationRequest, ResearchAnnotation};
 use crate::api_types::SearchTranscriptsInput;
 use crate::evaluation::{EvaluationCase, EvaluationRunReport, RecordJudgmentRequest};
-use crate::search::{SearchReport, SearchRequest};
+use crate::search::{OcrCoverage, SearchReport, SearchRequest};
 use crate::transcript_quality::TranscriptQualitySummary;
 
 #[derive(Clone)]
@@ -87,6 +87,8 @@ struct RecordJudgmentInput {
     top_k: i64,
     video_id: Option<Uuid>,
     segment_id: Option<Uuid>,
+    #[serde(default)]
+    visual_text_track_id: Option<Uuid>,
     source_url: Option<String>,
     start_seconds: Option<f64>,
     end_seconds: Option<f64>,
@@ -205,6 +207,7 @@ async fn preferred_search(
         top_k: candidate_top_k,
         mode: input.mode,
         source_kind: input.source_kind,
+        modality: input.modality,
         video_id: input.video_id,
         language: input.language,
         transcript_start_min: input.transcript_start_min,
@@ -223,14 +226,26 @@ async fn preferred_search(
     })
     .await
     .map_err(ResearchQualityError::internal)?;
+    report.ocr_coverage = Some(ocr_coverage(&pool, &allowed_video_ids).await?);
     report.results.retain(|result| {
         allowed_video_ids.contains(&result.video_id)
-            && preferred_stream_ids.contains(&result.stream_id)
+            && (result.source_kind == "visual_ocr"
+                || preferred_stream_ids.contains(&result.stream_id))
     });
     report
         .results
         .truncate(usize::try_from(requested_top_k).unwrap_or(usize::MAX));
     Ok(Json(report))
+}
+
+/// A missing OCR processing run is unknown coverage, never a negative finding.
+async fn ocr_coverage(
+    pool: &sqlx::PgPool,
+    video_ids: &std::collections::HashSet<Uuid>,
+) -> Result<OcrCoverage, ResearchQualityError> {
+    crate::search::corpus_ocr_coverage(pool, video_ids)
+        .await
+        .map_err(ResearchQualityError::internal)
 }
 
 async fn list_annotations(
@@ -307,6 +322,7 @@ async fn record_evaluation_judgment(
             top_k: input.top_k,
             video_id: input.video_id,
             segment_id: input.segment_id,
+            visual_text_track_id: input.visual_text_track_id,
             source_url: input.source_url,
             start_seconds: input.start_seconds,
             end_seconds: input.end_seconds,

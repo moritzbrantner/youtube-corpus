@@ -28,34 +28,66 @@ import {
   searchWithinCorpus,
 } from "./api";
 import { corpusKeys } from "./query-keys";
+import type { CorpusSearchFilters } from "./url-state";
 
 type CorpusSearchProps = {
   corpusId: string;
   submittedQuery: string;
+  filters: CorpusSearchFilters;
   selectedSegmentId: string | null;
   onSubmitQuery: (query: string) => void;
+  onUpdateFilters: (filters: Partial<CorpusSearchFilters>) => void;
   onSelectSegment: (segmentId: string | null) => void;
 };
 
 export function CorpusSearch({
   corpusId,
   submittedQuery,
+  filters,
   selectedSegmentId,
   onSubmitQuery,
+  onUpdateFilters,
   onSelectSegment,
 }: CorpusSearchProps) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = React.useState(submittedQuery);
-  const [mode, setMode] = React.useState<SearchMode>("hybrid");
+  const [draftFilters, setDraftFilters] = React.useState(filters);
+  React.useEffect(() => {
+    setDraftFilters(filters);
+  }, [
+    filters.mode,
+    filters.modality,
+    filters.sourceKind,
+    filters.language,
+    filters.channelQuery,
+    filters.titleQuery,
+    filters.categoryQuery,
+    filters.tagQuery,
+    filters.uploadDateFrom,
+    filters.uploadDateTo,
+  ]);
+  function changeFilter(patch: Partial<CorpusSearchFilters>) {
+    setDraftFilters((current) => ({ ...current, ...patch }));
+    onUpdateFilters(patch);
+  }
   const [annotationKind, setAnnotationKind] = React.useState("finding");
   const [annotationText, setAnnotationText] = React.useState("");
   const searchInput = React.useMemo<SearchTranscriptsInput>(
     () => ({
       query: submittedQuery,
-      mode,
-      topK: 10,
+      mode: filters.mode,
+      topK: 30,
+      modality: filters.modality === "all" ? null : filters.modality,
+      sourceKind: filters.sourceKind === "all" ? null : filters.sourceKind,
+      language: filters.language.trim() || null,
+      channelQuery: filters.channelQuery.trim() || null,
+      titleQuery: filters.titleQuery.trim() || null,
+      categoryQuery: filters.categoryQuery.trim() || null,
+      tagQuery: filters.tagQuery.trim() || null,
+      uploadDateFrom: filters.uploadDateFrom || null,
+      uploadDateTo: filters.uploadDateTo || null,
     }),
-    [mode, submittedQuery],
+    [filters, submittedQuery],
   );
   const searchQuery = useQuery({
     queryKey: corpusKeys.search(corpusId, searchInput),
@@ -71,10 +103,12 @@ export function CorpusSearch({
     mutationFn: (result: SearchResult) =>
       recordEvaluationJudgment(corpusId, {
         query: submittedQuery,
-        mode,
+        mode: filters.mode,
         topK: searchInput.topK,
         videoId: result.videoId,
-        segmentId: result.segmentId,
+        // The transcript FK cannot hold an OCR track; keep its identity separately.
+        segmentId: result.sourceKind === "visual_ocr" ? null : result.segmentId,
+        visualTextTrackId: result.sourceKind === "visual_ocr" ? result.segmentId : null,
         sourceUrl: result.sourceUrl,
         startSeconds: result.startSeconds,
         endSeconds: result.endSeconds,
@@ -88,17 +122,22 @@ export function CorpusSearch({
     mutationFn: async () => {
       const match = contextQuery.data?.match;
       if (!match) {
-        throw new Error("Select a transcript passage first.");
+        throw new Error("Select a search moment first.");
       }
       return createAnnotation(corpusId, {
         videoId: match.videoId,
-        streamId: match.streamId,
-        segmentId: match.segmentId,
+        streamId: match.sourceKind === "visual_ocr" ? null : match.streamId,
+        segmentId: match.sourceKind === "visual_ocr" ? null : match.segmentId,
         kind: annotationKind,
         startSeconds: match.startSeconds,
         endSeconds: match.endSeconds,
         text: annotationText.trim() || null,
-        payload: submittedQuery ? { researchQuery: submittedQuery } : {},
+        payload: {
+          ...(submittedQuery ? { researchQuery: submittedQuery } : {}),
+          ...(match.sourceKind === "visual_ocr"
+            ? { ocrTrackId: match.segmentId, ocrRunId: match.streamId }
+            : {}),
+        },
       });
     },
     onSuccess: async () => {
@@ -109,6 +148,7 @@ export function CorpusSearch({
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
+    onUpdateFilters(draftFilters);
     onSubmitQuery(draft.trim());
   }
 
@@ -118,43 +158,145 @@ export function CorpusSearch({
         <SurfaceHeader>
           <SurfaceTitle>Search this corpus</SurfaceTitle>
           <SurfaceDescription>
-            Search is limited to corpus videos and defaults to each video's preferred transcript
-            stream. Mark strong results as relevance judgments to grow the retrieval benchmark.
+            Search spoken passages and on-screen OCR tracks together by relevance. Speech uses each
+            video's preferred transcript stream; visible text retains its own evidence.
           </SurfaceDescription>
         </SurfaceHeader>
         <SurfaceContent className="grid gap-4">
-          <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_auto]" onSubmit={submit}>
-            <Input
-              aria-label="Search corpus"
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              placeholder="Search transcript passages"
-            />
-            <NativeSelect
-              aria-label="Search mode"
-              value={mode}
-              onChange={(event) => setMode(event.target.value as SearchMode)}
-            >
-              <option value="hybrid">Hybrid</option>
-              <option value="fts">Full text</option>
-              <option value="semantic">Semantic</option>
-            </NativeSelect>
-            <Button type="submit" disabled={!draft.trim()}>
-              Search
-            </Button>
+          <form className="grid gap-3" onSubmit={submit}>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px_140px_auto]">
+              <Input
+                aria-label="Search corpus"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="Search spoken and visible text"
+              />
+              <NativeSelect
+                aria-label="Search mode"
+                value={filters.mode}
+                onChange={(event) => changeFilter({ mode: event.target.value as SearchMode })}
+              >
+                <option value="hybrid">Hybrid</option>
+                <option value="fts">Full text</option>
+                <option value="semantic">Semantic</option>
+              </NativeSelect>
+              <NativeSelect
+                aria-label="Search modality"
+                value={filters.modality}
+                onChange={(event) =>
+                  changeFilter({ modality: event.target.value as CorpusSearchFilters["modality"] })
+                }
+              >
+                <option value="all">Spoken + visible</option>
+                <option value="spoken">Spoken</option>
+                <option value="visible">Visible text</option>
+              </NativeSelect>
+              <Button type="submit" disabled={!draft.trim()}>
+                Search
+              </Button>
+            </div>
+            <details className="rounded-md border border-border px-3 py-2">
+              <summary className="cursor-pointer text-sm">Source and metadata filters</summary>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <NativeSelect
+                  aria-label="Transcript or OCR source"
+                  value={filters.sourceKind}
+                  onChange={(event) =>
+                    changeFilter({
+                      sourceKind: event.target.value as CorpusSearchFilters["sourceKind"],
+                    })
+                  }
+                >
+                  <option value="all">All evidence sources</option>
+                  <option value="caption_manual">Manual captions</option>
+                  <option value="caption_auto">Automatic captions</option>
+                  <option value="asr">Speech recognition</option>
+                  <option value="visual_ocr">OCR tracks</option>
+                </NativeSelect>
+                <Input
+                  aria-label="Language filter"
+                  placeholder="Language (e.g. en)"
+                  value={draftFilters.language}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({ ...current, language: event.target.value }))
+                  }
+                />
+                <Input
+                  aria-label="Channel filter"
+                  placeholder="Channel or uploader"
+                  value={draftFilters.channelQuery}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({ ...current, channelQuery: event.target.value }))
+                  }
+                />
+                <Input
+                  aria-label="Video title filter"
+                  placeholder="Video title"
+                  value={draftFilters.titleQuery}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({ ...current, titleQuery: event.target.value }))
+                  }
+                />
+                <Input
+                  aria-label="YouTube category filter"
+                  placeholder="YouTube category"
+                  value={draftFilters.categoryQuery}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({
+                      ...current,
+                      categoryQuery: event.target.value,
+                    }))
+                  }
+                />
+                <Input
+                  aria-label="YouTube tag filter"
+                  placeholder="YouTube tag"
+                  value={draftFilters.tagQuery}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({ ...current, tagQuery: event.target.value }))
+                  }
+                />
+                <Input
+                  aria-label="Upload date from"
+                  type="date"
+                  value={draftFilters.uploadDateFrom}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({
+                      ...current,
+                      uploadDateFrom: event.target.value,
+                    }))
+                  }
+                />
+                <Input
+                  aria-label="Upload date to"
+                  type="date"
+                  value={draftFilters.uploadDateTo}
+                  onChange={(event) =>
+                    setDraftFilters((current) => ({
+                      ...current,
+                      uploadDateTo: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Submit Search to apply metadata filters. User labels will use the corpus
+                organization feature when it is available.
+              </p>
+            </details>
           </form>
 
           {!submittedQuery ? (
             <StateView variant="empty">
-              <StateViewTitle>Search a transcript corpus</StateViewTitle>
+              <StateViewTitle>Search corpus evidence</StateViewTitle>
               <StateViewDescription>
-                Results link to the exact YouTube timestamp and can open surrounding transcript
-                context.
+                Results link to original video moments with separate spoken and visible-text
+                evidence.
               </StateViewDescription>
             </StateView>
           ) : null}
           {searchQuery.isPending && submittedQuery ? (
-            <LoadingState label="Searching preferred transcripts" />
+            <LoadingState label="Searching speech and visible text" />
           ) : null}
           {searchQuery.error ? (
             <ErrorState>
@@ -166,9 +308,18 @@ export function CorpusSearch({
             <StateView variant="empty">
               <StateViewTitle>No matching passages</StateViewTitle>
               <StateViewDescription>
-                Try a broader query or another retrieval mode.
+                Try a broader query or another retrieval mode. Missing OCR hits do not imply that
+                unprocessed videos contain no visible text.
               </StateViewDescription>
             </StateView>
+          ) : null}
+          {searchQuery.data?.ocrCoverage ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              Visual-text index: {searchQuery.data.ocrCoverage.indexedVideos} videos indexed,{" "}
+              {searchQuery.data.ocrCoverage.attemptedWithoutTracks} attempted without tracks,{" "}
+              {searchQuery.data.ocrCoverage.unprocessedVideos} unprocessed. Unprocessed videos have
+              unknown on-screen text coverage.
+            </p>
           ) : null}
           <div className="grid gap-3">
             {searchQuery.data?.results.map((result) => {
@@ -189,12 +340,17 @@ export function CorpusSearch({
                         {result.title ?? result.sourceUrl}
                       </h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {formatTimestamp(result.startSeconds)} · {result.sourceKind}
+                        {formatTimestamp(result.startSeconds)} · {sourceLabel(result.sourceKind)}
+                        {result.language ? ` · ${result.language}` : ""}
                       </p>
                     </div>
+                    <Badge variant="outline">
+                      {result.sourceKind === "visual_ocr" ? "Visible text" : "Spoken"}
+                    </Badge>
                     <Badge variant="outline">{result.score.toFixed(3)}</Badge>
                   </div>
                   <p className="text-sm leading-6">{result.text}</p>
+                  {result.ocrEvidence ? <OcrEvidenceDetails evidence={result.ocrEvidence} /> : null}
                   <div className="flex flex-wrap gap-2">
                     <Button asChild variant="outline" size="sm">
                       <a
@@ -215,7 +371,7 @@ export function CorpusSearch({
                         )
                       }
                     >
-                      Transcript context
+                      {result.sourceKind === "visual_ocr" ? "Visual context" : "Transcript context"}
                     </Button>
                     <Button
                       type="button"
@@ -243,19 +399,17 @@ export function CorpusSearch({
 
       <Surface>
         <SurfaceHeader>
-          <SurfaceTitle>Transcript context</SurfaceTitle>
+          <SurfaceTitle>Moment context</SurfaceTitle>
           <SurfaceDescription>
-            Inspect neighboring segments and attach a provenance-aware research annotation to the
-            selected passage.
+            Inspect adjacent transcript passages or tracked visible text, and annotate the selected
+            moment.
           </SurfaceDescription>
         </SurfaceHeader>
         <SurfaceContent className="grid gap-3">
           {!selectedSegmentId ? (
             <StateView variant="empty">
               <StateViewTitle>No passage selected</StateViewTitle>
-              <StateViewDescription>
-                Choose transcript context from a search result.
-              </StateViewDescription>
+              <StateViewDescription>Select a moment from the ranked results.</StateViewDescription>
             </StateView>
           ) : null}
           {contextQuery.isPending && selectedSegmentId ? (
@@ -270,7 +424,9 @@ export function CorpusSearch({
           {contextQuery.data ? (
             <>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <Badge variant="outline">{contextQuery.data.match.sourceKind}</Badge>
+                <Badge variant="outline">
+                  {contextQuery.data.match.sourceKind === "visual_ocr" ? "Visible text" : "Spoken"}
+                </Badge>
                 <Button asChild variant="outline" size="sm">
                   <a
                     href={timestampUrl(
@@ -295,7 +451,7 @@ export function CorpusSearch({
                     }
                   >
                     <p className="text-xs text-muted-foreground">
-                      {formatTimestamp(segment.startSeconds)}
+                      {formatTimestamp(segment.startSeconds)} · {sourceLabel(segment.sourceKind)}
                     </p>
                     <p className="mt-1 text-sm leading-6">{segment.text}</p>
                   </div>
@@ -347,6 +503,58 @@ export function CorpusSearch({
         </SurfaceContent>
       </Surface>
     </div>
+  );
+}
+
+function sourceLabel(kind: string) {
+  switch (kind) {
+    case "visual_ocr":
+      return "On-screen OCR";
+    case "caption_manual":
+      return "Manual captions";
+    case "caption_auto":
+      return "Automatic captions";
+    case "asr":
+      return "Speech recognition";
+    default:
+      return kind;
+  }
+}
+
+function OcrEvidenceDetails({ evidence }: { evidence: SearchResult["ocrEvidence"] }) {
+  if (!evidence) {
+    return null;
+  }
+  return (
+    <details className="text-xs text-muted-foreground">
+      <summary className="cursor-pointer">OCR observation and producer provenance</summary>
+      <div className="mt-2 grid gap-2">
+        <p>
+          Track {evidence.trackKey} · {evidence.role.replaceAll("_", " ")} · {evidence.sampleCount}{" "}
+          samples
+        </p>
+        <p>
+          Producer {evidence.processor} {evidence.processorVersion}; model {evidence.model}{" "}
+          {evidence.modelVersion}
+        </p>
+        <p className="break-all">
+          Run {evidence.runId} · input {evidence.inputHash} · config {evidence.configHash}
+        </p>
+        <p className="break-all">Processing config: {JSON.stringify(evidence.processingConfig)}</p>
+        {evidence.observations.map((observation) => (
+          <p key={observation.id}>
+            Observation {observation.id} · {formatTimestamp(observation.timestampSeconds)} · frame{" "}
+            {observation.frameIndex ?? "unknown"} · scene {observation.sceneIndex ?? "unknown"}
+          </p>
+        ))}
+        {evidence.scenes.map((scene) => (
+          <p key={scene.id}>
+            Scene {scene.sceneIndex} ({scene.id}), {formatTimestamp(scene.startSeconds)}–
+            {formatTimestamp(scene.endSeconds)}
+          </p>
+        ))}
+      </div>
+    </details>
   );
 }
 

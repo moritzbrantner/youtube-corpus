@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::config::{SearchMode, SourceKind};
 use crate::ingest::IngestReport;
-use crate::search::SearchResult;
+use crate::search::{SearchModality, SearchResult};
 use crate::status::VideoStatus;
 use crate::subscriptions::Subscription;
 
@@ -22,6 +22,7 @@ pub struct SearchTranscriptsInput {
     pub mode: SearchMode,
     pub top_k: i64,
     pub source_kind: Option<SourceKind>,
+    pub modality: Option<SearchModality>,
     pub video_id: Option<Uuid>,
     pub language: Option<String>,
     pub transcript_start_min: Option<f64>,
