@@ -210,7 +210,7 @@ async fn one_corpus_query_ranks_speech_and_ocr_tracks_with_provenance() {
     .await
     .unwrap();
 
-    let app = youtube_corpus::web::app_for_tests(Some(database_url));
+    let app = youtube_corpus::web::app_for_tests_with_research(Some(database_url));
     let speech_favored = query(&app, corpus_id, json!({"query":"nova", "mode":"fts", "topK":20})).await;
     let speech_results = speech_favored["results"].as_array().unwrap();
     assert!(speech_results.iter().any(|r| r["segmentId"] == spoken_segment.to_string()));
