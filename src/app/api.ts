@@ -1,5 +1,5 @@
 export type SearchMode = "hybrid" | "fts" | "semantic";
-export type SourceKind = "caption_manual" | "caption_auto" | "asr";
+export type SourceKind = "caption_manual" | "caption_auto" | "asr" | "visual_ocr";
 export type AddSourceKind = "video" | "channel" | "playlist";
 
 export interface SearchResult {
@@ -16,12 +16,44 @@ export interface SearchResult {
   score: number;
   ftsScore: number;
   semanticScore: number;
+  ocrEvidence: OcrEvidence | null;
+}
+
+export interface OcrEvidence {
+  runId: string;
+  trackKey: string;
+  role: "subtitle" | "end_credit" | "presentation_slide" | "scene_text";
+  sampleCount: number;
+  processor: string;
+  processorVersion: string;
+  model: string;
+  modelVersion: string;
+  inputHash: string;
+  configHash: string;
+  processingConfig: Record<string, unknown>;
+  observations: Array<{
+    id: string;
+    timestampSeconds: number | null;
+    frameIndex: number | null;
+    sceneIndex: number | null;
+  }>;
+  scenes: Array<{
+    id: string;
+    sceneIndex: number;
+    startSeconds: number;
+    endSeconds: number;
+  }>;
 }
 
 export interface SearchReport {
   query: string;
   mode: SearchMode;
   results: SearchResult[];
+  ocrCoverage?: {
+    indexedVideos: number;
+    attemptedWithoutTracks: number;
+    unprocessedVideos: number;
+  };
 }
 
 export interface SearchTranscriptsInput {
@@ -29,6 +61,7 @@ export interface SearchTranscriptsInput {
   mode: SearchMode;
   topK: number;
   sourceKind?: SourceKind | null;
+  modality?: "spoken" | "visible" | null;
   videoId?: string | null;
   language?: string | null;
   transcriptStartMin?: number | null;
