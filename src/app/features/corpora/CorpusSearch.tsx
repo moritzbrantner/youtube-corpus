@@ -156,8 +156,8 @@ export function CorpusSearch({
         <SurfaceHeader>
           <SurfaceTitle>Search this corpus</SurfaceTitle>
           <SurfaceDescription>
-            Search spoken passages and on-screen OCR tracks together by relevance. Speech uses
-            each video's preferred transcript stream; visible text retains its own evidence.
+            Search spoken passages and on-screen OCR tracks together by relevance. Speech uses each
+            video's preferred transcript stream; visible text retains its own evidence.
           </SurfaceDescription>
         </SurfaceHeader>
         <SurfaceContent className="grid gap-4">
@@ -240,7 +240,10 @@ export function CorpusSearch({
                   placeholder="YouTube category"
                   value={draftFilters.categoryQuery}
                   onChange={(event) =>
-                    setDraftFilters((current) => ({ ...current, categoryQuery: event.target.value }))
+                    setDraftFilters((current) => ({
+                      ...current,
+                      categoryQuery: event.target.value,
+                    }))
                   }
                 />
                 <Input
@@ -303,8 +306,8 @@ export function CorpusSearch({
             <StateView variant="empty">
               <StateViewTitle>No matching passages</StateViewTitle>
               <StateViewDescription>
-                Try a broader query or another retrieval mode. Missing OCR hits do not imply
-                that unprocessed videos contain no visible text.
+                Try a broader query or another retrieval mode. Missing OCR hits do not imply that
+                unprocessed videos contain no visible text.
               </StateViewDescription>
             </StateView>
           ) : null}
@@ -312,8 +315,8 @@ export function CorpusSearch({
             <p className="text-xs text-muted-foreground" role="status">
               Visual-text index: {searchQuery.data.ocrCoverage.indexedVideos} videos indexed,{" "}
               {searchQuery.data.ocrCoverage.attemptedWithoutTracks} attempted without tracks,{" "}
-              {searchQuery.data.ocrCoverage.unprocessedVideos} unprocessed. Unprocessed videos
-              have unknown on-screen text coverage.
+              {searchQuery.data.ocrCoverage.unprocessedVideos} unprocessed. Unprocessed videos have
+              unknown on-screen text coverage.
             </p>
           ) : null}
           <div className="grid gap-3">
@@ -335,8 +338,7 @@ export function CorpusSearch({
                         {result.title ?? result.sourceUrl}
                       </h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {formatTimestamp(result.startSeconds)} ·{" "}
-                        {sourceLabel(result.sourceKind)}
+                        {formatTimestamp(result.startSeconds)} · {sourceLabel(result.sourceKind)}
                         {result.language ? ` · ${result.language}` : ""}
                       </p>
                     </div>
@@ -346,9 +348,7 @@ export function CorpusSearch({
                     <Badge variant="outline">{result.score.toFixed(3)}</Badge>
                   </div>
                   <p className="text-sm leading-6">{result.text}</p>
-                  {result.ocrEvidence ? (
-                    <OcrEvidenceDetails evidence={result.ocrEvidence} />
-                  ) : null}
+                  {result.ocrEvidence ? <OcrEvidenceDetails evidence={result.ocrEvidence} /> : null}
                   <div className="flex flex-wrap gap-2">
                     <Button asChild variant="outline" size="sm">
                       <a
@@ -399,17 +399,15 @@ export function CorpusSearch({
         <SurfaceHeader>
           <SurfaceTitle>Moment context</SurfaceTitle>
           <SurfaceDescription>
-            Inspect adjacent transcript passages or tracked visible text, and annotate the
-            selected moment.
+            Inspect adjacent transcript passages or tracked visible text, and annotate the selected
+            moment.
           </SurfaceDescription>
         </SurfaceHeader>
         <SurfaceContent className="grid gap-3">
           {!selectedSegmentId ? (
             <StateView variant="empty">
               <StateViewTitle>No passage selected</StateViewTitle>
-              <StateViewDescription>
-                Select a moment from the ranked results.
-              </StateViewDescription>
+              <StateViewDescription>Select a moment from the ranked results.</StateViewDescription>
             </StateView>
           ) : null}
           {contextQuery.isPending && selectedSegmentId ? (
@@ -530,8 +528,8 @@ function OcrEvidenceDetails({ evidence }: { evidence: SearchResult["ocrEvidence"
       <summary className="cursor-pointer">OCR observation and producer provenance</summary>
       <div className="mt-2 grid gap-2">
         <p>
-          Track {evidence.trackKey} · {evidence.role.replaceAll("_", " ")} ·{" "}
-          {evidence.sampleCount} samples
+          Track {evidence.trackKey} · {evidence.role.replaceAll("_", " ")} · {evidence.sampleCount}{" "}
+          samples
         </p>
         <p>
           Producer {evidence.processor} {evidence.processorVersion}; model {evidence.model}{" "}
