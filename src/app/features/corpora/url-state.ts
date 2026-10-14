@@ -1,22 +1,96 @@
 import * as React from "react";
 
+import type { SearchMode, SourceKind } from "../../api";
+
 export type CorpusUrlState = {
   corpusId: string | null;
   query: string;
   segmentId: string | null;
+  mode: SearchMode;
+  modality: "all" | "spoken" | "visible";
+  sourceKind: "all" | SourceKind;
+  language: string;
+  channelQuery: string;
+  titleQuery: string;
+  categoryQuery: string;
+  tagQuery: string;
+  uploadDateFrom: string;
+  uploadDateTo: string;
 };
+
+export type CorpusSearchFilters = Pick<
+  CorpusUrlState,
+  | "mode"
+  | "modality"
+  | "sourceKind"
+  | "language"
+  | "channelQuery"
+  | "titleQuery"
+  | "categoryQuery"
+  | "tagQuery"
+  | "uploadDateFrom"
+  | "uploadDateTo"
+>;
 
 type CorpusUrlPatch = Partial<CorpusUrlState>;
 
+const keys: Array<[keyof CorpusUrlState, string]> = [
+  ["corpusId", "corpus"],
+  ["query", "q"],
+  ["segmentId", "segment"],
+  ["mode", "mode"],
+  ["modality", "modality"],
+  ["sourceKind", "sourceKind"],
+  ["language", "language"],
+  ["channelQuery", "channel"],
+  ["titleQuery", "title"],
+  ["categoryQuery", "category"],
+  ["tagQuery", "tag"],
+  ["uploadDateFrom", "from"],
+  ["uploadDateTo", "to"],
+];
+
+function selected<T extends string>(value: string | null, options: readonly T[], fallback: T): T {
+  return options.find((option) => option === value) ?? fallback;
+}
+
 function readUrlState(): CorpusUrlState {
   if (typeof window === "undefined") {
-    return { corpusId: null, query: "", segmentId: null };
+    return {
+      corpusId: null,
+      query: "",
+      segmentId: null,
+      mode: "hybrid",
+      modality: "all",
+      sourceKind: "all",
+      language: "",
+      channelQuery: "",
+      titleQuery: "",
+      categoryQuery: "",
+      tagQuery: "",
+      uploadDateFrom: "",
+      uploadDateTo: "",
+    };
   }
-  const url = new URL(window.location.href);
+  const params = new URL(window.location.href).searchParams;
   return {
-    corpusId: url.searchParams.get("corpus"),
-    query: url.searchParams.get("q") ?? "",
-    segmentId: url.searchParams.get("segment"),
+    corpusId: params.get("corpus"),
+    query: params.get("q") ?? "",
+    segmentId: params.get("segment"),
+    mode: selected(params.get("mode"), ["hybrid", "fts", "semantic"], "hybrid"),
+    modality: selected(params.get("modality"), ["all", "spoken", "visible"], "all"),
+    sourceKind: selected(
+      params.get("sourceKind"),
+      ["all", "caption_manual", "caption_auto", "asr", "visual_ocr"],
+      "all",
+    ),
+    language: params.get("language") ?? "",
+    channelQuery: params.get("channel") ?? "",
+    titleQuery: params.get("title") ?? "",
+    categoryQuery: params.get("category") ?? "",
+    tagQuery: params.get("tag") ?? "",
+    uploadDateFrom: params.get("from") ?? "",
+    uploadDateTo: params.get("to") ?? "",
   };
 }
 
@@ -35,18 +109,13 @@ export function useCorpusUrlState() {
 
   const update = React.useCallback((patch: CorpusUrlPatch) => {
     const url = new URL(window.location.href);
-    if (patch.corpusId !== undefined) {
-      setOrDelete(url, "corpus", patch.corpusId);
-      if (patch.corpusId !== readUrlState().corpusId) {
-        url.searchParams.delete("segment");
+    for (const [field, param] of keys) {
+      if (patch[field] !== undefined) {
+        setOrDelete(url, param, patch[field] as string | null);
       }
     }
-    if (patch.query !== undefined) {
-      setOrDelete(url, "q", patch.query.trim() || null);
+    if (Object.keys(patch).some((field) => field !== "segmentId")) {
       url.searchParams.delete("segment");
-    }
-    if (patch.segmentId !== undefined) {
-      setOrDelete(url, "segment", patch.segmentId);
     }
     window.history.replaceState(null, "", url);
     setState(readUrlState());
