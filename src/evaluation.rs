@@ -217,6 +217,7 @@ pub async fn run_evaluation(
             top_k: candidate_top_k,
             mode: case.mode,
             source_kind: None,
+            modality: None,
             video_id: None,
             language: None,
             transcript_start_min: None,
@@ -498,6 +499,7 @@ mod tests {
             score: 1.0,
             fts_score: 1.0,
             semantic_score: 0.0,
+            ocr_evidence: None,
         }
     }
 
