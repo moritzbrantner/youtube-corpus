@@ -82,8 +82,7 @@ jobs:
         run: bun run test:frontend
 
       - name: Check repository Rust formatting
-        run: |
-          cargo fmt --check || (cargo fmt && git diff -- src/search.rs src/research_quality_web.rs src/evaluation.rs tests/unified_evidence_search_db.rs && exit 1)
+        run: cargo fmt --check
 
       - name: Lint Rust server
         run: cargo clippy --locked --all-targets -- -D warnings
