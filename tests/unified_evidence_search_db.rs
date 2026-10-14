@@ -1,7 +1,6 @@
 use axum::body::{to_bytes, Body};
 use axum::http::{header, Method, Request, StatusCode};
 use serde_json::{json, Value};
-use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
 use youtube_corpus::{
