@@ -491,6 +491,56 @@ export function CorpusSearch({
   );
 }
 
+function sourceLabel(kind: string) {
+  switch (kind) {
+    case "visual_ocr":
+      return "On-screen OCR";
+    case "caption_manual":
+      return "Manual captions";
+    case "caption_auto":
+      return "Automatic captions";
+    case "asr":
+      return "Speech recognition";
+    default:
+      return kind;
+  }
+}
+
+function OcrEvidenceDetails({ evidence }: { evidence: SearchResult["ocrEvidence"] }) {
+  if (!evidence) return null;
+  return (
+    <details className="text-xs text-muted-foreground">
+      <summary className="cursor-pointer">OCR observation and producer provenance</summary>
+      <div className="mt-2 grid gap-2">
+        <p>
+          Track {evidence.trackKey} · {evidence.role.replaceAll("_", " ")} ·{" "}
+          {evidence.sampleCount} samples
+        </p>
+        <p>
+          Producer {evidence.processor} {evidence.processorVersion}; model {evidence.model}{" "}
+          {evidence.modelVersion}
+        </p>
+        <p className="break-all">
+          Run {evidence.runId} · input {evidence.inputHash} · config {evidence.configHash}
+        </p>
+        <p className="break-all">Processing config: {JSON.stringify(evidence.processingConfig)}</p>
+        {evidence.observations.map((observation) => (
+          <p key={observation.id}>
+            Observation {observation.id} · {formatTimestamp(observation.timestampSeconds)} · frame{" "}
+            {observation.frameIndex ?? "unknown"} · scene {observation.sceneIndex ?? "unknown"}
+          </p>
+        ))}
+        {evidence.scenes.map((scene) => (
+          <p key={scene.id}>
+            Scene {scene.sceneIndex} ({scene.id}), {formatTimestamp(scene.startSeconds)}–
+            {formatTimestamp(scene.endSeconds)}
+          </p>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function formatTimestamp(seconds: number | null) {
   if (seconds === null) {
     return "No timestamp";
