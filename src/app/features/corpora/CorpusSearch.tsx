@@ -28,34 +28,59 @@ import {
   searchWithinCorpus,
 } from "./api";
 import { corpusKeys } from "./query-keys";
+import type { CorpusSearchFilters } from "./url-state";
 
 type CorpusSearchProps = {
   corpusId: string;
   submittedQuery: string;
+  filters: CorpusSearchFilters;
   selectedSegmentId: string | null;
   onSubmitQuery: (query: string) => void;
+  onUpdateFilters: (filters: Partial<CorpusSearchFilters>) => void;
   onSelectSegment: (segmentId: string | null) => void;
 };
 
 export function CorpusSearch({
   corpusId,
   submittedQuery,
+  filters,
   selectedSegmentId,
   onSubmitQuery,
+  onUpdateFilters,
   onSelectSegment,
 }: CorpusSearchProps) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = React.useState(submittedQuery);
-  const [mode, setMode] = React.useState<SearchMode>("hybrid");
+  const [draftFilters, setDraftFilters] = React.useState(filters);
+  React.useEffect(() => {
+    setDraftFilters(filters);
+  }, [
+    filters.mode, filters.modality, filters.sourceKind, filters.language, filters.channelQuery,
+    filters.titleQuery, filters.categoryQuery, filters.tagQuery, filters.uploadDateFrom,
+    filters.uploadDateTo,
+  ]);
+  function changeFilter(patch: Partial<CorpusSearchFilters>) {
+    setDraftFilters((current) => ({ ...current, ...patch }));
+    onUpdateFilters(patch);
+  }
   const [annotationKind, setAnnotationKind] = React.useState("finding");
   const [annotationText, setAnnotationText] = React.useState("");
   const searchInput = React.useMemo<SearchTranscriptsInput>(
     () => ({
       query: submittedQuery,
-      mode,
-      topK: 10,
+      mode: filters.mode,
+      topK: 30,
+      modality: filters.modality === "all" ? null : filters.modality,
+      sourceKind: filters.sourceKind === "all" ? null : filters.sourceKind,
+      language: filters.language.trim() || null,
+      channelQuery: filters.channelQuery.trim() || null,
+      titleQuery: filters.titleQuery.trim() || null,
+      categoryQuery: filters.categoryQuery.trim() || null,
+      tagQuery: filters.tagQuery.trim() || null,
+      uploadDateFrom: filters.uploadDateFrom || null,
+      uploadDateTo: filters.uploadDateTo || null,
     }),
-    [mode, submittedQuery],
+    [filters, submittedQuery],
   );
   const searchQuery = useQuery({
     queryKey: corpusKeys.search(corpusId, searchInput),
@@ -71,10 +96,10 @@ export function CorpusSearch({
     mutationFn: (result: SearchResult) =>
       recordEvaluationJudgment(corpusId, {
         query: submittedQuery,
-        mode,
+        mode: filters.mode,
         topK: searchInput.topK,
         videoId: result.videoId,
-        segmentId: result.segmentId,
+        segmentId: result.sourceKind === "visual_ocr" ? null : result.segmentId,
         sourceUrl: result.sourceUrl,
         startSeconds: result.startSeconds,
         endSeconds: result.endSeconds,
@@ -88,17 +113,22 @@ export function CorpusSearch({
     mutationFn: async () => {
       const match = contextQuery.data?.match;
       if (!match) {
-        throw new Error("Select a transcript passage first.");
+        throw new Error("Select a search moment first.");
       }
       return createAnnotation(corpusId, {
         videoId: match.videoId,
-        streamId: match.streamId,
-        segmentId: match.segmentId,
+        streamId: match.sourceKind === "visual_ocr" ? null : match.streamId,
+        segmentId: match.sourceKind === "visual_ocr" ? null : match.segmentId,
         kind: annotationKind,
         startSeconds: match.startSeconds,
         endSeconds: match.endSeconds,
         text: annotationText.trim() || null,
-        payload: submittedQuery ? { researchQuery: submittedQuery } : {},
+        payload: {
+          ...(submittedQuery ? { researchQuery: submittedQuery } : {}),
+          ...(match.sourceKind === "visual_ocr"
+            ? { ocrTrackId: match.segmentId, ocrRunId: match.streamId }
+            : {}),
+        },
       });
     },
     onSuccess: async () => {
@@ -109,6 +139,7 @@ export function CorpusSearch({
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
+    onUpdateFilters(draftFilters);
     onSubmitQuery(draft.trim());
   }
 
