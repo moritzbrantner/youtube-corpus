@@ -212,6 +212,7 @@ async fn visual_timeline_is_idempotent_scene_linked_and_searchable() {
         top_k: 5,
         mode: SearchMode::Fts,
         source_kind: Some(SourceKind::VisualOcr),
+        modality: None,
         video_id: Some(video_id),
         language: None,
         transcript_start_min: None,
