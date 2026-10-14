@@ -205,6 +205,7 @@ async fn preferred_search(
         top_k: candidate_top_k,
         mode: input.mode,
         source_kind: input.source_kind,
+        modality: input.modality,
         video_id: input.video_id,
         language: input.language,
         transcript_start_min: input.transcript_start_min,
@@ -225,7 +226,8 @@ async fn preferred_search(
     .map_err(ResearchQualityError::internal)?;
     report.results.retain(|result| {
         allowed_video_ids.contains(&result.video_id)
-            && preferred_stream_ids.contains(&result.stream_id)
+            && (result.source_kind == "visual_ocr"
+                || preferred_stream_ids.contains(&result.stream_id))
     });
     report
         .results
