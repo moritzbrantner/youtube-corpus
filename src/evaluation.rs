@@ -240,7 +240,8 @@ pub async fn run_evaluation(
             .into_iter()
             .filter(|result| {
                 allowed_video_ids.contains(&result.video_id)
-                    && preferred_stream_ids.contains(&result.stream_id)
+                    && (result.source_kind == "visual_ocr"
+                        || preferred_stream_ids.contains(&result.stream_id))
             })
             .take(case.top_k as usize)
             .collect::<Vec<_>>();
