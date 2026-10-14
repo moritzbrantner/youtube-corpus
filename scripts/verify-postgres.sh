@@ -18,3 +18,5 @@ cargo test --test discovery_db -- --ignored
 cargo test --test visual_timeline_db -- --ignored
 cargo test --test media_evidence_db -- --ignored
 cargo test --test visual_provenance_db -- --ignored
+
+cargo test --test unified_evidence_search_db -- --ignored
