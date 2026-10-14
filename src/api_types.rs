@@ -23,7 +23,7 @@ pub struct SearchTranscriptsInput {
     pub top_k: i64,
     pub source_kind: Option<SourceKind>,
     pub modality: Option<SearchModality>,
-    pub video_id: Option<Uuid>
+    pub video_id: Option<Uuid>,
     pub language: Option<String>,
     pub transcript_start_min: Option<f64>,
     pub transcript_start_max: Option<f64>,
