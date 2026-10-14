@@ -258,6 +258,7 @@ async fn search_transcripts(
         top_k: input.top_k,
         mode: input.mode,
         source_kind: input.source_kind,
+        modality: input.modality,
         video_id: input.video_id,
         language: input.language,
         transcript_start_min: input.transcript_start_min,
@@ -366,6 +367,7 @@ async fn transcript_context(
         semantic_score: match_row
             .try_get::<f64, _>("semantic_score")
             .map_err(ApiError::internal)?,
+        ocr_evidence: None,
     };
 
     let context_rows = sqlx::query(
@@ -494,6 +496,7 @@ async fn visual_text_context(
         score: 0.0,
         fts_score: 0.0,
         semantic_score: 0.0,
+        ocr_evidence: None,
     };
 
     Ok(Some(TranscriptContextReport {
