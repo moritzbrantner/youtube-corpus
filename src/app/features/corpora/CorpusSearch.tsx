@@ -149,8 +149,8 @@ export function CorpusSearch({
         <SurfaceHeader>
           <SurfaceTitle>Search this corpus</SurfaceTitle>
           <SurfaceDescription>
-            Search is limited to corpus videos and defaults to each video's preferred transcript
-            stream. Mark strong results as relevance judgments to grow the retrieval benchmark.
+            Search spoken passages and on-screen OCR tracks together by relevance. Speech uses
+            each video's preferred transcript stream; visible text retains its own evidence.
           </SurfaceDescription>
         </SurfaceHeader>
         <SurfaceContent className="grid gap-4">
@@ -270,15 +270,15 @@ export function CorpusSearch({
 
           {!submittedQuery ? (
             <StateView variant="empty">
-              <StateViewTitle>Search a transcript corpus</StateViewTitle>
+              <StateViewTitle>Search corpus evidence</StateViewTitle>
               <StateViewDescription>
-                Results link to the exact YouTube timestamp and can open surrounding transcript
-                context.
+                Results link to original video moments with separate spoken and visible-text
+                evidence.
               </StateViewDescription>
             </StateView>
           ) : null}
           {searchQuery.isPending && submittedQuery ? (
-            <LoadingState label="Searching preferred transcripts" />
+            <LoadingState label="Searching speech and visible text" />
           ) : null}
           {searchQuery.error ? (
             <ErrorState>
@@ -290,9 +290,18 @@ export function CorpusSearch({
             <StateView variant="empty">
               <StateViewTitle>No matching passages</StateViewTitle>
               <StateViewDescription>
-                Try a broader query or another retrieval mode.
+                Try a broader query or another retrieval mode. Missing OCR hits do not imply
+                that unprocessed videos contain no visible text.
               </StateViewDescription>
             </StateView>
+          ) : null}
+          {searchQuery.data?.ocrCoverage ? (
+            <p className="text-xs text-muted-foreground" role="status">
+              Visual-text index: {searchQuery.data.ocrCoverage.indexedVideos} videos indexed,{" "}
+              {searchQuery.data.ocrCoverage.attemptedWithoutTracks} attempted without tracks,{" "}
+              {searchQuery.data.ocrCoverage.unprocessedVideos} unprocessed. Unprocessed videos
+              have unknown on-screen text coverage.
+            </p>
           ) : null}
           <div className="grid gap-3">
             {searchQuery.data?.results.map((result) => {
@@ -313,12 +322,18 @@ export function CorpusSearch({
                         {result.title ?? result.sourceUrl}
                       </h3>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {formatTimestamp(result.startSeconds)} · {result.sourceKind}
+                        {formatTimestamp(result.startSeconds)} ·{" "}
+                        {sourceLabel(result.sourceKind)}
+                        {result.language ? ` · ${result.language}` : ""}
                       </p>
                     </div>
+                    <Badge variant="outline">
+                      {result.sourceKind === "visual_ocr" ? "Visible text" : "Spoken"}
+                    </Badge>
                     <Badge variant="outline">{result.score.toFixed(3)}</Badge>
                   </div>
                   <p className="text-sm leading-6">{result.text}</p>
+                  {result.ocrEvidence ? <OcrEvidenceDetails evidence={result.ocrEvidence} /> : null}
                   <div className="flex flex-wrap gap-2">
                     <Button asChild variant="outline" size="sm">
                       <a
@@ -339,7 +354,7 @@ export function CorpusSearch({
                         )
                       }
                     >
-                      Transcript context
+                      {result.sourceKind === "visual_ocr" ? "Visual context" : "Transcript context"}
                     </Button>
                     <Button
                       type="button"
@@ -367,10 +382,10 @@ export function CorpusSearch({
 
       <Surface>
         <SurfaceHeader>
-          <SurfaceTitle>Transcript context</SurfaceTitle>
+          <SurfaceTitle>Moment context</SurfaceTitle>
           <SurfaceDescription>
-            Inspect neighboring segments and attach a provenance-aware research annotation to the
-            selected passage.
+            Inspect adjacent transcript passages or tracked visible text, and annotate the
+            selected moment.
           </SurfaceDescription>
         </SurfaceHeader>
         <SurfaceContent className="grid gap-3">
@@ -378,7 +393,7 @@ export function CorpusSearch({
             <StateView variant="empty">
               <StateViewTitle>No passage selected</StateViewTitle>
               <StateViewDescription>
-                Choose transcript context from a search result.
+                Select a moment from the ranked results.
               </StateViewDescription>
             </StateView>
           ) : null}
@@ -394,7 +409,9 @@ export function CorpusSearch({
           {contextQuery.data ? (
             <>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <Badge variant="outline">{contextQuery.data.match.sourceKind}</Badge>
+                <Badge variant="outline">
+                  {contextQuery.data.match.sourceKind === "visual_ocr" ? "Visible text" : "Spoken"}
+                </Badge>
                 <Button asChild variant="outline" size="sm">
                   <a
                     href={timestampUrl(
@@ -419,7 +436,7 @@ export function CorpusSearch({
                     }
                   >
                     <p className="text-xs text-muted-foreground">
-                      {formatTimestamp(segment.startSeconds)}
+                      {formatTimestamp(segment.startSeconds)} · {sourceLabel(segment.sourceKind)}
                     </p>
                     <p className="mt-1 text-sm leading-6">{segment.text}</p>
                   </div>
