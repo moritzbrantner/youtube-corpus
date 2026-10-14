@@ -87,6 +87,8 @@ struct RecordJudgmentInput {
     top_k: i64,
     video_id: Option<Uuid>,
     segment_id: Option<Uuid>,
+    #[serde(default)]
+    visual_text_track_id: Option<Uuid>,
     source_url: Option<String>,
     start_seconds: Option<f64>,
     end_seconds: Option<f64>,
@@ -241,34 +243,9 @@ async fn ocr_coverage(
     pool: &sqlx::PgPool,
     video_ids: &std::collections::HashSet<Uuid>,
 ) -> Result<OcrCoverage, ResearchQualityError> {
-    let ids: Vec<Uuid> = video_ids.iter().copied().collect();
-    let rows: Vec<(Uuid, bool, bool)> = sqlx::query_as(
-        "SELECT v.id,
-                EXISTS (SELECT 1 FROM media_processing_runs r
-                        WHERE r.video_id = v.id AND r.modality = 'ocr') AS attempted,
-                EXISTS (SELECT 1 FROM visual_text_tracks t
-                        WHERE t.video_id = v.id) AS indexed
-         FROM videos v WHERE v.id = ANY($1::uuid[])",
-    )
-    .bind(&ids)
-    .fetch_all(pool)
-    .await
-    .map_err(ResearchQualityError::internal)?;
-    let mut coverage = OcrCoverage {
-        indexed_videos: 0,
-        attempted_without_tracks: 0,
-        unprocessed_videos: 0,
-    };
-    for (_, attempted, indexed) in rows {
-        if indexed {
-            coverage.indexed_videos += 1;
-        } else if attempted {
-            coverage.attempted_without_tracks += 1;
-        } else {
-            coverage.unprocessed_videos += 1;
-        }
-    }
-    Ok(coverage)
+    crate::search::corpus_ocr_coverage(pool, video_ids)
+        .await
+        .map_err(ResearchQualityError::internal)
 }
 
 async fn list_annotations(
@@ -345,6 +322,7 @@ async fn record_evaluation_judgment(
             top_k: input.top_k,
             video_id: input.video_id,
             segment_id: input.segment_id,
+            visual_text_track_id: input.visual_text_track_id,
             source_url: input.source_url,
             start_seconds: input.start_seconds,
             end_seconds: input.end_seconds,

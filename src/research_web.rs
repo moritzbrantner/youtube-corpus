@@ -463,6 +463,12 @@ async fn search_corpus(
         .retain(|result| allowed_video_ids.contains(&result.video_id));
     let truncate_to = usize::try_from(requested_top_k).unwrap_or(usize::MAX);
     report.results.truncate(truncate_to);
+    // Without coverage an empty visible-text result would read as a confirmed negative.
+    report.ocr_coverage = Some(
+        crate::search::corpus_ocr_coverage(&pool, &allowed_video_ids)
+            .await
+            .map_err(ResearchError::internal)?,
+    );
     Ok(Json(report))
 }
 

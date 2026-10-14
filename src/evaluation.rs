@@ -15,6 +15,9 @@ pub struct EvaluationTarget {
     pub id: Uuid,
     pub video_id: Option<Uuid>,
     pub segment_id: Option<Uuid>,
+    /// Judged visible-text (OCR) track; such a target is matched only by that track.
+    #[serde(default)]
+    pub visual_text_track_id: Option<Uuid>,
     pub source_url: Option<String>,
     pub start_seconds: Option<f64>,
     pub end_seconds: Option<f64>,
@@ -44,6 +47,7 @@ pub struct RecordJudgmentRequest {
     pub top_k: i64,
     pub video_id: Option<Uuid>,
     pub segment_id: Option<Uuid>,
+    pub visual_text_track_id: Option<Uuid>,
     pub source_url: Option<String>,
     pub start_seconds: Option<f64>,
     pub end_seconds: Option<f64>,
@@ -94,13 +98,41 @@ pub async fn record_judgment(
     if !(1..=3).contains(&request.relevance) {
         anyhow::bail!("evaluation relevance must be between 1 and 3");
     }
-    if request.video_id.is_none() && request.segment_id.is_none() && request.source_url.is_none() {
-        anyhow::bail!("an evaluation judgment needs a video, segment, or source URL target");
+    if request.video_id.is_none()
+        && request.segment_id.is_none()
+        && request.visual_text_track_id.is_none()
+        && request.source_url.is_none()
+    {
+        anyhow::bail!(
+            "an evaluation judgment needs a video, segment, visible-text track, or source URL target"
+        );
+    }
+    if request.segment_id.is_some() && request.visual_text_track_id.is_some() {
+        anyhow::bail!(
+            "an evaluation target is either a transcript segment or a visible-text track"
+        );
     }
     let allowed = crate::corpora::corpus_video_ids(pool, request.corpus_id).await?;
     if let Some(video_id) = request.video_id {
         if !allowed.contains(&video_id) {
             anyhow::bail!("evaluation target video is not part of this corpus");
+        }
+    }
+    if let Some(track_id) = request.visual_text_track_id {
+        let track_video: Option<Uuid> =
+            sqlx::query_scalar("SELECT video_id FROM visual_text_tracks WHERE id = $1")
+                .bind(track_id)
+                .fetch_optional(pool)
+                .await?;
+        match track_video {
+            None => anyhow::bail!("evaluation target visible-text track not found"),
+            Some(video_id) if !allowed.contains(&video_id) => {
+                anyhow::bail!("evaluation target visible-text track is not part of this corpus")
+            }
+            Some(video_id) if request.video_id.is_some_and(|id| id != video_id) => {
+                anyhow::bail!("evaluation target visible-text track belongs to another video")
+            }
+            Some(_) => {}
         }
     }
 
@@ -132,6 +164,11 @@ pub async fn record_judgment(
     let target_key = request
         .segment_id
         .map(|id| format!("segment:{id}"))
+        .or_else(|| {
+            request
+                .visual_text_track_id
+                .map(|id| format!("visual-track:{id}"))
+        })
         .or_else(|| request.video_id.map(|id| format!("video:{id}")))
         .or_else(|| request.source_url.as_ref().map(|url| format!("url:{url}")))
         .expect("target was validated");
@@ -146,9 +183,9 @@ pub async fn record_judgment(
     sqlx::query(
         "INSERT INTO retrieval_evaluation_targets (
            id, case_id, video_id, segment_id, source_url,
-           start_seconds, end_seconds, relevance, notes
+           start_seconds, end_seconds, relevance, notes, visual_text_track_id
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          ON CONFLICT (id) DO UPDATE SET
            relevance = EXCLUDED.relevance,
            notes = coalesce(EXCLUDED.notes, retrieval_evaluation_targets.notes)",
@@ -162,6 +199,7 @@ pub async fn record_judgment(
     .bind(request.end_seconds)
     .bind(i32::from(request.relevance))
     .bind(normalize_optional(request.notes))
+    .bind(request.visual_text_track_id)
     .execute(pool)
     .await?;
 
@@ -316,8 +354,8 @@ async fn load_case(pool: &PgPool, id: Uuid) -> anyhow::Result<Option<EvaluationC
         return Ok(None);
     };
     let target_rows = sqlx::query(
-        "SELECT id, video_id, segment_id, source_url, start_seconds, end_seconds,
-                relevance, notes
+        "SELECT id, video_id, segment_id, visual_text_track_id, source_url, start_seconds,
+                end_seconds, relevance, notes
          FROM retrieval_evaluation_targets
          WHERE case_id = $1
          ORDER BY relevance DESC, created_at, id",
@@ -333,6 +371,7 @@ async fn load_case(pool: &PgPool, id: Uuid) -> anyhow::Result<Option<EvaluationC
                 id: row.try_get("id")?,
                 video_id: row.try_get("video_id")?,
                 segment_id: row.try_get("segment_id")?,
+                visual_text_track_id: row.try_get("visual_text_track_id")?,
                 source_url: row.try_get("source_url")?,
                 start_seconds: row.try_get("start_seconds")?,
                 end_seconds: row.try_get("end_seconds")?,
@@ -414,6 +453,13 @@ fn score_case(
 fn target_matches(target: &EvaluationTarget, result: &SearchResult) -> bool {
     if target.segment_id.is_some_and(|id| id != result.segment_id) {
         return false;
+    }
+    // A judged OCR track is satisfied only by that visible-text result, never by an
+    // overlapping spoken passage (OCR results carry their track id as `segment_id`).
+    if let Some(track_id) = target.visual_text_track_id {
+        if result.source_kind != "visual_ocr" || result.segment_id != track_id {
+            return false;
+        }
     }
     if target.video_id.is_some_and(|id| id != result.video_id) {
         return false;
@@ -510,6 +556,7 @@ mod tests {
             id: Uuid::from_u128(3),
             video_id: Some(Uuid::from_u128(1)),
             segment_id: None,
+            visual_text_track_id: None,
             source_url: None,
             start_seconds: Some(12.0),
             end_seconds: Some(16.0),
@@ -517,6 +564,30 @@ mod tests {
             notes: None,
         };
         assert!(target_matches(&target, &result()));
+    }
+
+    #[test]
+    fn visible_text_targets_match_only_their_ocr_track() {
+        let track = Uuid::from_u128(9);
+        let target = EvaluationTarget {
+            id: Uuid::from_u128(3),
+            video_id: Some(Uuid::from_u128(1)),
+            segment_id: None,
+            visual_text_track_id: Some(track),
+            source_url: None,
+            start_seconds: Some(12.0),
+            end_seconds: Some(16.0),
+            relevance: 3,
+            notes: None,
+        };
+        // An overlapping spoken passage of the same video does not satisfy it.
+        assert!(!target_matches(&target, &result()));
+        let mut ocr = result();
+        ocr.source_kind = "visual_ocr".to_string();
+        ocr.segment_id = track;
+        assert!(target_matches(&target, &ocr));
+        ocr.segment_id = Uuid::from_u128(10);
+        assert!(!target_matches(&target, &ocr));
     }
 
     #[test]

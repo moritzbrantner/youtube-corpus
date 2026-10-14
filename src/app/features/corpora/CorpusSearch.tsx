@@ -106,7 +106,9 @@ export function CorpusSearch({
         mode: filters.mode,
         topK: searchInput.topK,
         videoId: result.videoId,
+        // The transcript FK cannot hold an OCR track; keep its identity separately.
         segmentId: result.sourceKind === "visual_ocr" ? null : result.segmentId,
+        visualTextTrackId: result.sourceKind === "visual_ocr" ? result.segmentId : null,
         sourceUrl: result.sourceUrl,
         startSeconds: result.startSeconds,
         endSeconds: result.endSeconds,

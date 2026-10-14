@@ -437,7 +437,10 @@ fn rows_to_results(rows: Vec<sqlx::postgres::PgRow>) -> anyhow::Result<Vec<Searc
 
 /// Enrich already-ranked track hits from canonical OCR evidence. Observations are not
 /// independent search hits: one track is one relevant on-screen moment.
-async fn attach_ocr_evidence(pool: &PgPool, results: &mut [SearchResult]) -> anyhow::Result<()> {
+pub(crate) async fn attach_ocr_evidence(
+    pool: &PgPool,
+    results: &mut [SearchResult],
+) -> anyhow::Result<()> {
     let ids: Vec<Uuid> = results
         .iter()
         .filter(|result| result.source_kind == "visual_ocr")
@@ -596,4 +599,39 @@ fn normalize_upload_date_filter(value: &Option<String>) -> anyhow::Result<Option
     }
 
     anyhow::bail!("upload date filters must use YYYYMMDD or YYYY-MM-DD")
+}
+
+/// OCR coverage of a set of corpus videos. A missing OCR processing run is unknown
+/// coverage, never a negative finding.
+pub async fn corpus_ocr_coverage(
+    pool: &sqlx::PgPool,
+    video_ids: &std::collections::HashSet<uuid::Uuid>,
+) -> anyhow::Result<OcrCoverage> {
+    let ids: Vec<uuid::Uuid> = video_ids.iter().copied().collect();
+    let rows: Vec<(uuid::Uuid, bool, bool)> = sqlx::query_as(
+        "SELECT v.id,
+                EXISTS (SELECT 1 FROM media_processing_runs r
+                        WHERE r.video_id = v.id AND r.modality = 'ocr') AS attempted,
+                EXISTS (SELECT 1 FROM visual_text_tracks t
+                        WHERE t.video_id = v.id) AS indexed
+         FROM videos v WHERE v.id = ANY($1::uuid[])",
+    )
+    .bind(&ids)
+    .fetch_all(pool)
+    .await?;
+    let mut coverage = OcrCoverage {
+        indexed_videos: 0,
+        attempted_without_tracks: 0,
+        unprocessed_videos: 0,
+    };
+    for (_, attempted, indexed) in rows {
+        if indexed {
+            coverage.indexed_videos += 1;
+        } else if attempted {
+            coverage.attempted_without_tracks += 1;
+        } else {
+            coverage.unprocessed_videos += 1;
+        }
+    }
+    Ok(coverage)
 }

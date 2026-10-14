@@ -480,7 +480,7 @@ async fn visual_text_context(
         .collect::<Result<Vec<_>, StatusQueryError>>()
         .map_err(ApiError::internal)?;
 
-    let match_segment = SearchResult {
+    let mut match_segment = SearchResult {
         segment_id,
         video_id: match_row.try_get("video_id").map_err(ApiError::internal)?,
         stream_id,
@@ -498,6 +498,10 @@ async fn visual_text_context(
         semantic_score: 0.0,
         ocr_evidence: None,
     };
+    // Same producer/run/observation/scene provenance as the search response.
+    crate::search::attach_ocr_evidence(pool, std::slice::from_mut(&mut match_segment))
+        .await
+        .map_err(ApiError::internal)?;
 
     Ok(Some(TranscriptContextReport {
         match_segment,

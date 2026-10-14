@@ -113,6 +113,7 @@ export type EvaluationTarget = {
   id: string;
   videoId: string | null;
   segmentId: string | null;
+  visualTextTrackId?: string | null;
   sourceUrl: string | null;
   startSeconds: number | null;
   endSeconds: number | null;
@@ -138,6 +139,7 @@ export type RecordEvaluationJudgmentInput = {
   topK: number;
   videoId?: string | null;
   segmentId?: string | null;
+  visualTextTrackId?: string | null;
   sourceUrl?: string | null;
   startSeconds?: number | null;
   endSeconds?: number | null;
