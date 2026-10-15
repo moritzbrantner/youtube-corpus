@@ -127,6 +127,14 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
   Status: adopted 2026-10-13. Answers 2.7 (option A).  
   When one video belongs to multiple tracked sources or research groups, its effective inherited detector plan includes all detectors requested by any applicable profile, instead of arbitrarily selecting one profile or asking the user to choose. Identical work for the same video/input, detector, producer/model revision, and effective configuration is reused rather than executed separately for each requesting source/group. Different requested configurations and their results remain distinguishable by provenance, not silently conflated. Users can inspect which detectors will run and which profiles requested them. Explicit per-video overrides from 2.6 remain available to customize the effective selection.
 
+- **2.9** [question] **Where does an explicit per-video detector override apply when the video belongs to several corpora?**  
+  Resolved 2026-10-15 by 2.10.  
+  When one canonical video is a member of multiple corpora, a user-set per-video override (2.6) could apply only within the corpus where it was set, or to that video in every corpus.
+
+- **2.10 Per-video detector overrides are scoped to the corpus where they were set.**  
+  Status: adopted 2026-10-15. Answers 2.9.  
+  An explicit per-video detector override applies **only within the corpus in which the user set it**. It does not change that video's effective detector plan in other corpora that also contain it; those corpora keep their own profiles and their own overrides. Identical work requested from several corpora is still reused under 2.2, and the effective plan shown in each corpus identifies the overrides that apply there.
+
 ## 3. Finding material inside videos
 
 - **3.1 Search transcript words, phrases, and passages across the corpus.**  
