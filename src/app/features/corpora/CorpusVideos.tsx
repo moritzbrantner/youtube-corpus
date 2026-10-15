@@ -20,10 +20,19 @@ import {
 } from "@moritzbrantner/ui/shell";
 
 import {
+  LabelAssignments,
+  errorMessage,
+  useCorpusLabels,
+  useInvalidateLabels,
+} from "./CorpusLabels";
+import {
+  assignVideoLabel,
   listCorpusVideos,
+  removeVideoLabel,
   listTranscriptQuality,
   refreshTranscriptQuality,
   reprocessCorpusVideo,
+  type CorpusLabel,
   type CorpusVideo,
   type ReprocessStage,
   type TranscriptQuality,
@@ -36,9 +45,19 @@ type CorpusVideosProps = {
 
 export function CorpusVideos({ corpusId }: CorpusVideosProps) {
   const queryClient = useQueryClient();
+  const [labelFilter, setLabelFilter] = React.useState<string | null>(null);
+  const labelsQuery = useCorpusLabels(corpusId);
+  const labels = labelsQuery.data ?? [];
+  const activeLabel = labels.find((label) => label.id === labelFilter) ?? null;
+  React.useEffect(() => {
+    // A deleted label can no longer filter the catalog.
+    if (labelFilter && labelsQuery.data && !activeLabel) {
+      setLabelFilter(null);
+    }
+  }, [activeLabel, labelFilter, labelsQuery.data]);
   const videosQuery = useQuery({
-    queryKey: corpusKeys.videos(corpusId, 100),
-    queryFn: () => listCorpusVideos(corpusId, 100),
+    queryKey: corpusKeys.videos(corpusId, 100, labelFilter),
+    queryFn: () => listCorpusVideos(corpusId, 100, { labelId: labelFilter }),
   });
   const qualityQuery = useQuery({
     queryKey: corpusKeys.quality(corpusId),
@@ -88,6 +107,27 @@ export function CorpusVideos({ corpusId }: CorpusVideosProps) {
             {refreshMutation.isPending ? "Scoring transcripts..." : "Refresh transcript quality"}
           </Button>
         </div>
+        <label className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-medium">Filter by your label</span>
+          <NativeSelect
+            aria-label="Filter videos by label"
+            className="min-w-44"
+            value={labelFilter ?? ""}
+            onChange={(event) => setLabelFilter(event.target.value || null)}
+          >
+            <option value="">All videos</option>
+            {labels.map((label) => (
+              <option key={label.id} value={label.id}>
+                {label.name}
+              </option>
+            ))}
+          </NativeSelect>
+          {activeLabel ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setLabelFilter(null)}>
+              Clear filter
+            </Button>
+          ) : null}
+        </label>
         {refreshMutation.error ? (
           <p className="text-sm text-destructive">{String(refreshMutation.error)}</p>
         ) : null}
@@ -95,7 +135,7 @@ export function CorpusVideos({ corpusId }: CorpusVideosProps) {
         {videosQuery.error ? (
           <ErrorState>
             <StateViewTitle>Videos unavailable</StateViewTitle>
-            <StateViewDescription>{String(videosQuery.error)}</StateViewDescription>
+            <StateViewDescription>{errorMessage(videosQuery.error)}</StateViewDescription>
           </ErrorState>
         ) : null}
         {qualityQuery.error ? (
@@ -104,7 +144,15 @@ export function CorpusVideos({ corpusId }: CorpusVideosProps) {
             <StateViewDescription>{String(qualityQuery.error)}</StateViewDescription>
           </ErrorState>
         ) : null}
-        {videosQuery.data?.length === 0 ? (
+        {videosQuery.data?.length === 0 && activeLabel ? (
+          <StateView variant="empty">
+            <StateViewTitle>No videos with the label “{activeLabel.name}”</StateViewTitle>
+            <StateViewDescription>
+              Assign this label to a video or to one of its sources, or clear the filter.
+            </StateViewDescription>
+          </StateView>
+        ) : null}
+        {videosQuery.data?.length === 0 && !activeLabel ? (
           <StateView variant="empty">
             <StateViewTitle>No videos in this corpus</StateViewTitle>
             <StateViewDescription>Add a channel or playlist to begin.</StateViewDescription>
@@ -115,6 +163,7 @@ export function CorpusVideos({ corpusId }: CorpusVideosProps) {
             key={video.id}
             corpusId={corpusId}
             video={video}
+            labels={labels}
             quality={qualityByVideo.get(video.id) ?? []}
           />
         ))}
@@ -126,11 +175,21 @@ export function CorpusVideos({ corpusId }: CorpusVideosProps) {
 type CorpusVideoRowProps = {
   corpusId: string;
   video: CorpusVideo;
+  labels: CorpusLabel[];
   quality: TranscriptQuality[];
 };
 
-function CorpusVideoRow({ corpusId, video, quality }: CorpusVideoRowProps) {
+function CorpusVideoRow({ corpusId, video, labels, quality }: CorpusVideoRowProps) {
   const queryClient = useQueryClient();
+  const invalidateLabels = useInvalidateLabels(corpusId);
+  const labelMutation = useMutation({
+    mutationFn: ({ labelId, assigned }: { labelId: string; assigned: boolean }) =>
+      assigned
+        ? assignVideoLabel(corpusId, video.id, labelId)
+        : removeVideoLabel(corpusId, video.id, labelId),
+    onSettled: invalidateLabels,
+  });
+  const videoName = video.title ?? video.sourceUrl;
   const [stage, setStage] = React.useState<ReprocessStage>("metadata");
   const preferred = quality.find((item) => item.isPreferred) ?? null;
   const mutation = useMutation({
@@ -164,6 +223,44 @@ function CorpusVideoRow({ corpusId, video, quality }: CorpusVideoRowProps) {
           </a>
         </Button>
       </div>
+
+      <p className="text-xs text-muted-foreground">
+        {video.sources.length > 0
+          ? `Tracked sources: ${video.sources
+              .map((source) => `${source.name ?? source.sourceKind} (${source.sourceKind})`)
+              .join(", ")}`
+          : "No tracked source"}
+        {video.addedDirectly ? " · Added directly" : ""}
+      </p>
+
+      <LabelAssignments
+        itemName={videoName}
+        assigned={video.labels}
+        available={labels}
+        pending={labelMutation.isPending}
+        error={labelMutation.error}
+        onAssign={(labelId) => labelMutation.mutate({ labelId, assigned: true })}
+        onRemove={(labelId) => labelMutation.mutate({ labelId, assigned: false })}
+      />
+
+      {video.youtubeCategories.length > 0 || video.youtubeTags.length > 0 ? (
+        <div
+          className="flex flex-wrap items-center gap-2"
+          aria-label={`YouTube categories and tags of ${videoName}`}
+        >
+          <span className="text-xs font-medium text-muted-foreground">From YouTube:</span>
+          {video.youtubeCategories.map((category) => (
+            <Badge key={`category:${category}`} variant="outline">
+              category: {category}
+            </Badge>
+          ))}
+          {video.youtubeTags.map((tag) => (
+            <Badge key={`tag:${tag}`} variant="outline">
+              #{tag}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">{video.transcriptStreams} streams</Badge>

@@ -21,9 +21,12 @@ import {
   SurfaceTitle,
 } from "@moritzbrantner/ui/shell";
 
+import { LabelAssignments, useCorpusLabels, useInvalidateLabels } from "./CorpusLabels";
 import {
   addCorpusSource,
+  assignSourceLabel,
   checkCorpusSource,
+  removeSourceLabel,
   listCorpusSources,
   setCorpusSourceEnabled,
   type AddCorpusSourceInput,
@@ -48,6 +51,23 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
   const sourcesQuery = useQuery({
     queryKey: corpusKeys.sources(corpusId),
     queryFn: () => listCorpusSources(corpusId),
+  });
+  const labelsQuery = useCorpusLabels(corpusId);
+  const invalidateLabels = useInvalidateLabels(corpusId);
+  const labelMutation = useMutation({
+    mutationFn: ({
+      sourceId,
+      labelId,
+      assigned,
+    }: {
+      sourceId: string;
+      labelId: string;
+      assigned: boolean;
+    }) =>
+      assigned
+        ? assignSourceLabel(corpusId, sourceId, labelId)
+        : removeSourceLabel(corpusId, sourceId, labelId),
+    onSettled: invalidateLabels,
   });
 
   async function invalidateCorpus() {
@@ -240,6 +260,19 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
               {source.lastCheckMessage ? (
                 <p className="text-sm text-destructive">{source.lastCheckMessage}</p>
               ) : null}
+              <LabelAssignments
+                itemName={source.name ?? source.sourceUrl}
+                assigned={source.labels}
+                available={labelsQuery.data ?? []}
+                pending={labelMutation.isPending}
+                error={labelMutation.variables?.sourceId === source.id ? labelMutation.error : null}
+                onAssign={(labelId) =>
+                  labelMutation.mutate({ sourceId: source.id, labelId, assigned: true })
+                }
+                onRemove={(labelId) =>
+                  labelMutation.mutate({ sourceId: source.id, labelId, assigned: false })
+                }
+              />
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <label className="flex items-center gap-2 text-sm">
                   <Switch

@@ -44,6 +44,38 @@ pub struct CorpusSourceSummary {
     pub items_seen: u64,
     pub items_indexed: u64,
     pub items_failed: u64,
+    /// User labels assigned to this tracked source (Atlas 1.3).
+    pub labels: Vec<CorpusLabel>,
+}
+
+/// A user-defined label owned by one corpus. Distinct from YouTube categories/tags.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct CorpusLabel {
+    pub id: Uuid,
+    pub name: String,
+}
+
+/// A tracked source of this corpus whose discovered items contain a video.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CorpusVideoSource {
+    pub id: Uuid,
+    pub source_kind: String,
+    pub name: Option<String>,
+}
+
+/// Why a label request failed; mapped to HTTP status codes by the web layer.
+#[derive(Debug, thiserror::Error)]
+pub enum LabelError {
+    #[error("{0}")]
+    NotFound(String),
+    #[error("label name must not be blank")]
+    BlankName,
+    #[error("a label named \"{0}\" already exists in this corpus")]
+    DuplicateName(String),
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +95,16 @@ pub struct CorpusVideoSummary {
     pub processing_revision: Option<u64>,
     pub last_retrieved_at: Option<DateTime<Utc>>,
     pub updated_at: DateTime<Utc>,
+    /// User labels assigned directly to the video in this corpus.
+    pub labels: Vec<CorpusLabel>,
+    /// Tracked sources of this corpus that discovered the video (Atlas 1.1).
+    pub sources: Vec<CorpusVideoSource>,
+    /// The video was added to the corpus directly rather than only through a source.
+    pub added_directly: bool,
+    /// YouTube-supplied categories, kept apart from user labels (Atlas 1.4).
+    pub youtube_categories: Vec<String>,
+    /// YouTube-supplied tags, kept apart from user labels (Atlas 1.4).
+    pub youtube_tags: Vec<String>,
 }
 
 pub fn normalize_slug(value: &str) -> anyhow::Result<String> {
@@ -292,14 +334,22 @@ pub async fn list_corpus_sources(
                 s.last_checked_at, s.last_ingested_at, s.last_check_status, s.last_check_message,
                 count(i.id)::bigint AS items_seen,
                 count(i.id) FILTER (WHERE i.status = 'indexed')::bigint AS items_indexed,
-                count(i.id) FILTER (WHERE i.status = 'failed')::bigint AS items_failed
+                count(i.id) FILTER (WHERE i.status = 'failed')::bigint AS items_failed,
+                coalesce(
+                  (SELECT jsonb_agg(jsonb_build_object('id', l.id, 'name', l.name)
+                                    ORDER BY lower(l.name), l.id)
+                   FROM corpus_source_labels sl
+                   JOIN corpus_labels l ON l.id = sl.label_id
+                   WHERE sl.corpus_id = m.corpus_id AND sl.subscription_id = s.id),
+                  '[]'::jsonb
+                ) AS labels
          FROM corpus_source_memberships m
          JOIN corpus_subscriptions s ON s.id = m.subscription_id
          LEFT JOIN corpus_subscription_items i ON i.subscription_id = s.id
          WHERE m.corpus_id = $1
          GROUP BY s.id, s.source_kind, s.source_url, s.name, s.enabled,
                   s.last_checked_at, s.last_ingested_at, s.last_check_status, s.last_check_message,
-                  m.added_at
+                  m.added_at, m.corpus_id
          ORDER BY m.added_at, lower(coalesce(s.name, s.source_url))",
     )
     .bind(corpus_id)
@@ -321,6 +371,7 @@ pub async fn list_corpus_sources(
                 items_seen: row_count(&row, "items_seen")?,
                 items_indexed: row_count(&row, "items_indexed")?,
                 items_failed: row_count(&row, "items_failed")?,
+                labels: row.try_get::<Json<Vec<CorpusLabel>>, _>("labels")?.0,
             })
         })
         .collect()
@@ -331,23 +382,54 @@ pub async fn list_corpus_videos(
     corpus_id: Uuid,
     limit: i64,
 ) -> anyhow::Result<Vec<CorpusVideoSummary>> {
+    list_corpus_videos_filtered(pool, corpus_id, limit, None).await
+}
+
+/// Lists the corpus catalog, optionally narrowed to one user label. A label matches videos
+/// labeled directly and the videos of tracked sources carrying that label (Atlas 3.3).
+pub async fn list_corpus_videos_filtered(
+    pool: &PgPool,
+    corpus_id: Uuid,
+    limit: i64,
+    label_id: Option<Uuid>,
+) -> anyhow::Result<Vec<CorpusVideoSummary>> {
     require_corpus(pool, corpus_id).await?;
+    if let Some(label_id) = label_id {
+        require_label(pool, corpus_id, label_id).await?;
+    }
     let rows = sqlx::query(
-        "WITH scoped_video_ids AS (
-           SELECT vm.video_id
-           FROM corpus_video_memberships vm
-           WHERE vm.corpus_id = $1
-           UNION
-           SELECT v.id
+        "WITH source_video_ids AS (
+           SELECT DISTINCT sm.subscription_id, v.id AS video_id
            FROM corpus_source_memberships sm
            JOIN corpus_subscription_items i ON i.subscription_id = sm.subscription_id
            JOIN videos v
              ON v.source_url = i.source_url
              OR (v.youtube_id IS NOT NULL AND i.youtube_id = v.youtube_id)
            WHERE sm.corpus_id = $1
+         ),
+         scoped_video_ids AS (
+           SELECT vm.video_id
+           FROM corpus_video_memberships vm
+           WHERE vm.corpus_id = $1
+           UNION
+           SELECT video_id FROM source_video_ids
+         ),
+         filtered_video_ids AS (
+           SELECT scoped.video_id
+           FROM scoped_video_ids scoped
+           WHERE $3::uuid IS NULL
+              OR EXISTS (
+                   SELECT 1 FROM corpus_video_labels vl
+                   WHERE vl.corpus_id = $1 AND vl.label_id = $3 AND vl.video_id = scoped.video_id)
+              OR EXISTS (
+                   SELECT 1
+                   FROM source_video_ids sv
+                   JOIN corpus_source_labels sl
+                     ON sl.corpus_id = $1 AND sl.subscription_id = sv.subscription_id
+                   WHERE sl.label_id = $3 AND sv.video_id = scoped.video_id)
          )
          SELECT v.id, v.youtube_id, v.source_url, v.title, v.channel, v.thumbnail_url,
-                v.duration_seconds, v.upload_date, v.updated_at,
+                v.duration_seconds, v.upload_date, v.updated_at, v.categories, v.tags,
                 count(DISTINCT st.id)::bigint AS transcript_streams,
                 count(DISTINCT ts.id)::bigint AS transcript_segments,
                 coalesce(
@@ -355,18 +437,40 @@ pub async fn list_corpus_videos(
                   '[]'::jsonb
                 ) AS transcript_source_kinds,
                 max(st.processing_revision)::bigint AS processing_revision,
-                max(st.retrieved_at) AS last_retrieved_at
-         FROM scoped_video_ids scoped
+                max(st.retrieved_at) AS last_retrieved_at,
+                coalesce(
+                  (SELECT jsonb_agg(jsonb_build_object('id', l.id, 'name', l.name)
+                                    ORDER BY lower(l.name), l.id)
+                   FROM corpus_video_labels vl
+                   JOIN corpus_labels l ON l.id = vl.label_id
+                   WHERE vl.corpus_id = $1 AND vl.video_id = v.id),
+                  '[]'::jsonb
+                ) AS labels,
+                coalesce(
+                  (SELECT jsonb_agg(jsonb_build_object(
+                             'id', s.id, 'sourceKind', s.source_kind, 'name', s.name)
+                           ORDER BY lower(coalesce(s.name, s.source_url)), s.id)
+                   FROM source_video_ids sv
+                   JOIN corpus_subscriptions s ON s.id = sv.subscription_id
+                   WHERE sv.video_id = v.id),
+                  '[]'::jsonb
+                ) AS sources,
+                EXISTS (
+                  SELECT 1 FROM corpus_video_memberships vm
+                  WHERE vm.corpus_id = $1 AND vm.video_id = v.id
+                ) AS added_directly
+         FROM filtered_video_ids scoped
          JOIN videos v ON v.id = scoped.video_id
          LEFT JOIN transcript_streams st ON st.video_id = v.id
          LEFT JOIN transcript_segments ts ON ts.stream_id = st.id
          GROUP BY v.id, v.youtube_id, v.source_url, v.title, v.channel, v.thumbnail_url,
-                  v.duration_seconds, v.upload_date, v.updated_at
+                  v.duration_seconds, v.upload_date, v.updated_at, v.categories, v.tags
          ORDER BY v.updated_at DESC, v.source_url
          LIMIT $2",
     )
     .bind(corpus_id)
     .bind(limit.clamp(1, 500))
+    .bind(label_id)
     .fetch_all(pool)
     .await?;
 
@@ -389,9 +493,213 @@ pub async fn list_corpus_videos(
                 processing_revision: processing_revision.map(|value| value as u64),
                 last_retrieved_at: row.try_get("last_retrieved_at")?,
                 updated_at: row.try_get("updated_at")?,
+                labels: row.try_get::<Json<Vec<CorpusLabel>>, _>("labels")?.0,
+                sources: row.try_get::<Json<Vec<CorpusVideoSource>>, _>("sources")?.0,
+                added_directly: row.try_get("added_directly")?,
+                youtube_categories: row.try_get("categories")?,
+                youtube_tags: row.try_get("tags")?,
             })
         })
         .collect()
+}
+
+pub async fn list_labels(pool: &PgPool, corpus_id: Uuid) -> Result<Vec<CorpusLabel>, LabelError> {
+    require_corpus_for_labels(pool, corpus_id).await?;
+    Ok(sqlx::query_as::<_, CorpusLabel>(
+        "SELECT id, name FROM corpus_labels WHERE corpus_id = $1 ORDER BY lower(name), id",
+    )
+    .bind(corpus_id)
+    .fetch_all(pool)
+    .await?)
+}
+
+pub async fn create_label(
+    pool: &PgPool,
+    corpus_id: Uuid,
+    name: &str,
+) -> Result<CorpusLabel, LabelError> {
+    require_corpus_for_labels(pool, corpus_id).await?;
+    let name = label_name(name)?;
+    sqlx::query_as::<_, CorpusLabel>(
+        "INSERT INTO corpus_labels (id, corpus_id, name) VALUES ($1, $2, $3) RETURNING id, name",
+    )
+    .bind(Uuid::new_v4())
+    .bind(corpus_id)
+    .bind(&name)
+    .fetch_one(pool)
+    .await
+    .map_err(|error| duplicate_or(error, &name))
+}
+
+pub async fn rename_label(
+    pool: &PgPool,
+    corpus_id: Uuid,
+    label_id: Uuid,
+    name: &str,
+) -> Result<CorpusLabel, LabelError> {
+    require_corpus_for_labels(pool, corpus_id).await?;
+    let name = label_name(name)?;
+    sqlx::query_as::<_, CorpusLabel>(
+        "UPDATE corpus_labels SET name = $3, updated_at = now()
+         WHERE corpus_id = $1 AND id = $2
+         RETURNING id, name",
+    )
+    .bind(corpus_id)
+    .bind(label_id)
+    .bind(&name)
+    .fetch_optional(pool)
+    .await
+    .map_err(|error| duplicate_or(error, &name))?
+    .ok_or_else(label_not_found)
+}
+
+/// Deletes a label and its assignments; videos, sources and evidence are untouched.
+pub async fn delete_label(pool: &PgPool, corpus_id: Uuid, label_id: Uuid) -> Result<(), LabelError> {
+    require_corpus_for_labels(pool, corpus_id).await?;
+    let deleted = sqlx::query("DELETE FROM corpus_labels WHERE corpus_id = $1 AND id = $2")
+        .bind(corpus_id)
+        .bind(label_id)
+        .execute(pool)
+        .await?
+        .rows_affected();
+    if deleted == 0 {
+        return Err(label_not_found());
+    }
+    Ok(())
+}
+
+/// Assigns (idempotently) or removes a label on a tracked source of the corpus.
+pub async fn set_source_label(
+    pool: &PgPool,
+    corpus_id: Uuid,
+    source_id: Uuid,
+    label_id: Uuid,
+    assigned: bool,
+) -> Result<(), LabelError> {
+    require_corpus_for_labels(pool, corpus_id).await?;
+    require_label(pool, corpus_id, label_id).await?;
+    let belongs = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM corpus_source_memberships
+                       WHERE corpus_id = $1 AND subscription_id = $2)",
+    )
+    .bind(corpus_id)
+    .bind(source_id)
+    .fetch_one(pool)
+    .await?;
+    if !belongs {
+        return Err(LabelError::NotFound(
+            "source is not part of this corpus".to_string(),
+        ));
+    }
+    let query = if assigned {
+        "INSERT INTO corpus_source_labels (corpus_id, label_id, subscription_id)
+         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
+    } else {
+        "DELETE FROM corpus_source_labels
+         WHERE corpus_id = $1 AND label_id = $2 AND subscription_id = $3"
+    };
+    sqlx::query(query)
+        .bind(corpus_id)
+        .bind(label_id)
+        .bind(source_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Assigns (idempotently) or removes a label on a video of the corpus.
+pub async fn set_video_label(
+    pool: &PgPool,
+    corpus_id: Uuid,
+    video_id: Uuid,
+    label_id: Uuid,
+    assigned: bool,
+) -> Result<(), LabelError> {
+    require_corpus_for_labels(pool, corpus_id).await?;
+    require_label(pool, corpus_id, label_id).await?;
+    let in_corpus = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+           SELECT 1 FROM corpus_video_memberships vm
+           WHERE vm.corpus_id = $1 AND vm.video_id = $2
+           UNION ALL
+           SELECT 1
+           FROM corpus_source_memberships sm
+           JOIN corpus_subscription_items i ON i.subscription_id = sm.subscription_id
+           JOIN videos v
+             ON v.source_url = i.source_url
+             OR (v.youtube_id IS NOT NULL AND i.youtube_id = v.youtube_id)
+           WHERE sm.corpus_id = $1 AND v.id = $2
+         )",
+    )
+    .bind(corpus_id)
+    .bind(video_id)
+    .fetch_one(pool)
+    .await?;
+    if !in_corpus {
+        return Err(LabelError::NotFound(
+            "video is not part of this corpus".to_string(),
+        ));
+    }
+    let query = if assigned {
+        "INSERT INTO corpus_video_labels (corpus_id, label_id, video_id)
+         VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
+    } else {
+        "DELETE FROM corpus_video_labels WHERE corpus_id = $1 AND label_id = $2 AND video_id = $3"
+    };
+    sqlx::query(query)
+        .bind(corpus_id)
+        .bind(label_id)
+        .bind(video_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+fn label_name(name: &str) -> Result<String, LabelError> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(LabelError::BlankName);
+    }
+    Ok(name.to_string())
+}
+
+fn label_not_found() -> LabelError {
+    LabelError::NotFound("label not found in this corpus".to_string())
+}
+
+fn duplicate_or(error: sqlx::Error, name: &str) -> LabelError {
+    match &error {
+        sqlx::Error::Database(database) if database.is_unique_violation() => {
+            LabelError::DuplicateName(name.to_string())
+        }
+        _ => LabelError::Database(error),
+    }
+}
+
+async fn require_corpus_for_labels(pool: &PgPool, corpus_id: Uuid) -> Result<(), LabelError> {
+    let exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM corpora WHERE id = $1)")
+            .bind(corpus_id)
+            .fetch_one(pool)
+            .await?;
+    if !exists {
+        return Err(LabelError::NotFound("corpus not found".to_string()));
+    }
+    Ok(())
+}
+
+async fn require_label(pool: &PgPool, corpus_id: Uuid, label_id: Uuid) -> Result<(), LabelError> {
+    let exists = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(SELECT 1 FROM corpus_labels WHERE corpus_id = $1 AND id = $2)",
+    )
+    .bind(corpus_id)
+    .bind(label_id)
+    .fetch_one(pool)
+    .await?;
+    if !exists {
+        return Err(label_not_found());
+    }
+    Ok(())
 }
 
 pub async fn corpus_video_ids(pool: &PgPool, corpus_id: Uuid) -> anyhow::Result<HashSet<Uuid>> {

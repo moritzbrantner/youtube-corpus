@@ -4,14 +4,16 @@ use std::path::PathBuf;
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::api_types::SearchTranscriptsInput;
 use crate::config::{CaptionConfig, CorpusSource, YtDlpConfig};
-use crate::corpora::{Corpus, CorpusSourceSummary, CorpusVideoSummary, CreateCorpusRequest};
+use crate::corpora::{
+    Corpus, CorpusLabel, CorpusSourceSummary, CorpusVideoSummary, CreateCorpusRequest, LabelError,
+};
 use crate::ingest::{ingest_corpus, IngestReport, IngestRequest};
 use crate::reprocessing::{ReprocessReport, ReprocessRequest, ReprocessStage};
 use crate::search::{SearchReport, SearchRequest};
@@ -45,6 +47,22 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
         .route(
             "/api/corpora/{corpus_id}/sources/{source_id}/enabled",
             post(set_source_enabled),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/labels",
+            get(list_labels).post(create_label),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/labels/{label_id}",
+            patch(rename_label).delete(delete_label),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/sources/{source_id}/labels/{label_id}",
+            put(assign_source_label).delete(remove_source_label),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/videos/{video_id}/labels/{label_id}",
+            put(assign_video_label).delete(remove_video_label),
         )
         .route("/api/corpora/{corpus_id}/videos", get(list_videos))
         .route("/api/corpora/{corpus_id}/search", post(search_corpus))
@@ -99,6 +117,12 @@ struct SetSourceEnabledInput {
 #[serde(rename_all = "camelCase")]
 struct ListCorpusVideosInput {
     limit: Option<i64>,
+    label_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LabelNameInput {
+    name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -410,8 +434,13 @@ async fn list_videos(
     Query(input): Query<ListCorpusVideosInput>,
 ) -> Result<Json<Vec<CorpusVideoSummary>>, ResearchError> {
     let pool = pool(&state).await?;
-    crate::corpora::list_corpus_videos(&pool, corpus_id, input.limit.unwrap_or(100))
-        .await
+    crate::corpora::list_corpus_videos_filtered(
+        &pool,
+        corpus_id,
+        input.limit.unwrap_or(100),
+        input.label_id,
+    )
+    .await
         .map(Json)
         .map_err(map_corpus_error)
 }
@@ -541,6 +570,128 @@ fn subscription_source(kind: SubscriptionSourceKind, url: String) -> CorpusSourc
     match kind {
         SubscriptionSourceKind::Channel => CorpusSource::ChannelUrl { url },
         SubscriptionSourceKind::Playlist => CorpusSource::PlaylistUrl { url },
+    }
+}
+
+async fn list_labels(
+    State(state): State<ResearchState>,
+    AxumPath(corpus_id): AxumPath<Uuid>,
+) -> Result<Json<Vec<CorpusLabel>>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::corpora::list_labels(&pool, corpus_id)
+        .await
+        .map(Json)
+        .map_err(map_label_error)
+}
+
+async fn create_label(
+    State(state): State<ResearchState>,
+    AxumPath(corpus_id): AxumPath<Uuid>,
+    Json(input): Json<LabelNameInput>,
+) -> Result<(StatusCode, Json<CorpusLabel>), ResearchError> {
+    let pool = pool(&state).await?;
+    crate::corpora::create_label(&pool, corpus_id, &input.name)
+        .await
+        .map(|label| (StatusCode::CREATED, Json(label)))
+        .map_err(map_label_error)
+}
+
+async fn rename_label(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, label_id)): AxumPath<(Uuid, Uuid)>,
+    Json(input): Json<LabelNameInput>,
+) -> Result<Json<CorpusLabel>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::corpora::rename_label(&pool, corpus_id, label_id, &input.name)
+        .await
+        .map(Json)
+        .map_err(map_label_error)
+}
+
+async fn delete_label(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, label_id)): AxumPath<(Uuid, Uuid)>,
+) -> Result<StatusCode, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::corpora::delete_label(&pool, corpus_id, label_id)
+        .await
+        .map_err(map_label_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn assign_source_label(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, source_id, label_id)): AxumPath<(Uuid, Uuid, Uuid)>,
+) -> Result<StatusCode, ResearchError> {
+    set_source_label(state, corpus_id, source_id, label_id, true).await
+}
+
+async fn remove_source_label(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, source_id, label_id)): AxumPath<(Uuid, Uuid, Uuid)>,
+) -> Result<StatusCode, ResearchError> {
+    set_source_label(state, corpus_id, source_id, label_id, false).await
+}
+
+async fn set_source_label(
+    state: ResearchState,
+    corpus_id: Uuid,
+    source_id: Uuid,
+    label_id: Uuid,
+    assigned: bool,
+) -> Result<StatusCode, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::corpora::set_source_label(&pool, corpus_id, source_id, label_id, assigned)
+        .await
+        .map_err(map_label_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn assign_video_label(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, video_id, label_id)): AxumPath<(Uuid, Uuid, Uuid)>,
+) -> Result<StatusCode, ResearchError> {
+    set_video_label(state, corpus_id, video_id, label_id, true).await
+}
+
+async fn remove_video_label(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, video_id, label_id)): AxumPath<(Uuid, Uuid, Uuid)>,
+) -> Result<StatusCode, ResearchError> {
+    set_video_label(state, corpus_id, video_id, label_id, false).await
+}
+
+async fn set_video_label(
+    state: ResearchState,
+    corpus_id: Uuid,
+    video_id: Uuid,
+    label_id: Uuid,
+    assigned: bool,
+) -> Result<StatusCode, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::corpora::set_video_label(&pool, corpus_id, video_id, label_id, assigned)
+        .await
+        .map_err(map_label_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+fn map_label_error(error: LabelError) -> ResearchError {
+    match error {
+        LabelError::NotFound(message) => ResearchError::not_found(capitalize(&message)),
+        LabelError::BlankName => ResearchError::bad_request("Label name must not be blank."),
+        LabelError::DuplicateName(name) => ResearchError {
+            status: StatusCode::CONFLICT,
+            message: format!("A label named \"{name}\" already exists in this corpus."),
+        },
+        LabelError::Database(error) => ResearchError::internal(error),
+    }
+}
+
+fn capitalize(message: &str) -> String {
+    let mut characters = message.chars();
+    match characters.next() {
+        Some(first) => format!("{}{}.", first.to_uppercase(), characters.as_str()),
+        None => String::new(),
     }
 }
 

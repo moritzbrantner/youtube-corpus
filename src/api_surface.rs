@@ -158,10 +158,48 @@ pub fn package_surface() -> PackageSurface {
             surface_operation(
                 "corpus.collections.videos.list",
                 "List corpus videos",
-                "Lists videos attached directly or through monitored sources, including transcript provenance.",
+                "Lists videos attached directly or through monitored sources, including transcript provenance, source memberships, user labels and YouTube categories/tags; optionally narrowed to one user label.",
                 serde_json::json!({
                     "corpusId": "00000000-0000-0000-0000-000000000000",
-                    "limit": 100
+                    "limit": 100,
+                    "labelId": "00000000-0000-0000-0000-000000000000"
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.labels.list",
+                "List corpus labels",
+                "Lists the user-defined labels of a corpus.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000"
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.labels.create",
+                "Create corpus label",
+                "Creates a user-defined label; names are unique within the corpus.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "name": "Church history"
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.labels.update",
+                "Rename or delete corpus label",
+                "Renames a label in place, or deletes it with its assignments without touching videos, sources or evidence.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "labelId": "00000000-0000-0000-0000-000000000000",
+                    "name": "Councils"
+                }),
+            ),
+            surface_operation(
+                "corpus.collections.labels.assign",
+                "Assign or remove a corpus label",
+                "Idempotently assigns or removes a user label on a tracked source or a corpus video.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "videoId": "00000000-0000-0000-0000-000000000000",
+                    "labelId": "00000000-0000-0000-0000-000000000000"
                 }),
             ),
             surface_operation(
