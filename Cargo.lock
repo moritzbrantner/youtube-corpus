@@ -1178,18 +1178,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "moenarch-jobs-core"
-version = "0.1.2"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
-dependencies = [
- "chrono",
- "moenarch-runtime-core",
- "serde",
- "serde_json",
- "sha2 0.10.9",
-]
-
-[[package]]
 name = "moenarch-math-geometry-2d"
 version = "0.1.1"
 source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
@@ -1282,9 +1270,8 @@ dependencies = [
 [[package]]
 name = "moenarch-text-core"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=f7040be492082e9325da063e6d95ef4682538fc8#f7040be492082e9325da063e6d95ef4682538fc8"
 dependencies = [
- "moenarch-jobs-core",
  "moenarch-media-core",
  "moenarch-runtime-core",
  "serde",
@@ -1297,7 +1284,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-embeddings"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=f7040be492082e9325da063e6d95ef4682538fc8#f7040be492082e9325da063e6d95ef4682538fc8"
 dependencies = [
  "moenarch-math-sparse-data",
  "moenarch-runtime-core",
@@ -1314,7 +1301,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-lexical"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=f7040be492082e9325da063e6d95ef4682538fc8#f7040be492082e9325da063e6d95ef4682538fc8"
 dependencies = [
  "moenarch-math-sparse-data",
  "moenarch-runtime-core",
@@ -1326,7 +1313,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-model-runtime"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=f7040be492082e9325da063e6d95ef4682538fc8#f7040be492082e9325da063e6d95ef4682538fc8"
 dependencies = [
  "moenarch-media-core",
  "moenarch-runtime-core",
@@ -1338,7 +1325,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-transcripts"
 version = "0.1.3"
-source = "git+https://github.com/moritzbrantner/nlp-stack?rev=057689ca1df031d677f4afd9d65eed181c6fca06#057689ca1df031d677f4afd9d65eed181c6fca06"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=f7040be492082e9325da063e6d95ef4682538fc8#f7040be492082e9325da063e6d95ef4682538fc8"
 dependencies = [
  "moenarch-runtime-core",
  "moenarch-text-core",
@@ -1375,7 +1362,7 @@ dependencies = [
 [[package]]
 name = "moenarch-video-analysis-core"
 version = "0.1.3"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=8852f257de6ddc4580698ad00d4c9a9ab8461b70#8852f257de6ddc4580698ad00d4c9a9ab8461b70"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=f73969447916e5ac47f4559fc51ab47552f4f734#f73969447916e5ac47f4559fc51ab47552f4f734"
 dependencies = [
  "moenarch-audio-contracts",
  "moenarch-math-geometry-2d",
@@ -1390,9 +1377,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "moenarch-video-analysis-detectors"
+version = "0.1.0"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=f73969447916e5ac47f4559fc51ab47552f4f734#f73969447916e5ac47f4559fc51ab47552f4f734"
+dependencies = [
+ "moenarch-runtime-core",
+ "moenarch-video-analysis-core",
+ "scenedetect-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "moenarch-video-analysis-ffmpeg"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=8852f257de6ddc4580698ad00d4c9a9ab8461b70#8852f257de6ddc4580698ad00d4c9a9ab8461b70"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=f73969447916e5ac47f4559fc51ab47552f4f734#f73969447916e5ac47f4559fc51ab47552f4f734"
 dependencies = [
  "moenarch-runtime-core",
  "moenarch-video-analysis-core",
@@ -1405,10 +1404,11 @@ dependencies = [
 [[package]]
 name = "moenarch-video-analysis-ingest"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=8852f257de6ddc4580698ad00d4c9a9ab8461b70#8852f257de6ddc4580698ad00d4c9a9ab8461b70"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=f73969447916e5ac47f4559fc51ab47552f4f734#f73969447916e5ac47f4559fc51ab47552f4f734"
 dependencies = [
  "moenarch-runtime-core",
  "moenarch-video-analysis-core",
+ "moenarch-video-analysis-detectors",
  "num-rational",
  "serde_json",
 ]
@@ -3173,3 +3173,8 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
+
+[[patch.unused]]
+name = "moenarch-jobs-core"
+version = "0.1.2"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
