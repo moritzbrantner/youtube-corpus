@@ -80,6 +80,7 @@ pub async fn run_distinguo_benchmark(request: BenchmarkRequest) -> anyhow::Resul
             top_k: request.top_k,
             mode: SearchMode::Hybrid,
             source_kind: None,
+            modality: None,
             video_id: None,
             language: None,
             transcript_start_min: None,
