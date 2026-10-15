@@ -538,6 +538,7 @@ pub async fn rename_label(
     name: &str,
 ) -> Result<CorpusLabel, LabelError> {
     require_corpus_for_labels(pool, corpus_id).await?;
+    require_label(pool, corpus_id, label_id).await?;
     let name = label_name(name)?;
     sqlx::query_as::<_, CorpusLabel>(
         "UPDATE corpus_labels SET name = $3, updated_at = now()

@@ -314,3 +314,42 @@ async fn post(app: &axum::Router, uri: &str, body: Value) -> Value {
     );
     serde_json::from_slice(&bytes).unwrap()
 }
+
+/// Review regression (PR #74): renaming an unknown label is a 404 regardless of the payload,
+/// so a blank replacement name must not turn it into a 400.
+#[tokio::test]
+#[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
+async fn renaming_an_unknown_label_is_not_found_even_with_a_blank_name() {
+    let Ok(database_url) = std::env::var("DATABASE_URL") else {
+        return;
+    };
+    let pool = youtube_corpus::db::connect(&database_url).await.unwrap();
+    youtube_corpus::db::migrate(&pool).await.unwrap();
+    let app = youtube_corpus::web::app_for_tests_with_research(Some(database_url));
+    let corpus = Uuid::new_v4();
+    sqlx::query("INSERT INTO corpora (id, slug, name) VALUES ($1, $2, 'Rename review')")
+        .bind(corpus)
+        .bind(format!("rename-review-{}", corpus.simple()))
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::PATCH)
+                .uri(format!("/api/corpora/{corpus}/labels/{}", Uuid::new_v4()))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(json!({ "name": "   " }).to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
+
+    sqlx::query("DELETE FROM corpora WHERE id = $1")
+        .bind(corpus)
+        .execute(&pool)
+        .await
+        .unwrap();
+}
