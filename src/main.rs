@@ -1,6 +1,6 @@
 use anyhow::Context;
 use std::time::Duration;
-use youtube_corpus::cli::{Cli, Command, SubscriptionsCommand};
+use youtube_corpus::cli::{Cli, Command, ExportArgs, ExportFormat, SubscriptionsCommand};
 use youtube_corpus::config::AppConfig;
 use youtube_corpus::web::WebServerConfig;
 
@@ -154,6 +154,7 @@ async fn run_command(
                 youtube_corpus::diagnostics::run(database_url, args.transcriber_command).await;
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
+        Command::Export(args) => run_export(args, database_url).await?,
         Command::ApiSchema(args) => {
             let surface = youtube_corpus::api_surface::package_surface();
             if args.typescript {
@@ -161,6 +162,57 @@ async fn run_command(
             } else {
                 println!("{}", serde_json::to_string_pretty(&surface)?);
             }
+        }
+    }
+    Ok(())
+}
+
+async fn run_export(args: ExportArgs, database_url: Option<String>) -> anyhow::Result<()> {
+    use std::io::Write as _;
+    use youtube_corpus::corpus_export::{
+        export_belief_evidence, export_corpus_core_jsonl, export_source_span, load_export_snapshot,
+        CorpusExportSnapshot,
+    };
+
+    anyhow::ensure!(
+        !args.producer_revision.trim().is_empty(),
+        "--producer-revision must be a non-empty revision"
+    );
+    let snapshot = match &args.snapshot {
+        Some(path) => {
+            let json = std::fs::read_to_string(path)
+                .with_context(|| format!("failed to read snapshot {}", path.display()))?;
+            let mut snapshot: CorpusExportSnapshot = serde_json::from_str(&json)
+                .with_context(|| format!("failed to parse snapshot {}", path.display()))?;
+            if let Some(video_id) = args.video_id {
+                snapshot.retain_video(video_id);
+            }
+            snapshot
+        }
+        None => {
+            let config = AppConfig::from_env_and_cli(database_url)?;
+            let pool = youtube_corpus::db::connect(&config.database_url).await?;
+            if args.migrate {
+                youtube_corpus::db::migrate(&pool).await?;
+            }
+            load_export_snapshot(&pool, args.video_id)
+                .await
+                .context("failed to load the export snapshot")?
+        }
+    };
+    let output = match args.format {
+        ExportFormat::SourceSpan => export_source_span(&snapshot, &args.producer_revision),
+        ExportFormat::CorpusCore => export_corpus_core_jsonl(&snapshot, &args.producer_revision),
+        ExportFormat::BeliefEvidence => export_belief_evidence(&snapshot, &args.producer_revision),
+    }
+    .context("export failed")?;
+    match &args.output {
+        Some(path) => std::fs::write(path, output.as_bytes())
+            .with_context(|| format!("failed to write {}", path.display()))?,
+        None => {
+            let mut stdout = std::io::stdout().lock();
+            stdout.write_all(output.as_bytes())?;
+            stdout.flush()?;
         }
     }
     Ok(())

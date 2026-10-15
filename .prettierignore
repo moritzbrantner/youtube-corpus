@@ -1,0 +1,3 @@
+# Byte-exact export contract fixtures (#42): the expected outputs are compared
+# byte-for-byte and the consumer fixtures are verbatim copies, so never reformat them.
+tests/fixtures/exports/

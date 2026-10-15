@@ -28,6 +28,8 @@ serves embedded Vite assets from `dist/`, and exposes JSON endpoints under
 - `src/multimodal.rs`: face/voice processing provenance, observations, tracks, and persistence
 - `src/search.rs`: full-text, semantic, and hybrid search queries
 - `src/status.rs`: corpus status and video listing queries
+- `src/corpus_export.rs`: deterministic downstream exports (source-span, corpus-core JSONL, belief-lab evidence) from a loaded `CorpusExportSnapshot`
+- `src/source_span_export.rs`: `source_span_interchange@1` types and builder shared by the database and snapshot exports
 - `src/subscriptions.rs`: saved channel/playlist subscription management
 - `src/youtube.rs`: `yt-dlp` discovery, metadata, and media helpers
 - `src/captions.rs`: caption download and transcript parsing

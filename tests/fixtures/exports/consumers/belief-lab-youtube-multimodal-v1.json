@@ -1,0 +1,138 @@
+{
+  "schema": "belief_evidence_interchange",
+  "schemaVersion": 1,
+  "exporter": {
+    "name": "youtube-corpus",
+    "revision": "git:youtube-corpus-example"
+  },
+  "revision": "batch:youtube-video-1:v1",
+  "evidence": [
+    {
+      "id": "evidence:transcript:17",
+      "class": "transcript",
+      "familyId": "family:utterance:17",
+      "source": {
+        "repository": "youtube-corpus",
+        "scopeId": "video:1",
+        "recordId": "transcript-segment:17",
+        "revision": "sha256:transcript-stream-v1"
+      },
+      "producer": {
+        "name": "audio-analysis",
+        "revision": "git:audio-analysis-example",
+        "model": "whisper",
+        "configHash": "sha256:asr-config-v1"
+      },
+      "score": {
+        "value": 0.94,
+        "semantics": "model_confidence"
+      }
+    },
+    {
+      "id": "evidence:entity:arch",
+      "class": "named_entity",
+      "familyId": "family:utterance:17",
+      "source": {
+        "repository": "youtube-corpus",
+        "scopeId": "video:1",
+        "recordId": "named-entity:arch",
+        "revision": "sha256:semantic-pass-v1"
+      },
+      "producer": {
+        "name": "nlp-stack",
+        "revision": "git:nlp-stack-example",
+        "model": "ner"
+      },
+      "score": {
+        "value": 0.88,
+        "semantics": "model_confidence"
+      },
+      "parentEvidenceIds": [
+        "evidence:transcript:17"
+      ]
+    },
+    {
+      "id": "evidence:scene:4",
+      "class": "scene_detection",
+      "familyId": "family:scene:4",
+      "source": {
+        "repository": "youtube-corpus",
+        "scopeId": "video:1",
+        "recordId": "scene:4",
+        "revision": "sha256:scene-run-v1"
+      },
+      "producer": {
+        "name": "scenedetect-rs",
+        "revision": "git:scenedetect-example",
+        "model": "content-detector"
+      },
+      "score": {
+        "value": 0.97,
+        "semantics": "detector_confidence"
+      }
+    },
+    {
+      "id": "evidence:ocr:thinkpad",
+      "class": "ocr",
+      "familyId": "family:visual-text:4",
+      "source": {
+        "repository": "youtube-corpus",
+        "scopeId": "video:1",
+        "recordId": "visual-text-observation:thinkpad",
+        "revision": "sha256:ocr-run-v1"
+      },
+      "producer": {
+        "name": "visual-analysis",
+        "revision": "git:visual-analysis-example",
+        "model": "ocr"
+      },
+      "score": {
+        "value": 0.89,
+        "semantics": "detector_confidence"
+      },
+      "parentEvidenceIds": [
+        "evidence:scene:4"
+      ]
+    },
+    {
+      "id": "evidence:face-track:2",
+      "class": "face_track_reference",
+      "familyId": "family:face-track:2",
+      "source": {
+        "repository": "youtube-corpus",
+        "scopeId": "video:1",
+        "recordId": "face-track:2",
+        "revision": "sha256:face-track-run-v1"
+      },
+      "producer": {
+        "name": "visual-analysis",
+        "revision": "git:visual-analysis-example",
+        "model": "face-tracking"
+      },
+      "score": {
+        "value": 0.82,
+        "semantics": "similarity"
+      }
+    },
+    {
+      "id": "evidence:voice-track:3",
+      "class": "voice_track_reference",
+      "familyId": "family:voice-track:3",
+      "source": {
+        "repository": "youtube-corpus",
+        "scopeId": "video:1",
+        "recordId": "voice-track:3",
+        "revision": "sha256:voice-track-run-v1"
+      },
+      "producer": {
+        "name": "audio-analysis",
+        "revision": "git:audio-analysis-example",
+        "model": "speaker-tracking"
+      },
+      "score": {
+        "value": 0.86,
+        "semantics": "similarity"
+      }
+    }
+  ]
+}

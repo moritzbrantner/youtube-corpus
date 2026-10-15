@@ -217,6 +217,33 @@ cargo run -- search --query "semantic topic" --mode semantic
 Search results include the video id, stream id, transcript source, timestamps,
 source URL, title, snippet text, and scores.
 
+## Downstream Exports
+
+`export` writes a deterministic, versioned export of the corpus for downstream
+consumers. The same corpus state gives byte-identical output: records have a
+stable order, and the only revision in the envelope is the one you pass.
+
+```bash
+cargo run -- export --format source-span --producer-revision "git:$(git rev-parse HEAD)"
+cargo run -- export --format corpus-core --producer-revision git:abc123 \
+  --video-id 11111111-1111-4111-8111-111111111111 --output corpus-core.jsonl
+cargo run -- export --format belief-evidence --producer-revision git:abc123 \
+  --snapshot tests/fixtures/exports/corpus-snapshot.json
+```
+
+| `--format`        | Schema                          | Consumer                                                                         |
+| ----------------- | ------------------------------- | -------------------------------------------------------------------------------- |
+| `source-span`     | `source_span_interchange@1`     | Generic source/span records with stable ids, timed locators, hashes, revisions   |
+| `corpus-core`     | `moenarch_corpus_core_batch@1`  | philosophy-extractor corpus-core intake (document-search's JSONL envelope)       |
+| `belief-evidence` | `belief_evidence_interchange@1` | belief-lab evidence import: one reference per transcript segment, no text copied |
+
+Without `--snapshot`, the export reads Postgres (`--migrate` applies migrations
+first). With `--snapshot <file.json>` it reads a `CorpusExportSnapshot` JSON
+file and needs no database. Output goes to stdout, or byte-for-byte to
+`--output`. An empty `--producer-revision` is rejected. The committed consumer
+fixtures and the contract are in `tests/fixtures/exports/` and
+`tests/corpus_exports.rs`.
+
 ## Benchmark
 
 ```bash

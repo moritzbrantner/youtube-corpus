@@ -1,0 +1,159 @@
+{
+  "videos": [
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "youtubeId": null,
+      "sourceUrl": "/corpus/local/seminar.mp4",
+      "title": "Seminar (local recording)",
+      "channel": null,
+      "channelId": null,
+      "uploader": "Dr. Müller",
+      "uploaderId": null
+    },
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "youtubeId": "abc123XYZ_0",
+      "sourceUrl": "https://www.youtube.com/watch?v=abc123XYZ_0",
+      "title": "Aquinas on Being — Lecture 1",
+      "channel": "Philosophy Channel",
+      "channelId": "UC0000philosophy",
+      "uploader": "Philosophy Channel",
+      "uploaderId": "@philosophy"
+    }
+  ],
+  "transcriptStreams": [
+    {
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "videoId": "11111111-1111-4111-8111-111111111111",
+      "sourceKind": "caption_manual",
+      "language": "en",
+      "fullText": "First claim about being. Second claim: essence ≠ existence.",
+      "processor": "youtube-corpus",
+      "processorVersion": "0.1.0",
+      "processingConfigHash": "sha256:207bcd6a13c7cb90532afab33aa2aa531e38ace35e7fbcfc544ffb5ab1850ae6",
+      "segments": [
+        {
+          "id": "5e000000-0000-4000-8000-0000000000a1",
+          "segmentIndex": 1,
+          "startSeconds": 2.5,
+          "endSeconds": 5.25,
+          "text": "Second claim: essence ≠ existence.",
+          "language": null
+        },
+        {
+          "id": "5e000000-0000-4000-8000-0000000000a0",
+          "segmentIndex": 0,
+          "startSeconds": 0.0,
+          "endSeconds": 2.5,
+          "text": "First claim about being.",
+          "language": "en"
+        }
+      ]
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000003",
+      "videoId": "22222222-2222-4222-8222-222222222222",
+      "sourceKind": "caption_auto",
+      "language": null,
+      "fullText": null,
+      "processor": "youtube-corpus",
+      "processorVersion": "0.1.0",
+      "processingConfigHash": null,
+      "segments": [
+        {
+          "id": "5e000000-0000-4000-8000-0000000000b0",
+          "segmentIndex": 0,
+          "startSeconds": 1.0,
+          "endSeconds": 3.0,
+          "text": "Café 😀 naïve.",
+          "language": null
+        },
+        {
+          "id": "5e000000-0000-4000-8000-0000000000b1",
+          "segmentIndex": 1,
+          "startSeconds": 3.0,
+          "endSeconds": 4.75,
+          "text": "Zweiter Satz.",
+          "language": "de"
+        }
+      ]
+    },
+    {
+      "id": "0a200000-0000-4000-8000-000000000002",
+      "videoId": "11111111-1111-4111-8111-111111111111",
+      "sourceKind": "asr",
+      "language": "en",
+      "fullText": null,
+      "processor": "youtube-corpus",
+      "processorVersion": "0.1.0",
+      "processingConfigHash": null,
+      "segments": [
+        {
+          "id": "5e000000-0000-4000-8000-0000000000c2",
+          "segmentIndex": 2,
+          "startSeconds": 6.0,
+          "endSeconds": null,
+          "text": "and existence follows.",
+          "language": null
+        },
+        {
+          "id": "5e000000-0000-4000-8000-0000000000c0",
+          "segmentIndex": 0,
+          "startSeconds": 0.0,
+          "endSeconds": 3.125,
+          "text": "so the question is what being means",
+          "language": null
+        },
+        {
+          "id": "5e000000-0000-4000-8000-0000000000c1",
+          "segmentIndex": 1,
+          "startSeconds": 3.125,
+          "endSeconds": 6.0,
+          "text": "essence comes first",
+          "language": null
+        }
+      ]
+    }
+  ],
+  "visualTextRuns": [
+    {
+      "id": "c0000000-0000-4000-8000-000000000004",
+      "videoId": "11111111-1111-4111-8111-111111111111",
+      "processor": "visual-analysis",
+      "processorVersion": "git:visual-analysis-fixture",
+      "model": "paddleocr",
+      "modelVersion": "3.0",
+      "inputHash": "sha256:video-a-frames",
+      "configHash": "sha256:ocr-config",
+      "tracks": [
+        {
+          "id": "7a000000-0000-4000-8000-000000000001",
+          "trackKey": "slide-1",
+          "text": "Ens et essentia",
+          "role": "presentation_slide",
+          "language": "la",
+          "startSeconds": 10.0,
+          "endSeconds": 20.0
+        },
+        {
+          "id": "7a000000-0000-4000-8000-000000000003",
+          "trackKey": "credit",
+          "text": "Thanks for watching",
+          "role": "end_credit",
+          "language": null,
+          "startSeconds": null,
+          "endSeconds": null
+        },
+        {
+          "id": "7a000000-0000-4000-8000-000000000002",
+          "trackKey": "sub-0",
+          "text": "Being — esse",
+          "role": "subtitle",
+          "language": null,
+          "startSeconds": 2.0,
+          "endSeconds": 4.5
+        }
+      ]
+    }
+  ]
+}
