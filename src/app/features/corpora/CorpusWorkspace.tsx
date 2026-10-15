@@ -21,6 +21,7 @@ import {
 import { listCorpora } from "./api";
 import { CorpusAnnotations } from "./CorpusAnnotations";
 import { CorpusEvaluation } from "./CorpusEvaluation";
+import { CorpusLabels } from "./CorpusLabels";
 import { CorpusPicker } from "./CorpusPicker";
 import { CorpusSearch } from "./CorpusSearch";
 import { CorpusSources } from "./CorpusSources";
@@ -134,6 +135,7 @@ export function CorpusWorkspace() {
                 <CorpusEvaluation corpusId={selectedCorpus.id} />
                 <CorpusAnnotations corpusId={selectedCorpus.id} />
               </div>
+              <CorpusLabels corpusId={selectedCorpus.id} />
               <CorpusVideos corpusId={selectedCorpus.id} />
             </>
           ) : null}

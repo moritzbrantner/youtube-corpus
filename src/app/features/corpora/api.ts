@@ -34,6 +34,20 @@ export type CorpusSource = {
   itemsSeen: number;
   itemsIndexed: number;
   itemsFailed: number;
+  /** User labels assigned to this tracked source. */
+  labels: CorpusLabel[];
+};
+
+/** A user-defined label owned by one corpus; distinct from YouTube categories/tags. */
+export type CorpusLabel = {
+  id: string;
+  name: string;
+};
+
+export type CorpusVideoSource = {
+  id: string;
+  sourceKind: "channel" | "playlist";
+  name: string | null;
 };
 
 export type CorpusVideo = {
@@ -51,6 +65,13 @@ export type CorpusVideo = {
   processingRevision: number | null;
   lastRetrievedAt: string | null;
   updatedAt: string;
+  /** User labels assigned directly to the video. */
+  labels: CorpusLabel[];
+  /** Tracked sources of this corpus that discovered the video. */
+  sources: CorpusVideoSource[];
+  addedDirectly: boolean;
+  youtubeCategories: string[];
+  youtubeTags: string[];
 };
 
 export type TranscriptQuality = {
@@ -280,9 +301,64 @@ export function setCorpusSourceEnabled(corpusId: string, sourceId: string, enabl
   return jsonPost<void>(`/api/corpora/${corpusId}/sources/${sourceId}/enabled`, { enabled });
 }
 
-export function listCorpusVideos(corpusId: string, limit = 100) {
+export function listCorpusVideos(
+  corpusId: string,
+  limit = 100,
+  filter: { labelId?: string | null } = {},
+) {
   const query = new URLSearchParams({ limit: String(limit) });
+  if (filter.labelId) {
+    query.set("labelId", filter.labelId);
+  }
   return apiFetch<CorpusVideo[]>(`/api/corpora/${corpusId}/videos?${query}`);
+}
+
+export function listCorpusLabels(corpusId: string) {
+  return apiFetch<CorpusLabel[]>(`/api/corpora/${corpusId}/labels`);
+}
+
+export function createCorpusLabel(corpusId: string, input: { name: string }) {
+  return jsonPost<CorpusLabel>(`/api/corpora/${corpusId}/labels`, input);
+}
+
+export function renameCorpusLabel(corpusId: string, labelId: string, name: string) {
+  return apiFetch<CorpusLabel>(`/api/corpora/${corpusId}/labels/${labelId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteCorpusLabel(corpusId: string, labelId: string) {
+  return apiFetch<void>(`/api/corpora/${corpusId}/labels/${labelId}`, { method: "DELETE" });
+}
+
+function labelAssignment(
+  corpusId: string,
+  target: "sources" | "videos",
+  targetId: string,
+  labelId: string,
+  method: "PUT" | "DELETE",
+) {
+  return apiFetch<void>(`/api/corpora/${corpusId}/${target}/${targetId}/labels/${labelId}`, {
+    method,
+  });
+}
+
+export function assignSourceLabel(corpusId: string, sourceId: string, labelId: string) {
+  return labelAssignment(corpusId, "sources", sourceId, labelId, "PUT");
+}
+
+export function removeSourceLabel(corpusId: string, sourceId: string, labelId: string) {
+  return labelAssignment(corpusId, "sources", sourceId, labelId, "DELETE");
+}
+
+export function assignVideoLabel(corpusId: string, videoId: string, labelId: string) {
+  return labelAssignment(corpusId, "videos", videoId, labelId, "PUT");
+}
+
+export function removeVideoLabel(corpusId: string, videoId: string, labelId: string) {
+  return labelAssignment(corpusId, "videos", videoId, labelId, "DELETE");
 }
 
 export function listTranscriptQuality(corpusId: string) {
