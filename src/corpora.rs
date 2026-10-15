@@ -554,7 +554,11 @@ pub async fn rename_label(
 }
 
 /// Deletes a label and its assignments; videos, sources and evidence are untouched.
-pub async fn delete_label(pool: &PgPool, corpus_id: Uuid, label_id: Uuid) -> Result<(), LabelError> {
+pub async fn delete_label(
+    pool: &PgPool,
+    corpus_id: Uuid,
+    label_id: Uuid,
+) -> Result<(), LabelError> {
     require_corpus_for_labels(pool, corpus_id).await?;
     let deleted = sqlx::query("DELETE FROM corpus_labels WHERE corpus_id = $1 AND id = $2")
         .bind(corpus_id)

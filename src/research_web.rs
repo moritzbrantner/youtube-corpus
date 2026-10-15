@@ -441,8 +441,8 @@ async fn list_videos(
         input.label_id,
     )
     .await
-        .map(Json)
-        .map_err(map_corpus_error)
+    .map(Json)
+    .map_err(map_corpus_error)
 }
 
 async fn search_corpus(

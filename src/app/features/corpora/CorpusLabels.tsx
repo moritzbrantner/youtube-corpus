@@ -260,5 +260,9 @@ export function LabelAssignments({
 }
 
 export function errorMessage(error: unknown) {
+  // fetch() rejects with a TypeError when the local server is unreachable.
+  if (error instanceof TypeError) {
+    return "Could not reach the corpus server. Check that it is running, then try again.";
+  }
   return error instanceof Error ? error.message : String(error);
 }
