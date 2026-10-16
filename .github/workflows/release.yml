@@ -103,7 +103,7 @@ jobs:
           path: youtube-corpus
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt, clippy
 
@@ -200,7 +200,7 @@ jobs:
           sha256sum youtube-corpus-v${{ needs.prepare.outputs.version }}-* > SHA256SUMS
 
       - name: Upload release assets
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ needs.prepare.outputs.tag_name }}
           name: youtube-corpus ${{ needs.prepare.outputs.tag_name }}
