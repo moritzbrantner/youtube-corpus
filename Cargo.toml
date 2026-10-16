@@ -50,8 +50,8 @@ video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", git = "htt
 video-analysis-ingest = { package = "moenarch-video-analysis-ingest", git = "https://github.com/moritzbrantner/visual-analysis", rev = "f73969447916e5ac47f4559fc51ab47552f4f734" }
 
 [dev-dependencies]
-tempfile = "3.23"
-tower = { version = "0.5.3", features = ["util"] }
+tempfile = "=3.27.0"
+tower = { version = "=0.5.3", features = ["util"] }
 
 # Owner decision #40 (option B): capability crates come from exact public git revisions. The
 # pinned nlp-stack and visual-analysis revisions declare registry requirements on foundation (and
