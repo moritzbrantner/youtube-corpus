@@ -1163,7 +1163,7 @@ dependencies = [
 [[package]]
 name = "moenarch-audio-contracts"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "moenarch-media-core",
 ]
@@ -1171,7 +1171,7 @@ dependencies = [
 [[package]]
 name = "moenarch-corpus-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "serde",
  "sha2 0.10.9",
@@ -1180,7 +1180,7 @@ dependencies = [
 [[package]]
 name = "moenarch-math-geometry-2d"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "moenarch-media-core",
  "moenarch-runtime-core",
@@ -1191,7 +1191,7 @@ dependencies = [
 [[package]]
 name = "moenarch-math-linear"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "moenarch-media-core",
  "moenarch-numbers-core",
@@ -1205,7 +1205,7 @@ dependencies = [
 [[package]]
 name = "moenarch-math-sparse-data"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "moenarch-math-linear",
  "moenarch-media-core",
@@ -1220,7 +1220,7 @@ dependencies = [
 [[package]]
 name = "moenarch-media-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "serde",
 ]
@@ -1228,7 +1228,7 @@ dependencies = [
 [[package]]
 name = "moenarch-numbers-core"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "moenarch-media-core",
  "moenarch-runtime-core",
@@ -1241,7 +1241,7 @@ dependencies = [
 [[package]]
 name = "moenarch-runtime-core"
 version = "0.2.1"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "serde",
  "serde_json",
@@ -1250,7 +1250,7 @@ dependencies = [
 [[package]]
 name = "moenarch-runtime-onnx"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "serde",
  "thiserror",
@@ -1259,7 +1259,7 @@ dependencies = [
 [[package]]
 name = "moenarch-tensor-data"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "moenarch-media-core",
  "moenarch-runtime-core",
@@ -1270,7 +1270,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-core"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/nlp-stack?rev=f7040be492082e9325da063e6d95ef4682538fc8#f7040be492082e9325da063e6d95ef4682538fc8"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=50dd68521e425d2ce734d1f2df1d8c818a659f12#50dd68521e425d2ce734d1f2df1d8c818a659f12"
 dependencies = [
  "moenarch-media-core",
  "moenarch-runtime-core",
@@ -1284,7 +1284,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-embeddings"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/nlp-stack?rev=f7040be492082e9325da063e6d95ef4682538fc8#f7040be492082e9325da063e6d95ef4682538fc8"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=50dd68521e425d2ce734d1f2df1d8c818a659f12#50dd68521e425d2ce734d1f2df1d8c818a659f12"
 dependencies = [
  "moenarch-math-sparse-data",
  "moenarch-runtime-core",
@@ -1301,7 +1301,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-lexical"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/nlp-stack?rev=f7040be492082e9325da063e6d95ef4682538fc8#f7040be492082e9325da063e6d95ef4682538fc8"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=50dd68521e425d2ce734d1f2df1d8c818a659f12#50dd68521e425d2ce734d1f2df1d8c818a659f12"
 dependencies = [
  "moenarch-math-sparse-data",
  "moenarch-runtime-core",
@@ -1313,7 +1313,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-model-runtime"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/nlp-stack?rev=f7040be492082e9325da063e6d95ef4682538fc8#f7040be492082e9325da063e6d95ef4682538fc8"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=50dd68521e425d2ce734d1f2df1d8c818a659f12#50dd68521e425d2ce734d1f2df1d8c818a659f12"
 dependencies = [
  "moenarch-media-core",
  "moenarch-runtime-core",
@@ -1325,7 +1325,7 @@ dependencies = [
 [[package]]
 name = "moenarch-text-transcripts"
 version = "0.1.3"
-source = "git+https://github.com/moritzbrantner/nlp-stack?rev=f7040be492082e9325da063e6d95ef4682538fc8#f7040be492082e9325da063e6d95ef4682538fc8"
+source = "git+https://github.com/moritzbrantner/nlp-stack?rev=50dd68521e425d2ce734d1f2df1d8c818a659f12#50dd68521e425d2ce734d1f2df1d8c818a659f12"
 dependencies = [
  "moenarch-runtime-core",
  "moenarch-text-core",
@@ -1337,7 +1337,7 @@ dependencies = [
 [[package]]
 name = "moenarch-vector-analysis-core"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "moenarch-media-core",
  "moenarch-numbers-core",
@@ -1349,7 +1349,7 @@ dependencies = [
 [[package]]
 name = "moenarch-vector-analysis-index"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "moenarch-media-core",
  "moenarch-runtime-core",
@@ -3177,4 +3177,4 @@ checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
 [[patch.unused]]
 name = "moenarch-jobs-core"
 version = "0.1.2"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
