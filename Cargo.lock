@@ -1171,7 +1171,7 @@ dependencies = [
 [[package]]
 name = "moenarch-corpus-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9#b0e26e4e671e5c43d659a2c67583ffdf5a9bbfa9"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
  "serde",
  "sha2 0.10.9",
