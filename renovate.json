@@ -4,9 +4,14 @@
   "packageRules": [
     {
       "description": "Capability crates are exact git revisions bumped deliberately and together (one rev per repository, [patch.crates-io] aligned; see AGENTS.md and scripts/check_capability_pins.py). Per-crate digest PRs always fail that check, and a grouped Renovate PR cannot keep the [patch.crates-io] entries and the transitive foundation requirements aligned. Cargo git dependencies use the git-refs datasource with the repository URL as packageName; the earlier matchSourceUrls rule did not match them (PRs #56, #80, #81).",
-      "matchManagers": ["cargo"],
-      "matchDatasources": ["git-refs"],
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDatasources": [
+        "git-refs"
+      ],
       "enabled": false
     }
-  ]
+  ],
+  "platformAutomerge": true
 }
