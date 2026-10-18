@@ -47,7 +47,7 @@ text-linguistics = { package = "moenarch-text-linguistics", git = "https://githu
   "candle",
   "model-bundles",
 ] }
-model-runtime = { package = "moenarch-model-runtime", version = "=0.1.1" }
+model-runtime = { package = "moenarch-model-runtime", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 text-transcripts = { package = "moenarch-text-transcripts", git = "https://github.com/moritzbrantner/nlp-stack", rev = "50dd68521e425d2ce734d1f2df1d8c818a659f12" }
 corpus-core = { package = "moenarch-corpus-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 runtime-core = { package = "moenarch-runtime-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
@@ -73,6 +73,7 @@ moenarch-math-geometry-2d = { git = "https://github.com/moritzbrantner/moenarch-
 moenarch-math-linear = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 moenarch-math-sparse-data = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 moenarch-media-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
+moenarch-model-runtime = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 moenarch-numbers-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 moenarch-runtime-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 moenarch-runtime-onnx = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }

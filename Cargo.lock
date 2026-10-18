@@ -1859,18 +1859,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "moenarch-jobs-core"
-version = "0.1.2"
-source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
-dependencies = [
- "chrono",
- "moenarch-runtime-core",
- "serde",
- "serde_json",
- "sha2 0.10.9",
-]
-
-[[package]]
 name = "moenarch-math-geometry-2d"
 version = "0.1.1"
 source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
@@ -1921,12 +1909,9 @@ dependencies = [
 [[package]]
 name = "moenarch-model-runtime"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "325c2c0d9afa3894108d6b2d34b2f6b2f37756601703eec8c95d245d955e2943"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
 dependencies = [
- "chrono",
  "hf-hub",
- "moenarch-jobs-core",
  "moenarch-runtime-core",
  "serde",
  "serde_json",
@@ -4393,3 +4378,8 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
+
+[[patch.unused]]
+name = "moenarch-jobs-core"
+version = "0.1.2"
+source = "git+https://github.com/moritzbrantner/moenarch-foundation?rev=8255347717ca7b8943ede7c435d0c468e5a107c5#8255347717ca7b8943ede7c435d0c468e5a107c5"
