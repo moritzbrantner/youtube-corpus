@@ -23,7 +23,9 @@
     "verify:release": "bun run verify:fast && bun run verify:postgres",
     "verify:ci": "bun run verify:release",
     "verify": "bun run verify:release",
-    "build:prepared": "tsc && vite build"
+    "build:prepared": "tsc && vite build",
+    "start": "bash scripts/start.sh",
+    "verify:startup": "bun test tests/startup.test.ts --timeout 300000"
   },
   "dependencies": {
     "@moritzbrantner/ui": "1.1.0",
