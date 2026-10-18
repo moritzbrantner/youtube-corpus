@@ -220,3 +220,49 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
 - **4.7 Automatically infer person names only from strong contextual evidence.**  
   Status: adopted 2026-10-13. Answers 4.6 (option B).  
   An inferred corpus-local face/voice identity may be associated with a real-world person's name automatically **only when specific time-aligned, source-grounded contextual evidence supports that association**, such as an on-screen speaker name linked to the visible person, or a clear self-introduction attributable to the detected speaker. Merely mentioning a name somewhere in the same video or near a face is insufficient. Preserve the exact supporting transcript/OCR/audio/visual spans, modality, confidence, producer and revision; present the name as an **evidence-supported inference**, never silently as a verified real-world identity. Weak, ambiguous, homonymous or conflicting evidence must leave name attribution unresolved. Users may confirm, correct or remove an inferred name, and later processing must not silently reinstate a user-rejected attribution. Keep naming evidence and associations distinct from the raw observations and cross-video similarity links of 4.5.
+
+## 5. Research workspaces and global identities
+
+- **5.1 Navigate by object type with an active corpus scope.**  
+  Status: adopted 2026-10-18 (owner's multi-page UI direction).  
+  Provide separate usable index/detail pages for corpora, channels and other sources, videos, people, entities, historical events, and processing, plus a dedicated search page and deep-linked video moments. A corpus selection page chooses the default research scope; the selected corpus remains visible and switchable when moving among pages. Search filters, corpus scope, sorting, pagination and meaningful selections survive browser reloads/back/forward via shareable URLs. A selected result resolves to original timestamped evidence, not an independently duplicated search-result record. A global/all-corpora scope permits starting from a person or entity rather than from a corpus. Preserve the existing standalone browser analyzer as a distinct capability; do not show local database-only workspaces as functional on static Pages without their backend.
+
+- **5.2 Use shared canonical identities across corpora, with local evidence retained.**  
+  Status: adopted 2026-10-18 (owner choice A). Clarifies the **corpus-local scope** of 4.5, not its approved within-corpus inferred face/voice matching behavior.  
+  A recognized real-world referent (person or other named entity) may have a stable identity discoverable across corpora; its individual mentions, detections, annotations, inferred person clusters and processing evidence remain attributable to the originating videos/corpora. The active corpus is a default filter, not a boundary on canonical identity. Model People as a dedicated research perspective over person entities, not another competing identity authority. Preserve existing corpus-local inferred identities from 4.5 as evidence or candidate associations; do not automatically promote similarity clusters, same-name mentions, or unverified name inferences into a globally confirmed person. A migration must preserve existing corpus memberships, raw observations and corrections.
+
+- **5.3 Resolve global identity links conservatively and reversibly.**  
+  Status: adopted 2026-10-18 (owner choice A); applies to the shared-identity links of 5.2.  
+  Automatically link clear matches supported by reliable identifiers or comparably decisive, source-grounded evidence. Show uncertain associations as suggestions to confirm or reject rather than silently merging canonical identities. Support correction, merging and splitting; preserve original observation/claim provenance and negative user decisions across repeated processing. Matching names alone is insufficient. Corpus-local inferred similarity associations remain visibly inferred as in 4.3–4.5.
+
+- **5.4 Show unified, filterable person/entity evidence and a timeline.**  
+  Status: adopted 2026-10-18 (owner choice A, explicitly augmented with the timeline).  
+  Person and entity detail pages combine source-grounded occurrences in a filterable evidence view and a timeline visualization over the same evidence. Distinguish mentioned in speech, shown on screen, identified speaker, OCR mention, and metadata reference when produced; never equate a mention with an appearance or a speaker identification. Each occurrence opens its video and exact moment, with producer, uncertainty and corroboration visible as applicable. Use the same corpus/modality filters in the list and timeline, with a structured accessible alternative to charts.
+
+- **5.5 Offer separate publication and historical timelines.**  
+  Status: adopted 2026-10-18 (owner choice C).  
+  The publication timeline organizes evidence by the videos' publication dates; it does not equate publication with the time of described events. The historical timeline organizes source-backed claims about event times, with approximate dates, ranges, BC/AD and uncertainty where available. Never silently combine the two chronological axes. Both modes link to original video moments and retain the selected corpus filter. Missing or unresolved event dates remain visibly unknown rather than being assigned an invented timestamp.
+
+## 6. Corpus processing workspaces
+
+- **6.1 Share reusable pipeline definitions with corpus-specific overrides.**  
+  Status: adopted 2026-10-18 (owner choice A).  
+  Reuse pipeline definitions across corpora while permitting independently configured per-corpus parameters and stage enable/disable overrides, with independent execution/run histories. Keep the existing corpus-owned detector plan, processing and provenance authoritative until an actual integration proves parity. Use the existing Workflow Editor for authoring and Workflow Engine/Runner capabilities for general workflow orchestration/execution where their contracts fit; do not create a competing workflow authoring or generic scheduling/runtime implementation in this repository.
+
+- **6.2 Open Processing on an operational pipeline overview.**  
+  Status: adopted 2026-10-18 (owner choice A).  
+  The selected corpus's Processing page initially shows real pipeline stages, enabled/overridden settings, running/failed/completed work, inspectable attempts and actionable retry or refresh controls. The full Workflow Editor opens only when authoring/editing is needed. Keep operational details and links to the affected video/source next to the relevant stage or run; avoid an always-visible graph editor, fabricated state, duplicate settings controls, and decorative dashboard counters.
+
+## 7. Historical events and source-backed claims
+
+- **7.1 Extract dated event claims automatically, preserving review and uncertainty.**  
+  Status: adopted 2026-10-18 (owner choice A).  
+  When supported transcript and OCR evidence is processed, extract dated historical-event claims using a suitable established producer capability, without reimplementing general linguistic inference locally. Show extracted claims on historical timelines immediately as **unverified claims**, not established facts. Each claim retains its source video, exact speech/OCR span and timestamp, producer/context and stated or inferred date (including ambiguous/approximate ranges). Allow confirming, correcting, rejecting and merging claims without destroying original evidence. Processing failures or missing OCR do not assert that no historical events exist.
+
+- **7.2 Group claims by event while preserving disagreements.**  
+  Status: adopted 2026-10-18 (owner choice A).  
+  Represent a potentially shared historical event separately from the distinct assertions made about it by different sources. Keep each dated assertion's provenance, qualifications and contradictions inspectable; support reviewing event grouping, splitting mistaken groups, and choosing a reviewed preferred interpretation without deleting alternative accounts. Never synthesize a single supposedly authoritative historical fact merely by averaging or merging contradictory claims. Coordinate historical claim semantics with the existing evidence-first historical-source-atlas model without transferring ownership of video evidence or making a new cross-repository runtime dependency mandatory.
+
+- **7.3 Provide a dedicated historical Events workspace.**  
+  Status: adopted 2026-10-18 (owner choice A).  
+  Offer an Events directory and a stable event detail URL, navigable independently of a person/entity profile. The detail view links proposed dates or ranges, source-specific claims/disagreements, associated people, organizations, places, related videos and exact evidence moments. Filtering by current corpus or all corpora must not produce separate canonical event identities. The Events workspace reuses event/claim evidence and timeline projections rather than building another ontology or duplicating stored source material.
