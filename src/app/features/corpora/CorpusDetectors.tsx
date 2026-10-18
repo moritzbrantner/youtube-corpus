@@ -279,6 +279,7 @@ function VideoPlan({ corpusId, detectors }: { corpusId: string; detectors: Detec
         queryClient.invalidateQueries({ queryKey: corpusKeys.detectorPlan(corpusId, videoId) }),
         queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "videos"] }),
         queryClient.invalidateQueries({ queryKey: corpusKeys.quality(corpusId) }),
+        queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "entities"] }),
       ]);
     },
   });

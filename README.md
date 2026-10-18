@@ -227,7 +227,8 @@ Enable **Faces and within-video tracks** in a detector profile, retain the video
 and run its plan. The detector samples once per second using visual-analysis YuNet and
 SFace. It stores frame/time/box/score observations, 128-dimensional embeddings, and inferred
 tracks inside one video. Tracks are similarity-based observations, not verified identities
-or named people. Nothing matches people across videos in this detector.
+or named people. After face processing, the corpus also checks compatible face evidence
+for repeated inferred people; review these associations in **Entities → Face matches**.
 
 The free, revision-pinned YuNet (MIT) and SFace (Apache-2.0) models download on the first
 requested run into the configured model cache under `faces/`; opening the app does not
@@ -240,6 +241,28 @@ videos with no detected faces, are reused; **Refresh** replaces only the same ru
 atomically. Earlier evidence remains available if a refresh fails.
 
 Face images and embeddings remain local corpus data. Do not commit real biometric fixtures.
+
+## Face matching and corrections
+
+High-confidence, compatible face tracks from separate corpus videos are linked automatically
+into an **inferred corpus-local person** after face processing. Existing evidence can be
+checked with **Recheck face matches** in Entities. This rechecks stored evidence without
+downloading models or processing media. Opening the review only reads existing associations.
+
+Automatic matches require multiple sampled observations, strong detections and mutually
+consistent model-compatible embeddings. Ambiguous alternatives, incompatible model versions
+and contradictory simultaneous faces stay unresolved. Each association exposes its cosine
+similarity, producer/model/input/configuration and matching revision, with links to the exact
+video times. Generated “Inferred person …” labels are local handles, not real-world names.
+
+In **Entities → Face matches**, select tracks to **Unlink**, **Split selected into new
+person**, or **Link selected** to another corpus person. **Confirm current group** records a
+researcher's confirmation of its current associations; it does not verify a real-world name.
+Unlink permanently rejects the former association while allowing a different, uniquely supported
+automatic match; an explicit researcher link can override that rejection. Corrections persist across
+unchanged detector and matcher reruns, update the existing person occurrence counts, and
+retain the original observations. Face-to-voice bridges and evidence-based naming remain
+separate work.
 
 ## Voices
 

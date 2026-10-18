@@ -32,6 +32,7 @@ import {
 import { errorMessage } from "./CorpusLabels";
 import { timestampUrl } from "./CorpusSearch";
 import { corpusKeys } from "./query-keys";
+import { FaceMatchingReview } from "./FaceMatchingReview";
 
 type Selection =
   | { kind: "entity"; entityType: string; entityKey: string; name: string }
@@ -71,6 +72,12 @@ export function CorpusEntities({ corpusId }: { corpusId: string }) {
         </SurfaceDescription>
       </SurfaceHeader>
       <SurfaceContent className="grid gap-4">
+        <FaceMatchingReview
+          corpusId={corpusId}
+          onSelectPerson={(personId, label) => {
+            setSelection({ kind: "person", personId, name: label });
+          }}
+        />
         <form className="flex flex-wrap items-end gap-2" onSubmit={submit}>
           <label className="grid min-w-56 flex-1 gap-2">
             <span className="text-sm font-medium">Entity</span>

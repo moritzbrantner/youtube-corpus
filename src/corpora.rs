@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json;
-use sqlx::{PgPool, Row};
+use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
 
 pub const DEFAULT_CORPUS_ID: Uuid = Uuid::from_u128(0x00000000000050008000000000000001);
@@ -716,7 +716,19 @@ async fn require_label(pool: &PgPool, corpus_id: Uuid, label_id: Uuid) -> Result
 }
 
 pub async fn corpus_video_ids(pool: &PgPool, corpus_id: Uuid) -> anyhow::Result<HashSet<Uuid>> {
-    require_corpus(pool, corpus_id).await?;
+    let mut connection = pool.acquire().await?;
+    corpus_video_ids_with(&mut connection, corpus_id).await
+}
+
+pub(crate) async fn corpus_video_ids_with(
+    connection: &mut PgConnection,
+    corpus_id: Uuid,
+) -> anyhow::Result<HashSet<Uuid>> {
+    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM corpora WHERE id=$1)")
+        .bind(corpus_id)
+        .fetch_one(&mut *connection)
+        .await?;
+    anyhow::ensure!(exists, "corpus not found");
     let ids = sqlx::query_scalar::<_, Uuid>(
         "SELECT vm.video_id
          FROM corpus_video_memberships vm
@@ -731,7 +743,7 @@ pub async fn corpus_video_ids(pool: &PgPool, corpus_id: Uuid) -> anyhow::Result<
          WHERE sm.corpus_id = $1",
     )
     .bind(corpus_id)
-    .fetch_all(pool)
+    .fetch_all(&mut *connection)
     .await?;
     Ok(ids.into_iter().collect())
 }

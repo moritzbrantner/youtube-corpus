@@ -109,6 +109,29 @@ cargo test --test detector_profiles_db native_faces -- --ignored
 It checks model observations, 128-dimensional embeddings, within-video tracks, reuse and
 refresh without duplicate rows. Real media and biometric vectors must stay ignored locally.
 
+### Face identity review verification
+
+`face_matching_db` covers the HTTP contract with explicitly synthetic, non-biometric vectors:
+automatic compatible matches, negative/incompatible evidence, ambiguous chains/alternatives,
+simultaneous contradictory faces, persistent split/unlink/link/confirm corrections, corpus
+isolation, occurrence counts and compatible run replacement. The canonical Postgres gate and
+CI both run it.
+
+With the native face prerequisites above, run the actual producer-to-identity integration:
+
+```bash
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus_verify \
+ORT_DYLIB_PATH=/absolute/path/libonnxruntime.so \
+CORPUS_FACE_TEST_MEDIA=/absolute/path/local-repeat-face-video.mp4 \
+CORPUS_FACE_TEST_MODELS=/absolute/path/use-case-output/models \
+cargo test --test face_matching_db native_face_output -- --ignored --nocapture
+```
+
+This creates two local corpus videos from the supplied repeated-face reference, executes
+canonical YuNet/SFace, matches their tracks, unlinks one, refreshes the actual detector output,
+and checks that the correction survives. It does not establish general real-world identity
+accuracy or name attribution. Media and embeddings remain local.
+
 ### Optional native speaker integration
 
 The regular database gate checks truthful failure without retained media. The native
