@@ -109,9 +109,28 @@ cargo test --test detector_profiles_db native_faces -- --ignored
 It checks model observations, 128-dimensional embeddings, within-video tracks, reuse and
 refresh without duplicate rows. Real media and biometric vectors must stay ignored locally.
 
+### Optional native speaker integration
+
+The regular database gate checks truthful failure without retained media. The native
+integration uses a local speech recording (any FFmpeg-supported rate/format), verified
+WeSpeaker model cache and ONNX Runtime API 24:
+
+```bash
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus_verify \
+ORT_DYLIB_PATH=/absolute/path/libonnxruntime.so \
+CORPUS_VOICE_TEST_MEDIA=/absolute/path/local-speech.wav \
+CORPUS_VOICE_TEST_MODELS=/absolute/path/use-case-output/models \
+cargo test --test detector_profiles_db native_voices -- --ignored --nocapture
+```
+
+It exercises the effective plan, 256-dimensional observations, speaker-track links,
+unchanged reuse, refresh without duplicates, and evidence retention after invalidated input.
+The input is copied to a temporary path before testing a failed refresh. Real speech and
+voice embeddings stay ignored locally.
+
 ## Dependency Updates
 
-Capability crates are pinned to exact git revisions of `nlp-stack`, `moenarch-foundation` and `visual-analysis` in `Cargo.toml`.
+Capability crates are pinned to exact git revisions of `nlp-stack`, `moenarch-foundation`, `visual-analysis` and `audio-analysis` in `Cargo.toml`.
 
 1. Land and push the reviewed upstream commit.
 2. Update the matching `rev` values in `Cargo.toml` (all crates from one repository share one rev).

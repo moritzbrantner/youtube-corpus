@@ -931,3 +931,125 @@ async fn native_faces_store_model_observations_and_adjacent_tracks() {
     assert_eq!(refreshed.observations, first.observations);
     assert_eq!(refreshed.tracks, first.tracks);
 }
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
+async fn voices_without_retained_audio_report_a_real_failure() {
+    let Some(seed) = seed().await else {
+        return;
+    };
+    put_settings(
+        &seed.app,
+        &format!("/api/corpora/{}/detector-profiles/corpus", seed.corpus),
+        json!([{"detector":"voices","enabled":true}]),
+    )
+    .await;
+    let (status, body) = call(
+        &seed.app,
+        Method::POST,
+        &format!(
+            "/api/corpora/{}/videos/{}/detector-plan/run",
+            seed.corpus, seed.direct
+        ),
+        Some(json!({"detectors":["voices"]})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["stages"][0]["outcome"], "failed");
+    assert!(body["stages"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("retained local media"));
+    assert_eq!(
+        stage(&processing_status(&seed, seed.direct).await, "voices")["state"],
+        "failed"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL, CORPUS_VOICE_TEST_MEDIA, CORPUS_VOICE_TEST_MODELS and ONNX Runtime API 24"]
+async fn native_voices_store_model_observations_tracks_and_survive_failed_refresh() {
+    use youtube_corpus::detectors::{run_video_plan, PlanRunRequest, StageOutcome};
+    let Ok(media) = std::env::var("CORPUS_VOICE_TEST_MEDIA") else {
+        return;
+    };
+    let models = std::env::var("CORPUS_VOICE_TEST_MODELS").expect("voice model cache root");
+    let seed = seed().await.expect("DATABASE_URL");
+    let database_url = std::env::var("DATABASE_URL").unwrap();
+    let pool = youtube_corpus::db::connect(&database_url).await.unwrap();
+    let retained = seed._files.path().join("voice-input.wav");
+    std::fs::copy(media, &retained).unwrap();
+    sqlx::query("UPDATE videos SET local_video_path=$2 WHERE id=$1")
+        .bind(seed.direct)
+        .bind(retained.to_str().unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    put_settings(
+        &seed.app,
+        &format!("/api/corpora/{}/detector-profiles/corpus", seed.corpus),
+        json!([{"detector":"voices","enabled":true}]),
+    )
+    .await;
+    let request = |refresh| PlanRunRequest {
+        database_url: database_url.clone(),
+        corpus_id: seed.corpus,
+        video_id: seed.direct,
+        work_dir: seed._files.path().join("work"),
+        yt_dlp: Default::default(),
+        model_dir: models.clone().into(),
+        refresh,
+        detectors: Some(vec!["voices".into()]),
+    };
+    let first = run_video_plan(request(false)).await.unwrap();
+    assert!(
+        matches!(first.stages[0].outcome, StageOutcome::Completed),
+        "{first:?}"
+    );
+    let counts = || async {
+        let observations: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM voice_observations WHERE video_id=$1")
+                .bind(seed.direct)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let tracks: i64 = sqlx::query_scalar("SELECT count(*) FROM voice_tracks WHERE video_id=$1")
+            .bind(seed.direct)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        (observations, tracks)
+    };
+    let before = counts().await;
+    assert!(before.0 > 0 && before.1 > 0);
+    let dimensions: Vec<i32> =
+        sqlx::query_scalar("SELECT embedding_dimensions FROM voice_observations WHERE video_id=$1")
+            .bind(seed.direct)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(dimensions.iter().all(|d| *d == 256));
+    let linked:i64=sqlx::query_scalar("SELECT count(*) FROM voice_track_observations l JOIN voice_tracks t ON t.id=l.track_id WHERE t.video_id=$1").bind(seed.direct).fetch_one(&pool).await.unwrap();
+    assert_eq!(linked, before.0);
+    assert!(matches!(
+        run_video_plan(request(false)).await.unwrap().stages[0].outcome,
+        StageOutcome::Reused
+    ));
+    assert_eq!(counts().await, before);
+    assert!(matches!(
+        run_video_plan(request(true)).await.unwrap().stages[0].outcome,
+        StageOutcome::Completed
+    ));
+    assert_eq!(counts().await, before);
+    std::fs::write(&retained, b"invalid changed input").unwrap();
+    assert!(matches!(
+        run_video_plan(request(false)).await.unwrap().stages[0].outcome,
+        StageOutcome::Failed
+    ));
+    assert_eq!(counts().await, before);
+    assert_eq!(
+        stage(&processing_status(&seed, seed.direct).await, "voices")["state"],
+        "failed"
+    );
+    eprintln!("native voices: {} observations, {} tracks, 256-dimensional embeddings; reuse, refresh and failure retention passed",before.0,before.1);
+}

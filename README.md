@@ -241,6 +241,26 @@ atomically. Earlier evidence remains available if a refresh fails.
 
 Face images and embeddings remain local corpus data. Do not commit real biometric fixtures.
 
+## Voices
+
+Enable **Voices and within-video speaker tracks** in a detector profile and run its plan
+on retained media with an audio stream. The canonical audio-analysis pipeline decodes and
+resamples audio, finds energy-based speech spans, produces 256-dimensional WeSpeaker
+embeddings, and groups similar spans into inferred speaker tracks. Energy activity scores
+are kept separately from identity confidence; speaker labels are not verified people.
+Short/noisy spans, overlapping speakers and music can make these inferences unreliable.
+A short single-speaker tail producing an extra track is tracked in
+[audio-analysis#154](https://github.com/moritzbrantner/audio-analysis/issues/154).
+No cross-video matching, naming or face-to-voice association is performed here.
+
+The free [WeSpeaker model](https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34-LM)
+(CC-BY-4.0, attribution: WeSpeaker) downloads into the configured cache under `voices/`
+only on a requested run, at a pinned revision and SHA-256. As with faces, install ONNX
+Runtime with API 24 support and set `ORT_DYLIB_PATH` when needed. No fallback spectral
+embeddings or pretend successful results are substituted when inference fails. Identical
+runs, including no-speech results, are reused; failed refreshes retain prior observations.
+Voice embeddings remain local corpus data and must not be committed as real fixtures.
+
 ## Entities
 
 Extract people, places and other named entities from each corpus video's transcript and

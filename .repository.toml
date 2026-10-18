@@ -27,6 +27,7 @@ owns = [
 ]
 consumes = [
   "audio-analysis/transcription",
+  "audio-analysis/speakers",
   "visual-analysis/video-ingest",
   "visual-analysis/ocr",
   "visual-analysis/scene-detection",

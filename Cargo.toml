@@ -66,6 +66,16 @@ runtime-onnx = { package = "moenarch-runtime-onnx", git = "https://github.com/mo
 ] }
 vector-analysis-core = { package = "moenarch-vector-analysis-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 
+audio-analysis-speakers = { package = "moenarch-audio-analysis-speakers", git = "https://github.com/moritzbrantner/audio-analysis", rev = "1733abb72cdeef96b01000cd2064c068c9128c25", features = [
+  "onnx",
+  "model-bundles",
+] }
+audio-analysis-core = { package = "moenarch-audio-analysis-core", git = "https://github.com/moritzbrantner/audio-analysis", rev = "1733abb72cdeef96b01000cd2064c068c9128c25" }
+audio-analysis-io = { package = "moenarch-audio-analysis-io", git = "https://github.com/moritzbrantner/audio-analysis", rev = "1733abb72cdeef96b01000cd2064c068c9128c25" }
+audio-analysis-processing = { package = "moenarch-audio-analysis-processing", git = "https://github.com/moritzbrantner/audio-analysis", rev = "1733abb72cdeef96b01000cd2064c068c9128c25" }
+
+audio-contracts = { package = "moenarch-audio-contracts", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
+
 [dev-dependencies]
 tempfile = "=3.27.0"
 tower = { version = "=0.5.3", features = ["util"] }
@@ -79,6 +89,7 @@ tower = { version = "=0.5.3", features = ["util"] }
 # Current set: foundation 8255347, nlp-stack 50dd685,
 # visual-analysis 35a5320 (OCR span compatibility; see visual-analysis #87).
 [patch.crates-io]
+moenarch-math-signal-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 moenarch-audio-contracts = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 moenarch-data-inversion-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 moenarch-math-geometry-2d = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }

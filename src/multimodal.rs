@@ -405,11 +405,30 @@ pub async fn upsert_voice_observation(
     pool: &PgPool,
     request: UpsertVoiceObservationRequest,
 ) -> anyhow::Result<VoiceObservation> {
-    validate_run(pool, request.run_id, request.video_id, MediaModality::Voice).await?;
+    let mut connection = pool.acquire().await?;
+    upsert_voice_observation_with(&mut connection, request).await
+}
+
+pub(crate) async fn upsert_voice_observation_with(
+    connection: &mut PgConnection,
+    request: UpsertVoiceObservationRequest,
+) -> anyhow::Result<VoiceObservation> {
+    validate_run(
+        &mut *connection,
+        request.run_id,
+        request.video_id,
+        MediaModality::Voice,
+    )
+    .await?;
     validate_key("observation key", &request.observation_key)?;
     validate_range(request.start_seconds, request.end_seconds)?;
     validate_probability("confidence", request.confidence)?;
-    validate_transcript_segment(pool, request.video_id, request.transcript_segment_id).await?;
+    validate_transcript_segment(
+        &mut *connection,
+        request.video_id,
+        request.transcript_segment_id,
+    )
+    .await?;
     let (embedding, embedding_dimensions) = prepare_embedding(request.embedding.as_deref())?;
     let id = Uuid::new_v4();
     let row = sqlx::query(
@@ -445,7 +464,7 @@ pub async fn upsert_voice_observation(
     .bind(embedding)
     .bind(embedding_dimensions)
     .bind(request.quality)
-    .fetch_one(pool)
+    .fetch_one(&mut *connection)
     .await?;
     voice_observation_from_row(row)
 }
@@ -454,7 +473,21 @@ pub async fn upsert_voice_track(
     pool: &PgPool,
     request: UpsertVoiceTrackRequest,
 ) -> anyhow::Result<VoiceTrack> {
-    validate_run(pool, request.run_id, request.video_id, MediaModality::Voice).await?;
+    let mut connection = pool.acquire().await?;
+    upsert_voice_track_with(&mut connection, request).await
+}
+
+pub(crate) async fn upsert_voice_track_with(
+    connection: &mut PgConnection,
+    request: UpsertVoiceTrackRequest,
+) -> anyhow::Result<VoiceTrack> {
+    validate_run(
+        &mut *connection,
+        request.run_id,
+        request.video_id,
+        MediaModality::Voice,
+    )
+    .await?;
     validate_key("track key", &request.track_key)?;
     validate_range(request.start_seconds, request.end_seconds)?;
     let (embedding, embedding_dimensions) =
@@ -485,7 +518,7 @@ pub async fn upsert_voice_track(
     .bind(embedding)
     .bind(embedding_dimensions)
     .bind(request.quality)
-    .fetch_one(pool)
+    .fetch_one(&mut *connection)
     .await?;
     track_from_row(row, MediaModality::Voice).map(|track| VoiceTrack {
         id: track.id,
@@ -506,6 +539,15 @@ pub async fn link_voice_observation_to_track(
     track_id: Uuid,
     observation_id: Uuid,
 ) -> anyhow::Result<()> {
+    let mut connection = pool.acquire().await?;
+    link_voice_observation_to_track_with(&mut connection, track_id, observation_id).await
+}
+
+pub(crate) async fn link_voice_observation_to_track_with(
+    connection: &mut PgConnection,
+    track_id: Uuid,
+    observation_id: Uuid,
+) -> anyhow::Result<()> {
     let result = sqlx::query(
         "INSERT INTO voice_track_observations (track_id, observation_id)
          SELECT t.id, o.id
@@ -516,7 +558,7 @@ pub async fn link_voice_observation_to_track(
     )
     .bind(track_id)
     .bind(observation_id)
-    .execute(pool)
+    .execute(&mut *connection)
     .await?;
     if result.rows_affected() == 0 {
         let exists: bool = sqlx::query_scalar(
@@ -527,7 +569,7 @@ pub async fn link_voice_observation_to_track(
         )
         .bind(track_id)
         .bind(observation_id)
-        .fetch_one(pool)
+        .fetch_one(&mut *connection)
         .await?;
         if !exists {
             anyhow::bail!("voice track and observation must belong to the same processing run");
@@ -596,8 +638,8 @@ async fn validate_run<'e>(
     Ok(())
 }
 
-async fn validate_transcript_segment(
-    pool: &PgPool,
+async fn validate_transcript_segment<'e>(
+    executor: impl sqlx::Executor<'e, Database = sqlx::Postgres>,
     video_id: Uuid,
     segment_id: Option<Uuid>,
 ) -> anyhow::Result<()> {
@@ -612,7 +654,7 @@ async fn validate_transcript_segment(
     )
     .bind(segment_id)
     .bind(video_id)
-    .fetch_one(pool)
+    .fetch_one(executor)
     .await?;
     if !belongs {
         anyhow::bail!("transcript segment does not belong to the voice observation video");
