@@ -412,3 +412,132 @@ export function runEvaluation(corpusId: string) {
 export function loadTranscriptContext(segmentId: string): Promise<TranscriptContextReport> {
   return getTranscriptContext({ segmentId, before: 4, after: 6 });
 }
+
+/** A mentioned entity grouped by type and normalized name (Atlas 4.1, 4.2). */
+export type EntitySummary = {
+  entityType: string;
+  entityKey: string;
+  displayName: string;
+  spokenMentions: number;
+  visibleTextMentions: number;
+  videoCount: number;
+};
+
+/** A labeled corpus-local person identity from face/voice matching; never a verified identity. */
+export type PersonSummary = {
+  personId: string;
+  label: string;
+  identitySource: string | null;
+  identityConfidence: number | null;
+  shownTracks: number;
+  heardTracks: number;
+  videoCount: number;
+};
+
+export type EntityCoverage = {
+  corpusVideos: number;
+  entityExtractedVideos: number;
+  faceProcessedVideos: number;
+  voiceProcessedVideos: number;
+  people: number;
+};
+
+export type EntityLookupReport = {
+  query: string;
+  entities: EntitySummary[];
+  people: PersonSummary[];
+  coverage: EntityCoverage;
+};
+
+export type EntityOccurrence = {
+  id: string;
+  modality: "spoken" | "visible_text";
+  surfaceText: string;
+  startSeconds: number | null;
+  endSeconds: number | null;
+  context: string;
+  byteStart: number;
+  byteEnd: number;
+  confidence: number | null;
+  transcriptSegmentId: string | null;
+  visualTextTrackId: string | null;
+  visualTextRole: string | null;
+  runId: string;
+  producer: string;
+  producerVersion: string;
+  model: string;
+  configHash: string;
+};
+
+export type EntityOccurrencesReport = {
+  entityType: string;
+  entityKey: string;
+  videos: {
+    videoId: string;
+    title: string | null;
+    sourceUrl: string;
+    spokenMentions: number;
+    visibleTextMentions: number;
+    occurrences: EntityOccurrence[];
+  }[];
+};
+
+export type PersonOccurrencesReport = {
+  person: PersonSummary;
+  videos: {
+    videoId: string;
+    title: string | null;
+    sourceUrl: string;
+    shownTracks: number;
+    heardTracks: number;
+    occurrences: {
+      kind: "shown" | "heard";
+      trackId: string;
+      clusterId: string;
+      startSeconds: number;
+      endSeconds: number;
+      linkConfidence: number | null;
+      linkSource: string | null;
+      clusterSimilarity: number | null;
+      processor: string;
+      processorVersion: string;
+      model: string;
+      modelVersion: string;
+    }[];
+  }[];
+};
+
+export type EntityExtractionReport = {
+  producer: string;
+  producerVersion: string;
+  model: string;
+  videosProcessed: number;
+  videosWithoutText: number;
+  segmentsAnalyzed: number;
+  visualTextTracksAnalyzed: number;
+  mentions: number;
+};
+
+export function lookupEntities(corpusId: string, query: string) {
+  const params = new URLSearchParams({ q: query });
+  return apiFetch<EntityLookupReport>(`/api/corpora/${corpusId}/entities?${params}`);
+}
+
+export function getEntityOccurrences(corpusId: string, entityType: string, entityKey: string) {
+  const params = new URLSearchParams({ entityType, entityKey });
+  return apiFetch<EntityOccurrencesReport>(`/api/corpora/${corpusId}/entity-occurrences?${params}`);
+}
+
+export function getPersonOccurrences(corpusId: string, personId: string) {
+  return apiFetch<PersonOccurrencesReport>(
+    `/api/corpora/${corpusId}/people/${personId}/occurrences`,
+  );
+}
+
+export function extractCorpusEntities(corpusId: string) {
+  return apiFetch<EntityExtractionReport>(`/api/corpora/${corpusId}/entities/extract`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ allowDownload: true }),
+  });
+}

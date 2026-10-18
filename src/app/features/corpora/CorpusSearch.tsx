@@ -571,7 +571,7 @@ function formatTimestamp(seconds: number | null) {
     : `${minutes}:${rest.toString().padStart(2, "0")}`;
 }
 
-function timestampUrl(sourceUrl: string, seconds: number | null) {
+export function timestampUrl(sourceUrl: string, seconds: number | null) {
   if (seconds === null) {
     return sourceUrl;
   }

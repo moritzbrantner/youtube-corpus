@@ -155,6 +155,30 @@ async fn run_command(
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Command::Export(args) => run_export(args, database_url).await?,
+        Command::Entities(args) => match args.command {
+            youtube_corpus::cli::EntitiesCommand::Extract(args) => {
+                let config = AppConfig::from_env_and_cli(database_url)?;
+                let pool = youtube_corpus::db::connect(&config.database_url).await?;
+                if args.migrate {
+                    youtube_corpus::db::migrate(&pool).await?;
+                }
+                let corpus = youtube_corpus::corpora::list_corpora(&pool)
+                    .await?
+                    .into_iter()
+                    .find(|corpus| {
+                        corpus.id.to_string() == args.corpus || corpus.slug == args.corpus
+                    })
+                    .with_context(|| format!("corpus {} not found", args.corpus))?;
+                let report = youtube_corpus::entities::extract_corpus_entities(
+                    &pool,
+                    corpus.id,
+                    args.model_dir,
+                    !args.no_download,
+                )
+                .await?;
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            }
+        },
         Command::ApiSchema(args) => {
             let surface = youtube_corpus::api_surface::package_surface();
             if args.typescript {

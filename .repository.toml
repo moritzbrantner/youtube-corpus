@@ -33,6 +33,7 @@ consumes = [
   "nlp-stack/text-transcripts",
   "nlp-stack/text-embeddings",
   "nlp-stack/text-lexical",
+  "nlp-stack/text-linguistics",
   "moenarch-foundation/runtime",
 ]
 must_not_own = [
@@ -44,6 +45,7 @@ must_not_own = [
   "nlp-stack/text-transcripts",
   "nlp-stack/text-embeddings",
   "nlp-stack/text-lexical",
+  "nlp-stack/text-linguistics",
 ]
 
 # Frontend + browser WASM only; the native server still resolves sibling path dependencies

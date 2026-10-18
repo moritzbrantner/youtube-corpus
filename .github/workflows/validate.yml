@@ -97,6 +97,8 @@ jobs:
             cargo test --locked --test unified_evidence_search_db -- --ignored
           DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus \
             cargo test --locked --test review_regressions_db -- --ignored
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus \
+            cargo test --locked --test entity_explorer_db -- --ignored
 
       - name: Shut down test Postgres
         if: always()

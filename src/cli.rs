@@ -130,6 +130,35 @@ pub enum Command {
     ApiSchema(ApiSchemaArgs),
     /// Writes a deterministic, versioned downstream export of the corpus.
     Export(ExportArgs),
+    /// Extracts source-grounded entity mentions from transcripts and visible text.
+    Entities(EntitiesArgs),
+}
+
+#[derive(Debug, Parser)]
+pub struct EntitiesArgs {
+    #[command(subcommand)]
+    pub command: EntitiesCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum EntitiesCommand {
+    /// Runs the canonical nlp-stack NER model over every video of a corpus.
+    Extract(ExtractEntitiesArgs),
+}
+
+#[derive(Debug, Parser)]
+pub struct ExtractEntitiesArgs {
+    /// Corpus id or slug.
+    #[arg(long)]
+    pub corpus: String,
+    /// Directory holding (or receiving) the bert-base-NER model bundle.
+    #[arg(long, default_value = crate::entities::DEFAULT_MODEL_DIR)]
+    pub model_dir: PathBuf,
+    /// Fail instead of downloading a missing model bundle.
+    #[arg(long)]
+    pub no_download: bool,
+    #[arg(long)]
+    pub migrate: bool,
 }
 
 #[derive(Debug, Parser)]
