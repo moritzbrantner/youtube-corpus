@@ -8,5 +8,6 @@
       "matchDatasources": ["git-refs"],
       "enabled": false
     }
-  ]
+  ],
+  "platformAutomerge": true
 }

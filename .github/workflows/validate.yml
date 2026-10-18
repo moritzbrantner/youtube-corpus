@@ -143,3 +143,14 @@ jobs:
           grep -q 'youtube-corpus' dist/index.html
           jq -e '.pagesStandalone == true and .backend.requiredForPages == false and .browser.captionAcquisition.directYoutube == true' dist/analysis-capabilities.json >/dev/null
           find dist -type f -name '*.wasm' -size +0c | grep -q .
+
+  merge-ready:
+    name: merge-ready
+    if: ${{ always() }}
+    needs: ["build-web-artifact", "repository-validation", "artifact-validation"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: moritzbrantner/reusable-workflows/.github/actions/merge-ready@b0f25f241d76af2584dfc9e375084ff5c5cb97da
+        with:
+          needs: ${{ toJSON(needs) }}
+          required: '["build-web-artifact", "repository-validation", "artifact-validation"]'
