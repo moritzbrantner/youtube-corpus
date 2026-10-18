@@ -203,6 +203,25 @@ pub fn package_surface() -> PackageSurface {
                 }),
             ),
             surface_operation(
+                "corpus.detectors.profiles",
+                "Edit detector profiles",
+                "Reads or replaces the corpus default detector selection and per-source on/off overrides; unavailable detectors explain why.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "settings": [{"detector": "ocr", "enabled": true, "targetLanguages": []}]
+                }),
+            ),
+            surface_operation(
+                "corpus.detectors.plan",
+                "Preview or run a video's detector plan",
+                "Resolves a video's effective detectors inside one corpus (union of applicable sources, corpus-scoped video overrides) with their contributors, and runs enabled available detectors while reusing existing output.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "videoId": "00000000-0000-0000-0000-000000000000",
+                    "refresh": false
+                }),
+            ),
+            surface_operation(
                 "corpus.entities.extract",
                 "Extract entity mentions",
                 "Runs the canonical nlp-stack bert-base-NER producer over each corpus video's transcript and visible-text tracks, replacing that video's previous mentions.",

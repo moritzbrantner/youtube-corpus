@@ -9,6 +9,7 @@ pub mod config;
 pub mod corpora;
 pub mod corpus_export;
 pub mod db;
+pub mod detectors;
 pub mod diagnostics;
 pub mod discovery;
 pub mod entities;

@@ -180,6 +180,14 @@ cargo run -- videos --parsed
 cargo run -- videos --downloaded --limit 25
 ```
 
+## Detector profiles
+
+The corpus workspace's Detectors panel sets which analyses run: a corpus default, per-source
+on/off overrides, and per-video overrides that apply only inside that corpus. A video tracked
+through several sources gets every detector any of them requests. Pick a video to see its
+effective plan and who requested each detector, then **Run plan**: existing output is reused,
+and detectors without an integrated producer (OCR, translation) are reported as unavailable.
+
 ## Entities
 
 Extract people, places and other named entities from each corpus video's transcript and

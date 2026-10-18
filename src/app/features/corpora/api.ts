@@ -541,3 +541,109 @@ export function extractCorpusEntities(corpusId: string) {
     body: JSON.stringify({ allowDownload: true }),
   });
 }
+
+/** A detector this corpus can request (Atlas 2.3); unavailable ones explain why. */
+export type DetectorInfo = {
+  id: string;
+  label: string;
+  producer: string;
+  available: boolean;
+  note: string | null;
+  takesLanguages: boolean;
+};
+
+export type DetectorSetting = {
+  detector: string;
+  enabled: boolean;
+  targetLanguages: string[];
+};
+
+export type CorpusDetectorProfiles = {
+  detectors: DetectorInfo[];
+  corpus: DetectorSetting[];
+  sources: {
+    sourceId: string;
+    name: string | null;
+    sourceUrl: string;
+    settings: DetectorSetting[];
+  }[];
+};
+
+export type PlanContributor = {
+  kind: "corpus" | "source";
+  id: string;
+  name: string | null;
+  explicit: boolean;
+};
+
+export type VideoDetectorPlan = {
+  corpusId: string;
+  videoId: string;
+  addedDirectly: boolean;
+  sources: PlanContributor[];
+  detectors: {
+    detector: string;
+    label: string;
+    available: boolean;
+    note: string | null;
+    inherited: boolean;
+    videoOverride: boolean | null;
+    enabled: boolean;
+    contributors: PlanContributor[];
+    targetLanguages: string[];
+  }[];
+  videoOverrides: DetectorSetting[];
+};
+
+export type PlanRunReport = {
+  videoId: string;
+  stages: {
+    detector: string;
+    outcome: "reused" | "completed" | "failed" | "unavailable";
+    message: string | null;
+  }[];
+};
+
+export function getDetectorProfiles(corpusId: string) {
+  return apiFetch<CorpusDetectorProfiles>(`/api/corpora/${corpusId}/detector-profiles`);
+}
+
+function putSettings(path: string, settings: DetectorSetting[]) {
+  return apiFetch<void>(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ settings }),
+  });
+}
+
+export function setCorpusDetectors(corpusId: string, settings: DetectorSetting[]) {
+  return putSettings(`/api/corpora/${corpusId}/detector-profiles/corpus`, settings);
+}
+
+export function setSourceDetectors(
+  corpusId: string,
+  sourceId: string,
+  settings: DetectorSetting[],
+) {
+  return putSettings(`/api/corpora/${corpusId}/detector-profiles/sources/${sourceId}`, settings);
+}
+
+export function setVideoDetectorOverrides(
+  corpusId: string,
+  videoId: string,
+  settings: DetectorSetting[],
+) {
+  return putSettings(`/api/corpora/${corpusId}/videos/${videoId}/detector-overrides`, settings);
+}
+
+export function getVideoDetectorPlan(corpusId: string, videoId: string) {
+  return apiFetch<VideoDetectorPlan>(`/api/corpora/${corpusId}/videos/${videoId}/detector-plan`);
+}
+
+export function runVideoDetectorPlan(corpusId: string, videoId: string, refresh: boolean) {
+  return apiFetch<PlanRunReport>(`/api/corpora/${corpusId}/videos/${videoId}/detector-plan/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh }),
+  });
+}
