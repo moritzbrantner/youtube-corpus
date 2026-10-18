@@ -51,8 +51,20 @@ model-runtime = { package = "moenarch-model-runtime", git = "https://github.com/
 text-transcripts = { package = "moenarch-text-transcripts", git = "https://github.com/moritzbrantner/nlp-stack", rev = "50dd68521e425d2ce734d1f2df1d8c818a659f12" }
 corpus-core = { package = "moenarch-corpus-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 runtime-core = { package = "moenarch-runtime-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
-video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", git = "https://github.com/moritzbrantner/visual-analysis", rev = "f73969447916e5ac47f4559fc51ab47552f4f734" }
-video-analysis-ingest = { package = "moenarch-video-analysis-ingest", git = "https://github.com/moritzbrantner/visual-analysis", rev = "f73969447916e5ac47f4559fc51ab47552f4f734" }
+video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004" }
+video-analysis-ingest = { package = "moenarch-video-analysis-ingest", git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004" }
+video-analysis-core = { package = "moenarch-video-analysis-core", git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004" }
+image-analysis-core = { package = "moenarch-image-analysis-core", git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004" }
+image-analysis-detection = { package = "moenarch-image-analysis-detection", git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004", features = [
+  "onnx",
+] }
+image-analysis-embeddings = { package = "moenarch-image-analysis-embeddings", git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004", features = [
+  "onnx",
+] }
+runtime-onnx = { package = "moenarch-runtime-onnx", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5", features = [
+  "onnxruntime",
+] }
+vector-analysis-core = { package = "moenarch-vector-analysis-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 
 [dev-dependencies]
 tempfile = "=3.27.0"
@@ -63,12 +75,12 @@ tower = { version = "=0.5.3", features = ["util"] }
 # visual-analysis on text-core); these patches resolve them to the same exact revisions, so the
 # graph holds one copy of each crate. The foundation rev is 8255347 (foundation main, which
 # corpus-core needs); the foundation crate versions that nlp-stack 50dd685 and visual-analysis
-# f739694 require resolve there. Bump nlp-stack and visual-analysis together: visual-analysis
-# 8852f25 used text-core APIs that nlp-stack f7040be removed. Current set: foundation 8255347, nlp-stack 50dd685,
-# visual-analysis f739694 (bumped as one change; see renovate.json).
+# 35a5320 require resolve there. Visual OCR supports the pinned byte-span API.
+# Current set: foundation 8255347, nlp-stack 50dd685,
+# visual-analysis 35a5320 (OCR span compatibility; see visual-analysis #87).
 [patch.crates-io]
 moenarch-audio-contracts = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
-moenarch-jobs-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
+moenarch-data-inversion-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 moenarch-math-geometry-2d = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 moenarch-math-linear = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 moenarch-math-sparse-data = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }

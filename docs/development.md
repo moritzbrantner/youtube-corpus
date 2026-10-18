@@ -91,6 +91,24 @@ context, ingest-run job mapping, and subscription upserts.
 Tests that require real `yt-dlp`, Postgres, or ASR should remain ignored or
 skip when tools or environment variables are missing.
 
+### Optional native face integration
+
+The regular Postgres gate checks cache invalidation and failure retention without models
+or network access. A separate ignored test exercises actual YuNet/SFace inference and
+refresh against an operator-supplied short video containing a repeated face. Use a disposable
+Postgres database, a configured model cache, and an ONNX Runtime API 24 shared library:
+
+```bash
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus_verify \
+ORT_DYLIB_PATH=/absolute/path/libonnxruntime.so \
+CORPUS_FACE_TEST_MEDIA=/absolute/path/local-face-video.mp4 \
+CORPUS_FACE_TEST_MODELS=/absolute/path/use-case-output/models \
+cargo test --test detector_profiles_db native_faces -- --ignored
+```
+
+It checks model observations, 128-dimensional embeddings, within-video tracks, reuse and
+refresh without duplicate rows. Real media and biometric vectors must stay ignored locally.
+
 ## Dependency Updates
 
 Capability crates are pinned to exact git revisions of `nlp-stack`, `moenarch-foundation` and `visual-analysis` in `Cargo.toml`.

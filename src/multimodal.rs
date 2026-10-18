@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::{PgPool, Row};
+use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,6 +177,14 @@ pub async fn begin_processing_run(
     pool: &PgPool,
     request: BeginProcessingRunRequest,
 ) -> anyhow::Result<MediaProcessingRun> {
+    let mut connection = pool.acquire().await?;
+    begin_processing_run_with(&mut connection, request).await
+}
+
+pub(crate) async fn begin_processing_run_with(
+    connection: &mut PgConnection,
+    request: BeginProcessingRunRequest,
+) -> anyhow::Result<MediaProcessingRun> {
     validate_provenance(&request.provenance)?;
     let id = Uuid::new_v4();
     let row = sqlx::query(
@@ -204,7 +212,7 @@ pub async fn begin_processing_run(
     .bind(request.provenance.input_hash)
     .bind(request.provenance.config_hash)
     .bind(request.provenance.processing_config)
-    .fetch_one(pool)
+    .fetch_one(&mut *connection)
     .await?;
     processing_run_from_row(row)
 }
@@ -213,7 +221,21 @@ pub async fn upsert_face_observation(
     pool: &PgPool,
     request: UpsertFaceObservationRequest,
 ) -> anyhow::Result<FaceObservation> {
-    validate_run(pool, request.run_id, request.video_id, MediaModality::Face).await?;
+    let mut connection = pool.acquire().await?;
+    upsert_face_observation_with(&mut connection, request).await
+}
+
+pub(crate) async fn upsert_face_observation_with(
+    connection: &mut PgConnection,
+    request: UpsertFaceObservationRequest,
+) -> anyhow::Result<FaceObservation> {
+    validate_run(
+        &mut *connection,
+        request.run_id,
+        request.video_id,
+        MediaModality::Face,
+    )
+    .await?;
     validate_key("observation key", &request.observation_key)?;
     validate_optional_range(request.start_seconds, request.end_seconds)?;
     validate_region(request.region)?;
@@ -265,7 +287,7 @@ pub async fn upsert_face_observation(
     .bind(embedding)
     .bind(embedding_dimensions)
     .bind(request.quality)
-    .fetch_one(pool)
+    .fetch_one(&mut *connection)
     .await?;
     face_observation_from_row(row)
 }
@@ -274,7 +296,21 @@ pub async fn upsert_face_track(
     pool: &PgPool,
     request: UpsertFaceTrackRequest,
 ) -> anyhow::Result<FaceTrack> {
-    validate_run(pool, request.run_id, request.video_id, MediaModality::Face).await?;
+    let mut connection = pool.acquire().await?;
+    upsert_face_track_with(&mut connection, request).await
+}
+
+pub(crate) async fn upsert_face_track_with(
+    connection: &mut PgConnection,
+    request: UpsertFaceTrackRequest,
+) -> anyhow::Result<FaceTrack> {
+    validate_run(
+        &mut *connection,
+        request.run_id,
+        request.video_id,
+        MediaModality::Face,
+    )
+    .await?;
     validate_key("track key", &request.track_key)?;
     validate_range(request.start_seconds, request.end_seconds)?;
     let (embedding, embedding_dimensions) =
@@ -305,7 +341,7 @@ pub async fn upsert_face_track(
     .bind(embedding)
     .bind(embedding_dimensions)
     .bind(request.quality)
-    .fetch_one(pool)
+    .fetch_one(&mut *connection)
     .await?;
     track_from_row(row, MediaModality::Face).map(|track| FaceTrack {
         id: track.id,
@@ -326,6 +362,15 @@ pub async fn link_face_observation_to_track(
     track_id: Uuid,
     observation_id: Uuid,
 ) -> anyhow::Result<()> {
+    let mut connection = pool.acquire().await?;
+    link_face_observation_to_track_with(&mut connection, track_id, observation_id).await
+}
+
+pub(crate) async fn link_face_observation_to_track_with(
+    connection: &mut PgConnection,
+    track_id: Uuid,
+    observation_id: Uuid,
+) -> anyhow::Result<()> {
     let result = sqlx::query(
         "INSERT INTO face_track_observations (track_id, observation_id)
          SELECT t.id, o.id
@@ -336,7 +381,7 @@ pub async fn link_face_observation_to_track(
     )
     .bind(track_id)
     .bind(observation_id)
-    .execute(pool)
+    .execute(&mut *connection)
     .await?;
     if result.rows_affected() == 0 {
         let exists: bool = sqlx::query_scalar(
@@ -347,7 +392,7 @@ pub async fn link_face_observation_to_track(
         )
         .bind(track_id)
         .bind(observation_id)
-        .fetch_one(pool)
+        .fetch_one(&mut *connection)
         .await?;
         if !exists {
             anyhow::bail!("face track and observation must belong to the same processing run");
@@ -527,15 +572,15 @@ pub async fn list_voice_observations(
     rows.into_iter().map(voice_observation_from_row).collect()
 }
 
-async fn validate_run(
-    pool: &PgPool,
+async fn validate_run<'e>(
+    executor: impl sqlx::Executor<'e, Database = sqlx::Postgres>,
     run_id: Uuid,
     video_id: Uuid,
     expected_modality: MediaModality,
 ) -> anyhow::Result<()> {
     let row = sqlx::query("SELECT video_id, modality FROM media_processing_runs WHERE id = $1")
         .bind(run_id)
-        .fetch_optional(pool)
+        .fetch_optional(executor)
         .await?;
     let Some(row) = row else {
         anyhow::bail!("processing run not found");

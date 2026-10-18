@@ -221,6 +221,26 @@ The status API is `GET /api/corpora/{corpusId}/videos/{videoId}/processing-statu
 `POST …/detector-plan/run` accepts `{"detectors":["asr"],"refresh":false}` to target
 one enabled stage; omitting `detectors` runs the enabled plan.
 
+## Faces
+
+Enable **Faces and within-video tracks** in a detector profile, retain the video locally,
+and run its plan. The detector samples once per second using visual-analysis YuNet and
+SFace. It stores frame/time/box/score observations, 128-dimensional embeddings, and inferred
+tracks inside one video. Tracks are similarity-based observations, not verified identities
+or named people. Nothing matches people across videos in this detector.
+
+The free, revision-pinned YuNet (MIT) and SFace (Apache-2.0) models download on the first
+requested run into the configured model cache under `faces/`; opening the app does not
+fetch them. Their ONNX files must match recorded SHA-256 checksums. Install ONNX Runtime
+1.24 or newer with API 24 support and set `ORT_DYLIB_PATH` to its shared library when it
+is outside the normal loader path. Missing media, models or runtime produce a failed stage.
+No media is downloaded by this detector. Run provenance records the producer, models,
+input bytes, sample interval and tracking settings. Identical successful runs, including
+videos with no detected faces, are reused; **Refresh** replaces only the same run's output
+atomically. Earlier evidence remains available if a refresh fails.
+
+Face images and embeddings remain local corpus data. Do not commit real biometric fixtures.
+
 ## Entities
 
 Extract people, places and other named entities from each corpus video's transcript and

@@ -771,3 +771,163 @@ out.mkdir(parents=True, exist_ok=True)
     ));
     assert_eq!(calls(), 6);
 }
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
+async fn faces_reuses_empty_completed_runs_and_preserves_them_after_failed_refresh() {
+    use sha2::{Digest, Sha256};
+    use youtube_corpus::face_processing::{
+        FaceAnalysisConfig, FACE_MODEL, FACE_MODEL_VERSION, FACE_PROCESSOR,
+    };
+    use youtube_corpus::multimodal::{
+        begin_processing_run, BeginProcessingRunRequest, MediaModality, ProcessingProvenance,
+    };
+    let Some(seed) = seed().await else {
+        return;
+    };
+    let database_url = std::env::var("DATABASE_URL").unwrap();
+    let pool = youtube_corpus::db::connect(&database_url).await.unwrap();
+    let media = seed._files.path().join("face-input.mp4");
+    let bytes = b"not a real video: cache should avoid decoding";
+    std::fs::write(&media, bytes).unwrap();
+    sqlx::query("UPDATE videos SET local_video_path=$2 WHERE id=$1")
+        .bind(seed.direct)
+        .bind(media.to_str().unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let digest = |bytes: &[u8]| {
+        format!(
+            "sha256:{}",
+            Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        )
+    };
+    let stored = begin_processing_run(
+        &pool,
+        BeginProcessingRunRequest {
+            video_id: seed.direct,
+            modality: MediaModality::Face,
+            provenance: ProcessingProvenance {
+                processor: FACE_PROCESSOR.into(),
+                processor_version: youtube_corpus::provenance::PROCESSOR_SOURCE_REVISION.into(),
+                model: FACE_MODEL.into(),
+                model_version: FACE_MODEL_VERSION.into(),
+                input_hash: digest(bytes),
+                config_hash: digest(&serde_json::to_vec(&FaceAnalysisConfig::default()).unwrap()),
+                processing_config: json!({"complete":true,"sampledFrames":2}),
+            },
+        },
+    )
+    .await
+    .unwrap();
+    put_settings(
+        &seed.app,
+        &format!("/api/corpora/{}/detector-profiles/corpus", seed.corpus),
+        json!([{"detector":"faces","enabled":true}]),
+    )
+    .await;
+    let run = |refresh| {
+        youtube_corpus::detectors::run_video_plan(youtube_corpus::detectors::PlanRunRequest {
+            database_url: database_url.clone(),
+            corpus_id: seed.corpus,
+            video_id: seed.direct,
+            work_dir: seed._files.path().join("work"),
+            yt_dlp: Default::default(),
+            model_dir: seed._files.path().join("models"),
+            refresh,
+            detectors: Some(vec!["faces".into()]),
+        })
+    };
+    assert!(matches!(
+        run(false).await.unwrap().stages[0].outcome,
+        youtube_corpus::detectors::StageOutcome::Reused
+    ));
+    assert_eq!(
+        stage(&processing_status(&seed, seed.direct).await, "faces")["state"],
+        "completed"
+    );
+    // Changed bytes invalidate reuse even when the path is unchanged. Decode fails
+    // before downloads; the prior successful (zero-face) run remains evidence.
+    std::fs::write(&media, b"changed and still invalid").unwrap();
+    let failed = run(false).await.unwrap();
+    assert!(matches!(
+        failed.stages[0].outcome,
+        youtube_corpus::detectors::StageOutcome::Failed
+    ));
+    assert_eq!(
+        stage(&processing_status(&seed, seed.direct).await, "faces")["state"],
+        "failed"
+    );
+    assert!(!seed._files.path().join("models").exists());
+    assert!(sqlx::query_scalar::<_,bool>("SELECT EXISTS(SELECT 1 FROM media_processing_runs WHERE id=$1 AND processing_config->>'complete'='true')").bind(stored.id).fetch_one(&pool).await.unwrap());
+    std::fs::write(&media, bytes).unwrap();
+    assert!(matches!(
+        run(false).await.unwrap().stages[0].outcome,
+        youtube_corpus::detectors::StageOutcome::Reused
+    ));
+}
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL, CORPUS_FACE_TEST_MEDIA, CORPUS_FACE_TEST_MODELS and ONNX Runtime API 24"]
+async fn native_faces_store_model_observations_and_adjacent_tracks() {
+    use youtube_corpus::face_processing::{
+        analyze_stored_video_faces, FaceAnalysisConfig, FaceAnalysisRequest,
+    };
+    let Ok(media) = std::env::var("CORPUS_FACE_TEST_MEDIA") else {
+        return;
+    };
+    let models = std::env::var("CORPUS_FACE_TEST_MODELS").expect("face model cache root");
+    let seed = seed().await.expect("DATABASE_URL");
+    let pool = youtube_corpus::db::connect(&std::env::var("DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE videos SET local_video_path=$2 WHERE id=$1")
+        .bind(seed.direct)
+        .bind(media)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let request = FaceAnalysisRequest {
+        video_id: seed.direct,
+        model_dir: models.into(),
+        config: FaceAnalysisConfig::default(),
+        refresh: false,
+    };
+    let first = analyze_stored_video_faces(&pool, request.clone())
+        .await
+        .unwrap();
+    assert!(!first.reused);
+    assert!(first.sampled_frames >= 2);
+    assert!(first.observations >= 2);
+    assert!(first.tracks > 0 && first.tracks < first.observations);
+    let dimensions: Vec<i32> =
+        sqlx::query_scalar("SELECT embedding_dimensions FROM face_observations WHERE run_id=$1")
+            .bind(first.run_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(dimensions.iter().all(|d| *d == 128));
+    let linked:i64 = sqlx::query_scalar("SELECT count(*) FROM face_track_observations l JOIN face_tracks t ON t.id=l.track_id WHERE t.run_id=$1").bind(first.run_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(linked as u64, first.observations);
+    let repeated = analyze_stored_video_faces(&pool, request.clone())
+        .await
+        .unwrap();
+    assert!(repeated.reused);
+    assert_eq!(repeated.run_id, first.run_id);
+    assert_eq!(repeated.observations, first.observations);
+    let refreshed = analyze_stored_video_faces(
+        &pool,
+        FaceAnalysisRequest {
+            refresh: true,
+            ..request
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(refreshed.run_id, first.run_id);
+    assert_eq!(refreshed.observations, first.observations);
+    assert_eq!(refreshed.tracks, first.tracks);
+}

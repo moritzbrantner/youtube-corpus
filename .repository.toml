@@ -30,6 +30,7 @@ consumes = [
   "visual-analysis/video-ingest",
   "visual-analysis/ocr",
   "visual-analysis/scene-detection",
+  "visual-analysis/faces",
   "nlp-stack/text-transcripts",
   "nlp-stack/text-embeddings",
   "nlp-stack/text-lexical",
