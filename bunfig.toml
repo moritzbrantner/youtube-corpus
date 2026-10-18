@@ -1,0 +1,4 @@
+[install]
+# Global-store declaration realpaths cannot find this project's companion @types/react.
+# Keep the normal project-local dependency graph without weakening TypeScript checks.
+globalStore = false

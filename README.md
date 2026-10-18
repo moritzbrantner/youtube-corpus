@@ -37,15 +37,27 @@ crate version before ordinary development can proceed.
 ## Quick Start
 
 ```bash
-cp .env.example .env
-docker compose up -d postgres
-bun install --frozen-lockfile
-bun run build
-cargo run -- --migrate
+./scripts/start.sh
 ```
 
-The last command starts the local web UI at `http://127.0.0.1:1420` and opens it
-in your browser.
+This creates `.env` only when missing, starts or reuses Compose Postgres, installs
+frontend dependencies (including wasm-pack when missing), builds the app,
+applies migrations, then opens
+`http://127.0.0.1:1420`. The server stays in the foreground; press Ctrl+C to stop it.
+A repeated start preserves your configuration and data and reuses a valid frontend
+build. The repository keeps Bun's isolated package links project-local because the
+global virtual store hides companion React declaration types from TypeScript.
+This project setting leaves your global Bun configuration unchanged. Starting the app downloads build dependencies when needed, but no media or
+analysis models.
+
+`bun run start` is an alias. The shell entrypoint can also diagnose a missing Bun
+installation. Docker Compose or Podman Compose supplies local Postgres; set
+`DATABASE_URL` in `.env` to use an existing database instead. Startup's database
+setting overrides `youtube-corpus.conf`; explicit startup flags take precedence.
+
+```bash
+./scripts/start.sh --port 1421 --no-open
+```
 
 ## Web UI
 
@@ -342,6 +354,12 @@ bun run verify:postgres
 verify:postgres` starts the local Postgres service when `DATABASE_URL` is unset
 and uses a disposable `youtube_corpus_verify` database. Network-backed `yt-dlp`
 tests are intentionally separate under `bun run verify:yt-dlp`.
+
+`bun run verify:startup` exercises the one-command launch in a temporary clone
+against a uniquely named disposable database on Compose Postgres. It checks
+missing-tool diagnostics, HTTP/schema readiness, preserved configuration and a
+second start without rebuilding unchanged frontend output. It leaves existing
+corpus databases and the running local server alone.
 
 See [docs/architecture.md](docs/architecture.md) and
 [docs/development.md](docs/development.md) for implementation details.
