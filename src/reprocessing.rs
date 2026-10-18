@@ -82,13 +82,6 @@ pub struct ReprocessReport {
     pub stream_processing_revision: Option<u64>,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum StreamScope {
-    All,
-    Captions,
-    Asr,
-}
-
 pub async fn reprocess_video(request: ReprocessRequest) -> anyhow::Result<ReprocessReport> {
     let pool = crate::db::connect(&request.database_url).await?;
     let row = sqlx::query(
@@ -145,13 +138,11 @@ pub async fn reprocess_video(request: ReprocessRequest) -> anyhow::Result<Reproc
         })
         .await?;
 
-        stamp_processing_provenance(&pool, request.video_id, request.stage, &processing_config)
-            .await?;
+        stamp_processing_provenance(&pool, request.video_id, &processing_config).await?;
         ingest = Some(report);
     }
 
     let segments_resegmented = if request.stage == ReprocessStage::Segments {
-        let count = resegment_video(&pool, request.video_id, &source_url).await?;
         let config = serde_json::json!({
             "stage": "segments",
             "source": "stored-caption-files",
@@ -161,21 +152,13 @@ pub async fn reprocess_video(request: ReprocessRequest) -> anyhow::Result<Reproc
                 "dimensions": 128,
             },
         });
-        stamp_stream_provenance(&pool, request.video_id, StreamScope::Captions, &config).await?;
-        count
+        resegment_video(&pool, request.video_id, &source_url, &config).await?
     } else {
         0
     };
 
     let segments_reembedded = if request.stage.includes_embeddings() {
-        let count = reembed_video(&pool, request.video_id).await?;
-        let config = serde_json::json!({
-            "stage": "embeddings",
-            "embedder": "hashed-text-embedder",
-            "dimensions": 128,
-        });
-        stamp_stream_provenance(&pool, request.video_id, StreamScope::All, &config).await?;
-        count
+        reembed_video(&pool, request.video_id).await?
     } else {
         0
     };
@@ -223,7 +206,6 @@ fn source_for_reprocessing(source_url: &str, local_video_path: Option<&str>) -> 
 async fn stamp_processing_provenance(
     pool: &sqlx::PgPool,
     video_id: Uuid,
-    stage: ReprocessStage,
     config: &serde_json::Value,
 ) -> anyhow::Result<()> {
     sqlx::query(
@@ -240,61 +222,6 @@ async fn stamp_processing_provenance(
     .execute(pool)
     .await?;
 
-    match stage {
-        ReprocessStage::Captions => {
-            stamp_stream_provenance(pool, video_id, StreamScope::Captions, config).await?;
-        }
-        ReprocessStage::Asr => {
-            stamp_stream_provenance(pool, video_id, StreamScope::Asr, config).await?;
-        }
-        ReprocessStage::All => {
-            stamp_stream_provenance(pool, video_id, StreamScope::All, config).await?;
-        }
-        ReprocessStage::Metadata | ReprocessStage::Segments | ReprocessStage::Embeddings => {}
-    }
-    Ok(())
-}
-
-async fn stamp_stream_provenance(
-    pool: &sqlx::PgPool,
-    video_id: Uuid,
-    scope: StreamScope,
-    config: &serde_json::Value,
-) -> anyhow::Result<()> {
-    let sql = match scope {
-        StreamScope::All => {
-            "UPDATE transcript_streams
-             SET processor = 'youtube-corpus',
-                 processor_version = $2,
-                 processing_config = $3,
-                 retrieved_at = now()
-             WHERE video_id = $1"
-        }
-        StreamScope::Captions => {
-            "UPDATE transcript_streams
-             SET processor = 'youtube-corpus',
-                 processor_version = $2,
-                 processing_config = $3,
-                 retrieved_at = now()
-             WHERE video_id = $1
-               AND source_kind IN ('caption_manual', 'caption_auto')"
-        }
-        StreamScope::Asr => {
-            "UPDATE transcript_streams
-             SET processor = 'youtube-corpus',
-                 processor_version = $2,
-                 processing_config = $3,
-                 retrieved_at = now()
-             WHERE video_id = $1 AND source_kind = 'asr'"
-        }
-    };
-
-    sqlx::query(sql)
-        .bind(video_id)
-        .bind(env!("CARGO_PKG_VERSION"))
-        .bind(config)
-        .execute(pool)
-        .await?;
     Ok(())
 }
 
@@ -302,6 +229,7 @@ async fn resegment_video(
     pool: &sqlx::PgPool,
     video_id: Uuid,
     source_url: &str,
+    processing_config: &serde_json::Value,
 ) -> anyhow::Result<u64> {
     let source_paths = sqlx::query_scalar::<_, String>(
         "SELECT source_path
@@ -334,7 +262,15 @@ async fn resegment_video(
     let mut tx = pool.begin().await?;
     let mut indexed = 0_u64;
     for stream in streams {
-        indexed += resegment_stream(&mut tx, video_id, source_url, &stream, &embedder).await?;
+        indexed += resegment_stream(
+            &mut tx,
+            video_id,
+            source_url,
+            &stream,
+            &embedder,
+            processing_config,
+        )
+        .await?;
     }
     tx.commit().await?;
     Ok(indexed)
@@ -346,6 +282,7 @@ async fn resegment_stream(
     source_url: &str,
     stream: &TranscriptStream,
     embedder: &HashedTextEmbedder,
+    processing_config: &serde_json::Value,
 ) -> anyhow::Result<u64> {
     let language = stream.language.clone().or_else(|| {
         stream
@@ -370,13 +307,16 @@ async fn resegment_stream(
 
     sqlx::query(
         "INSERT INTO transcript_streams
-         (id, video_id, source_kind, language, status, source_path, full_text, message)
-         VALUES ($1, $2, $3, $4, 'completed', $5, $6, $7)
+         (id, video_id, source_kind, language, status, source_path, full_text, message,
+          processor, processor_version, processor_revision, processing_config)
+         VALUES ($1, $2, $3, $4, 'completed', $5, $6, $7, 'youtube-corpus', $8, $9, $10)
          ON CONFLICT (id) DO UPDATE SET
            status = EXCLUDED.status,
            source_path = EXCLUDED.source_path,
            full_text = EXCLUDED.full_text,
-           message = EXCLUDED.message",
+           message = EXCLUDED.message,
+           processor = EXCLUDED.processor, processor_version = EXCLUDED.processor_version,
+           processor_revision = EXCLUDED.processor_revision, processing_config = EXCLUDED.processing_config",
     )
     .bind(stream_id)
     .bind(video_id)
@@ -390,6 +330,9 @@ async fn resegment_stream(
     )
     .bind(&full_text)
     .bind(&stream.message)
+    .bind(env!("CARGO_PKG_VERSION"))
+    .bind(crate::provenance::PROCESSOR_SOURCE_REVISION)
+    .bind(processing_config)
     .execute(&mut **tx)
     .await?;
 

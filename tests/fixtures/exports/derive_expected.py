@@ -446,7 +446,13 @@ def belief_evidence(videos, streams):
     evidence = []
     for stream in streams:
         for seg in stream["segments"]:
-            producer = {"name": stream["processor"], "revision": stream["processorVersion"]}
+            revision = stream.get("processorRevision", stream["processorVersion"])
+            prefixed = any(revision.startswith(prefix) and len(revision) > len(prefix)
+                           for prefix in ("sha256:", "git:", "commit:"))
+            full_hex = len(revision) in (40, 64) and all(c in "0123456789abcdefABCDEF" for c in revision)
+            if not (prefixed or full_hex):
+                raise ValueError(f"stream {stream['id']} lacks immutable processor provenance")
+            producer = {"name": stream["processor"], "revision": revision}
             optional(producer, "configHash", stream.get("processingConfigHash"))
             evidence.append(
                 {

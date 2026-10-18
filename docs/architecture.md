@@ -162,3 +162,25 @@ Do not commit:
 - face crops, voice clips, or biometric embeddings
 - temporary JSON output
 - build output in `dist/`, `target/`, or `node_modules/`
+
+## Transcript processor identity for downstream evidence
+
+Transcript writes record a separate immutable `processor_revision`; release labels
+such as `0.1.0` remain in `processor_version`. The build derives a `sha256:` content
+identity from sorted Rust source paths and bytes under `src/`, `build.rs`,
+`Cargo.toml` and `Cargo.lock`, with length framing and the
+`youtube-corpus-processor-source-v1` domain marker. This identifies the actual
+corpus orchestration/normalization source, including locked dependencies. It does
+not claim to identify an external ASR executable, its model, or source media.
+Command/configuration provenance remains separately inspectable.
+
+Ingest and stored-caption re-segmentation record this identity in the same
+transaction as their actual transcript output. Metadata refreshes, unsuccessful
+stages, unrelated streams and embedding-only processing do not restamp transcript
+producer identity. Migration 0018 intentionally leaves historical revisions null.
+
+Belief evidence export uses the recorded processor revision, or a genuinely
+immutable legacy processor-version value. A release label alone fails with the
+stream identity and guidance to reprocess or restore the original receipt. Export
+never substitutes its own revision or hashes a release label to invent history.
+The independent fixture generator and import-rule mirror enforce this distinction.

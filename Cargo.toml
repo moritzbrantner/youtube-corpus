@@ -84,3 +84,6 @@ moenarch-text-core = { git = "https://github.com/moritzbrantner/nlp-stack", rev 
 # Foundation 8255347 depends on the registry name `search-kernels` and resolves it to this exact
 # rust-kernels revision through its own workspace patch; mirror that patch here.
 search-kernels = { git = "https://github.com/moritzbrantner/rust-kernels", rev = "51ef7878165b83db0d10ad7420fee6b4aba97099" }
+
+[build-dependencies]
+sha2 = "0.11"

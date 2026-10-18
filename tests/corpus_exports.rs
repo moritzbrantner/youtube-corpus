@@ -127,7 +127,7 @@
 //! class: "transcript", familyId: "family:transcript-segment:<segment id>", source:
 //! {repository: "youtube-corpus", scopeId: "video:<video id>", recordId:
 //! "transcript-segment:<segment id>", revision: "sha256:" + sha256(segment revision
-//! material)}, producer: {name: stream.processor, revision: stream.processor_version,
+//! material)}, producer: {name: stream.processor, revision: stream.processor_revision (or an already immutable legacy processor_version),
 //! configHash: stream.processing_config_hash (omitted when None)}}`. No `subject`, `score`,
 //! `model` or `parentEvidenceIds` keys are emitted, and no text is copied.
 //!
@@ -947,8 +947,8 @@ async fn snapshot_loader_matches_the_database_source_span_export() {
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO transcript_streams (id, video_id, source_kind, language, status, full_text)
-         VALUES ($1, $2, 'asr', 'en', 'completed', NULL)",
+        "INSERT INTO transcript_streams (id, video_id, source_kind, language, status, full_text, processor_revision)
+         VALUES ($1, $2, 'asr', 'en', 'completed', NULL, 'git:synthetic-db-parity')",
     )
     .bind(stream_id)
     .bind(video_id)
@@ -1046,4 +1046,46 @@ async fn snapshot_loader_matches_the_database_source_span_export() {
         .execute(&pool)
         .await
         .unwrap();
+}
+
+#[test]
+fn belief_export_refuses_historical_release_labels_instead_of_fabricating_identity() {
+    let mut input = snapshot();
+    for stream in &mut input.transcript_streams {
+        stream.processor_revision = None;
+        stream.processor_version = "0.1.0".into();
+    }
+    let error = export_belief_evidence(&input, "git:exporter-only").unwrap_err();
+    let detail = format!("{error:#}");
+    assert!(
+        detail.contains("no recorded immutable processor identity"),
+        "{detail}"
+    );
+    assert!(detail.contains("re-ingest/re-segment"), "{detail}");
+    assert!(
+        detail.contains("changing the exporter revision cannot recover"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn belief_export_preserves_recorded_upstream_processor_identity() {
+    let mut input = snapshot();
+    for stream in &mut input.transcript_streams {
+        stream.processor = "external-transcript-producer".into();
+        stream.processor_version = "0.1.0".into();
+        stream.processor_revision = Some("commit:original-upstream-receipt".into());
+    }
+    let output: serde_json::Value =
+        serde_json::from_str(&export_belief_evidence(&input, "git:unrelated-exporter").unwrap())
+            .unwrap();
+    for record in output["evidence"].as_array().unwrap() {
+        assert_eq!(record["producer"]["name"], "external-transcript-producer");
+        assert_eq!(
+            record["producer"]["revision"],
+            "commit:original-upstream-receipt"
+        );
+    }
+    input.transcript_streams[0].processor_revision = Some("0.1.0".into());
+    assert!(export_belief_evidence(&input, "git:exporter").is_err());
 }

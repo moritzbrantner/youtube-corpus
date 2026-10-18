@@ -30,6 +30,7 @@
       "fullText": "First claim about being. Second claim: essence ≠ existence.",
       "processor": "youtube-corpus",
       "processorVersion": "0.1.0",
+      "processorRevision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1",
       "processingConfigHash": "sha256:207bcd6a13c7cb90532afab33aa2aa531e38ace35e7fbcfc544ffb5ab1850ae6",
       "segments": [
         {
@@ -58,6 +59,7 @@
       "fullText": null,
       "processor": "youtube-corpus",
       "processorVersion": "0.1.0",
+      "processorRevision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1",
       "processingConfigHash": null,
       "segments": [
         {
@@ -86,6 +88,7 @@
       "fullText": null,
       "processor": "youtube-corpus",
       "processorVersion": "0.1.0",
+      "processorRevision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1",
       "processingConfigHash": null,
       "segments": [
         {
