@@ -20,6 +20,7 @@ import {
 
 import { listCorpora } from "./api";
 import { CorpusAnnotations } from "./CorpusAnnotations";
+import { CorpusEntities } from "./CorpusEntities";
 import { CorpusEvaluation } from "./CorpusEvaluation";
 import { CorpusLabels } from "./CorpusLabels";
 import { CorpusPicker } from "./CorpusPicker";
@@ -131,6 +132,7 @@ export function CorpusWorkspace() {
                 onSubmitQuery={(query) => update({ query })}
                 onSelectSegment={(segmentId) => update({ segmentId })}
               />
+              <CorpusEntities key={selectedCorpus.id} corpusId={selectedCorpus.id} />
               <div className="grid gap-4 xl:grid-cols-2">
                 <CorpusEvaluation corpusId={selectedCorpus.id} />
                 <CorpusAnnotations corpusId={selectedCorpus.id} />

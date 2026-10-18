@@ -14,6 +14,9 @@ use crate::config::{CaptionConfig, CorpusSource, YtDlpConfig};
 use crate::corpora::{
     Corpus, CorpusLabel, CorpusSourceSummary, CorpusVideoSummary, CreateCorpusRequest, LabelError,
 };
+use crate::entities::{
+    EntityExtractionReport, EntityLookupReport, EntityOccurrencesReport, PersonOccurrencesReport,
+};
 use crate::ingest::{ingest_corpus, IngestReport, IngestRequest};
 use crate::reprocessing::{ReprocessReport, ReprocessRequest, ReprocessStage};
 use crate::search::{SearchReport, SearchRequest};
@@ -66,6 +69,19 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
         )
         .route("/api/corpora/{corpus_id}/videos", get(list_videos))
         .route("/api/corpora/{corpus_id}/search", post(search_corpus))
+        .route("/api/corpora/{corpus_id}/entities", get(lookup_entities))
+        .route(
+            "/api/corpora/{corpus_id}/entities/extract",
+            post(extract_entities),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/entity-occurrences",
+            get(entity_occurrences),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/people/{person_id}/occurrences",
+            get(person_occurrences),
+        )
         .route(
             "/api/corpora/{corpus_id}/videos/{video_id}/reprocess",
             post(reprocess_video),
@@ -499,6 +515,85 @@ async fn search_corpus(
             .map_err(ResearchError::internal)?,
     );
     Ok(Json(report))
+}
+
+#[derive(Debug, Deserialize)]
+struct EntityLookupInput {
+    q: Option<String>,
+    limit: Option<i64>,
+}
+
+async fn lookup_entities(
+    State(state): State<ResearchState>,
+    AxumPath(corpus_id): AxumPath<Uuid>,
+    Query(input): Query<EntityLookupInput>,
+) -> Result<Json<EntityLookupReport>, ResearchError> {
+    let pool = pool(&state).await?;
+    let limit = input.limit.unwrap_or(50).clamp(1, 200);
+    crate::entities::lookup_entities(&pool, corpus_id, input.q.as_deref().unwrap_or(""), limit)
+        .await
+        .map(Json)
+        .map_err(map_corpus_error)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EntityOccurrencesInput {
+    entity_type: String,
+    entity_key: String,
+}
+
+async fn entity_occurrences(
+    State(state): State<ResearchState>,
+    AxumPath(corpus_id): AxumPath<Uuid>,
+    Query(input): Query<EntityOccurrencesInput>,
+) -> Result<Json<EntityOccurrencesReport>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::entities::entity_occurrences(&pool, corpus_id, &input.entity_type, &input.entity_key)
+        .await
+        .map(Json)
+        .map_err(map_corpus_error)
+}
+
+async fn person_occurrences(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, person_id)): AxumPath<(Uuid, Uuid)>,
+) -> Result<Json<PersonOccurrencesReport>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::entities::person_occurrences(&pool, corpus_id, person_id)
+        .await
+        .map(Json)
+        .map_err(map_corpus_error)
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtractEntitiesInput {
+    model_dir: Option<String>,
+    allow_download: Option<bool>,
+}
+
+async fn extract_entities(
+    State(state): State<ResearchState>,
+    AxumPath(corpus_id): AxumPath<Uuid>,
+    input: Option<Json<ExtractEntitiesInput>>,
+) -> Result<Json<EntityExtractionReport>, ResearchError> {
+    let input = input.map(|Json(input)| input).unwrap_or_default();
+    let pool = pool(&state).await?;
+    let model_dir = PathBuf::from(
+        input
+            .model_dir
+            .unwrap_or_else(|| crate::entities::DEFAULT_MODEL_DIR.to_string()),
+    );
+    crate::entities::extract_corpus_entities(
+        &pool,
+        corpus_id,
+        model_dir,
+        input.allow_download.unwrap_or(true),
+    )
+    .await
+    .map(Json)
+    .map_err(map_corpus_error)
 }
 
 async fn reprocess_video(

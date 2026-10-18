@@ -11,6 +11,11 @@ export const corpusKeys = {
   evaluationCases: (corpusId: string) => ["corpora", corpusId, "evaluation", "cases"] as const,
   search: (corpusId: string, input: SearchTranscriptsInput) =>
     ["corpora", corpusId, "search", input] as const,
+  entities: (corpusId: string, query: string) => ["corpora", corpusId, "entities", query] as const,
+  entityOccurrences: (corpusId: string, entityType: string, entityKey: string) =>
+    ["corpora", corpusId, "entities", "occurrences", entityType, entityKey] as const,
+  personOccurrences: (corpusId: string, personId: string) =>
+    ["corpora", corpusId, "entities", "people", personId] as const,
   context: (segmentId: string) =>
     ["transcript-context", segmentId, { before: 4, after: 6 }] as const,
 };

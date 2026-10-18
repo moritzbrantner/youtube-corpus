@@ -180,6 +180,21 @@ cargo run -- videos --parsed
 cargo run -- videos --downloaded --limit 25
 ```
 
+## Entities
+
+Extract people, places and other named entities from each corpus video's transcript and
+visible-text (OCR) tracks with the nlp-stack `bert-base-NER` model (downloaded once from
+Hugging Face into `use-case-output/models`), then explore them in the corpus workspace's
+Entities panel:
+
+```bash
+cargo run --release -- entities extract --corpus <corpus-id-or-slug>
+```
+
+Mentions keep their modality (spoken or on-screen text), timestamp, source segment/track and
+producer run. Labeled corpus people from face/voice matching are listed separately as shown or
+heard, never merged with name mentions.
+
 ## Diagnostics
 
 Check local prerequisites without requiring a configured database:

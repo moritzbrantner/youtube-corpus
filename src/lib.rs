@@ -11,6 +11,7 @@ pub mod corpus_export;
 pub mod db;
 pub mod diagnostics;
 pub mod discovery;
+pub mod entities;
 pub mod evaluation;
 pub mod ingest;
 pub mod media_evidence;

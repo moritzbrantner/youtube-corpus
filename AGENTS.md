@@ -18,8 +18,8 @@ Product intent lives in [docs/DECISION-ATLAS.md](docs/DECISION-ATLAS.md). Read a
 Machine-readable in `.repository.toml` (`[architecture]`); keep both lists identical.
 
 - Owns: `youtube-corpus/media-ingest-orchestration`, `youtube-corpus/corpus-persistence`, `youtube-corpus/corpus-identity`, `youtube-corpus/timeline-alignment`, `youtube-corpus/corpus-retrieval`, `youtube-corpus/subscriptions`
-- Adapts: `audio-analysis/transcription`, `visual-analysis/video-ingest`, `visual-analysis/ocr`, `visual-analysis/scene-detection`, `nlp-stack/text-transcripts`, `nlp-stack/text-embeddings`, `nlp-stack/text-lexical`, `moenarch-foundation/runtime`
-- Non-authoritative: `audio-analysis/transcription`, `audio-analysis/speakers`, `visual-analysis/ocr`, `visual-analysis/scene-detection`, `visual-analysis/faces`, `nlp-stack/text-transcripts`, `nlp-stack/text-embeddings`, `nlp-stack/text-lexical`
+- Adapts: `audio-analysis/transcription`, `visual-analysis/video-ingest`, `visual-analysis/ocr`, `visual-analysis/scene-detection`, `nlp-stack/text-transcripts`, `nlp-stack/text-embeddings`, `nlp-stack/text-lexical`, `nlp-stack/text-linguistics`, `moenarch-foundation/runtime`
+- Non-authoritative: `audio-analysis/transcription`, `audio-analysis/speakers`, `visual-analysis/ocr`, `visual-analysis/scene-detection`, `visual-analysis/faces`, `nlp-stack/text-transcripts`, `nlp-stack/text-embeddings`, `nlp-stack/text-lexical`, `nlp-stack/text-linguistics`
 
 ## Local Services
 

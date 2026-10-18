@@ -203,6 +203,34 @@ pub fn package_surface() -> PackageSurface {
                 }),
             ),
             surface_operation(
+                "corpus.entities.extract",
+                "Extract entity mentions",
+                "Runs the canonical nlp-stack bert-base-NER producer over each corpus video's transcript and visible-text tracks, replacing that video's previous mentions.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "allowDownload": true
+                }),
+            ),
+            surface_operation(
+                "corpus.entities.lookup",
+                "Look up entities",
+                "Finds mentioned entities with spoken and on-screen-text counts, and labeled corpus people with shown/heard track counts, plus analysis coverage.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "q": "lovelace"
+                }),
+            ),
+            surface_operation(
+                "corpus.entities.occurrences",
+                "List entity occurrences",
+                "Lists every timestamped mention of one entity per video with its source segment or track and producer provenance; person identities have their own shown/heard occurrence list.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "entityType": "person",
+                    "entityKey": "ada lovelace"
+                }),
+            ),
+            surface_operation(
                 "corpus.collections.search",
                 "Search a research corpus",
                 "Searches transcript passages while returning only videos belonging to the selected corpus.",
