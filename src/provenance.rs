@@ -3,6 +3,10 @@ use uuid::Uuid;
 
 use crate::ingest::{IngestReport, IngestRequest};
 
+/// Content identity of this build's orchestration/normalization source, not an
+/// identity claim about an external ASR executable or model.
+pub const PROCESSOR_SOURCE_REVISION: &str = env!("YOUTUBE_CORPUS_PROCESSOR_REVISION");
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IngestProvenance {
@@ -75,20 +79,6 @@ async fn record_video_provenance(
              metadata_processing_config = $3,
              metadata_retrieved_at = now()
          WHERE id = $1",
-    )
-    .bind(video_id)
-    .bind(env!("CARGO_PKG_VERSION"))
-    .bind(processing_config)
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        "UPDATE transcript_streams
-         SET processor = 'youtube-corpus',
-             processor_version = $2,
-             processing_config = $3,
-             retrieved_at = now()
-         WHERE video_id = $1",
     )
     .bind(video_id)
     .bind(env!("CARGO_PKG_VERSION"))

@@ -242,8 +242,15 @@ async fn ingest_item(
         if stream.segments.is_empty() {
             continue;
         }
-        let indexed =
-            upsert_stream(&mut tx, video_id, &item.source_url, &stream, &embedder).await?;
+        let indexed = upsert_stream(
+            &mut tx,
+            video_id,
+            &item.source_url,
+            &stream,
+            &embedder,
+            &serde_json::to_value(crate::provenance::IngestProvenance::from_request(request))?,
+        )
+        .await?;
         if indexed > 0 {
             streams_indexed += 1;
             segments_indexed += indexed;
@@ -336,6 +343,7 @@ async fn upsert_stream(
     source_url: &str,
     stream: &TranscriptStream,
     embedder: &HashedTextEmbedder,
+    processing_config: &serde_json::Value,
 ) -> anyhow::Result<u64> {
     let language = stream.language.clone().or_else(|| {
         stream
@@ -358,10 +366,12 @@ async fn upsert_stream(
             .join(" ")
     });
     sqlx::query(
-        "INSERT INTO transcript_streams (id, video_id, source_kind, language, status, source_path, full_text, message)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "INSERT INTO transcript_streams (id, video_id, source_kind, language, status, source_path, full_text, message, processor, processor_version, processor_revision, processing_config)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'youtube-corpus', $9, $10, $11)
          ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, source_path = EXCLUDED.source_path,
-           full_text = EXCLUDED.full_text, message = EXCLUDED.message",
+           full_text = EXCLUDED.full_text, message = EXCLUDED.message,
+           processor = EXCLUDED.processor, processor_version = EXCLUDED.processor_version,
+           processor_revision = EXCLUDED.processor_revision, processing_config = EXCLUDED.processing_config",
     )
     .bind(stream_id)
     .bind(video_id)
@@ -371,6 +381,9 @@ async fn upsert_stream(
     .bind(stream.source_path.as_ref().map(|path| path.to_string_lossy().into_owned()))
     .bind(&full_text)
     .bind(&stream.message)
+    .bind(env!("CARGO_PKG_VERSION"))
+    .bind(crate::provenance::PROCESSOR_SOURCE_REVISION)
+    .bind(processing_config)
     .execute(&mut **tx)
     .await?;
 

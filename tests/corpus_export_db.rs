@@ -64,8 +64,18 @@ async fn assert_snapshot_matches_database(pool: &sqlx::PgPool, video_id: Option<
     );
     parse_corpus_core_jsonl(&export_corpus_core_jsonl(&snapshot, "git:scope").unwrap())
         .expect("consumable corpus-core");
-    validate_belief_batch(&export_belief_evidence(&snapshot, "git:scope").unwrap())
-        .expect("importable belief evidence");
+    if video_id.is_none()
+        && snapshot.transcript_streams.iter().any(|stream| {
+            stream.processor_revision.is_none() && stream.processor_version == "0.1.0"
+        })
+    {
+        // Other database suites deliberately retain legacy rows. A global export
+        // must refuse them rather than relabeling their historical processor.
+        assert!(export_belief_evidence(&snapshot, "git:scope").is_err());
+    } else {
+        validate_belief_batch(&export_belief_evidence(&snapshot, "git:scope").unwrap())
+            .expect("importable belief evidence");
+    }
     from_snapshot
 }
 
@@ -84,8 +94,8 @@ async fn loader_keeps_segment_video_scope_and_database_track_order() {
     insert_video(&pool, segment_video, "Segment video").await;
     let stream_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO transcript_streams (id, video_id, source_kind, language, status)
-         VALUES ($1, $2, 'asr', 'en', 'completed')",
+        "INSERT INTO transcript_streams (id, video_id, source_kind, language, status, processor_revision)
+         VALUES ($1, $2, 'asr', 'en', 'completed', 'git:synthetic-db-processor')",
     )
     .bind(stream_id)
     .bind(stream_video)
@@ -251,4 +261,116 @@ async fn loader_keeps_segment_video_scope_and_database_track_order() {
             .await
             .unwrap();
     }
+}
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
+async fn resegmentation_records_actual_processor_without_restamping_other_streams() {
+    use youtube_corpus::config::YtDlpConfig;
+    use youtube_corpus::reprocessing::{reprocess_video, ReprocessRequest, ReprocessStage};
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    let pool = youtube_corpus::db::connect(&database_url).await.unwrap();
+    youtube_corpus::db::migrate(&pool).await.unwrap();
+    let video_id = Uuid::new_v4();
+    insert_video(&pool, video_id, "Synthetic provenance regression").await;
+    let directory = std::env::temp_dir().join(format!("youtube-provenance-{video_id}"));
+    std::fs::create_dir_all(&directory).unwrap();
+    let captions = directory.join("fixture-subs.manual.id.en.vtt");
+    std::fs::write(
+        &captions,
+        "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nSynthetic caption.\n",
+    )
+    .unwrap();
+    let caption_id = youtube_corpus::youtube::stable_child_id(video_id, "caption_manual:en");
+    let asr_id = Uuid::new_v4();
+    for (id, kind, path) in [
+        (
+            caption_id,
+            "caption_manual",
+            Some(captions.to_string_lossy().into_owned()),
+        ),
+        (asr_id, "asr", None),
+    ] {
+        sqlx::query("INSERT INTO transcript_streams (id, video_id, source_kind, language, status, source_path, processor, processor_revision, processing_config) VALUES ($1, $2, $3, 'en', 'completed', $4, 'upstream-producer', 'git:historical-upstream', '{}')")
+            .bind(id).bind(video_id).bind(kind).bind(path).execute(&pool).await.unwrap();
+    }
+    let original_asr: (String, Option<String>, serde_json::Value, i64) = sqlx::query_as("SELECT processor, processor_revision, processing_config, processing_revision FROM transcript_streams WHERE id=$1").bind(asr_id).fetch_one(&pool).await.unwrap();
+    // A report with no newly generated transcript must not assign this build's
+    // provenance to an already stored upstream ASR stream.
+    let report = youtube_corpus::ingest::IngestReport {
+        workflow: "youtube_corpus_ingest".into(),
+        run_id: Uuid::new_v4(),
+        videos_seen: 1,
+        videos_indexed: 0,
+        segments_indexed: 0,
+        items: vec![youtube_corpus::ingest::IngestItemReport {
+            video_id: Some(video_id),
+            source_url: "https://youtube.test/synthetic".into(),
+            title: None,
+            status: "no_transcript".into(),
+            streams_indexed: 0,
+            segments_indexed: 0,
+            message: Some("No new transcript output".into()),
+        }],
+    };
+    let provenance = youtube_corpus::provenance::IngestProvenance {
+        workflow: "youtube_corpus_ingest".into(),
+        source_url: "https://youtube.test/synthetic".into(),
+        caption: youtube_corpus::config::CaptionConfig::default(),
+        yt_dlp: YtDlpConfig::default(),
+        asr_enabled: false,
+        transcriber_command: None,
+        transcriber_args: vec![],
+        transcriber_timeout_seconds: None,
+        embedding: youtube_corpus::provenance::EmbeddingProvenance {
+            provider: "hashed-text-embedder".into(),
+            dimensions: 128,
+        },
+    };
+    youtube_corpus::provenance::record_ingest_report(&database_url, &report, &provenance)
+        .await
+        .unwrap();
+    let retained_asr: (String, Option<String>, serde_json::Value, i64) = sqlx::query_as("SELECT processor, processor_revision, processing_config, processing_revision FROM transcript_streams WHERE id=$1").bind(asr_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(original_asr, retained_asr);
+    let mut request = ReprocessRequest {
+        database_url,
+        video_id,
+        stage: ReprocessStage::Segments,
+        work_dir: directory.clone(),
+        caption_languages: vec!["en".into()],
+        yt_dlp: YtDlpConfig::default(),
+        transcriber_command: None,
+        transcriber_args: vec![],
+        transcriber_timeout_seconds: None,
+    };
+    let report = reprocess_video(request.clone()).await.unwrap();
+    assert!(report.segments_resegmented > 0);
+    let snapshot = load_export_snapshot(&pool, Some(video_id)).await.unwrap();
+    let caption = snapshot
+        .transcript_streams
+        .iter()
+        .find(|stream| stream.id == caption_id)
+        .unwrap();
+    assert_eq!(caption.processor, "youtube-corpus");
+    assert_eq!(
+        caption.processor_revision.as_deref(),
+        Some(youtube_corpus::provenance::PROCESSOR_SOURCE_REVISION)
+    );
+    validate_belief_batch(&export_belief_evidence(&snapshot, "git:exporter").unwrap()).unwrap();
+    let before = serde_json::to_value(&snapshot.transcript_streams).unwrap();
+    request.stage = ReprocessStage::Embeddings;
+    reprocess_video(request).await.unwrap();
+    let after = load_export_snapshot(&pool, Some(video_id)).await.unwrap();
+    assert_eq!(
+        before,
+        serde_json::to_value(&after.transcript_streams).unwrap()
+    );
+    let after_asr: (String, Option<String>, serde_json::Value, i64) = sqlx::query_as("SELECT processor, processor_revision, processing_config, processing_revision FROM transcript_streams WHERE id=$1").bind(asr_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(original_asr, after_asr);
+    sqlx::query("DELETE FROM videos WHERE id=$1")
+        .bind(video_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
 }

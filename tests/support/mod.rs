@@ -457,6 +457,19 @@ fn non_empty(field: &str, value: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn immutable_revision(field: &str, value: &str) -> Result<(), String> {
+    non_empty(field, value)?;
+    let prefixed = ["sha256:", "git:", "commit:"]
+        .iter()
+        .any(|prefix| value.starts_with(prefix) && value.len() > prefix.len());
+    let hex = matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit());
+    if prefixed || hex {
+        Ok(())
+    } else {
+        Err(format!("{field} must be immutable"))
+    }
+}
+
 /// Parses and validates a `belief_evidence_interchange@1` batch like belief-lab's importer.
 pub fn validate_belief_batch(json: &str) -> Result<BeliefBatch, String> {
     let batch: BeliefBatch =
@@ -468,7 +481,7 @@ pub fn validate_belief_batch(json: &str) -> Result<BeliefBatch, String> {
         ));
     }
     non_empty("exporter.name", &batch.exporter.name)?;
-    non_empty("exporter.revision", &batch.exporter.revision)?;
+    immutable_revision("exporter.revision", &batch.exporter.revision)?;
     non_empty("revision", &batch.revision)?;
 
     let mut parents = BTreeMap::<String, BTreeSet<String>>::new();
@@ -492,9 +505,9 @@ pub fn validate_belief_batch(json: &str) -> Result<BeliefBatch, String> {
         non_empty("source.repository", &evidence.source.repository)?;
         non_empty("source.scopeId", &evidence.source.scope_id)?;
         non_empty("source.recordId", &evidence.source.record_id)?;
-        non_empty("source.revision", &evidence.source.revision)?;
+        immutable_revision("source.revision", &evidence.source.revision)?;
         non_empty("producer.name", &evidence.producer.name)?;
-        non_empty("producer.revision", &evidence.producer.revision)?;
+        immutable_revision("producer.revision", &evidence.producer.revision)?;
         if let Some(model) = &evidence.producer.model {
             non_empty("producer.model", model)?;
         }
@@ -789,7 +802,11 @@ pub fn assert_belief_rules(json: &str, snapshot: &Value) {
         );
         assert_eq!(
             evidence.producer.revision,
-            stream["processorVersion"].as_str().unwrap()
+            stream
+                .get("processorRevision")
+                .unwrap_or(&stream["processorVersion"])
+                .as_str()
+                .unwrap()
         );
         assert_eq!(evidence.producer.model, None);
         assert_eq!(

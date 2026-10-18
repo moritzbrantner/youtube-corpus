@@ -81,6 +81,8 @@ pub struct ExportTranscriptStream {
     pub full_text: Option<String>,
     pub processor: String,
     pub processor_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub processor_revision: Option<String>,
     #[serde(default)]
     pub processing_config_hash: Option<String>,
     pub segments: Vec<ExportTranscriptSegment>,
@@ -826,9 +828,19 @@ pub fn export_belief_evidence(
 ) -> anyhow::Result<String> {
     let ordered = order_snapshot(snapshot, exporter_revision, "exporter", false)?;
 
+    require_immutable_revision("exporter.revision", exporter_revision)?;
     let mut evidence = Vec::new();
     for ordered_stream in &ordered.streams {
         let stream = ordered_stream.stream;
+        let producer_revision = stream
+            .processor_revision
+            .as_deref()
+            .unwrap_or(&stream.processor_version);
+        if !ordered_stream.segments.is_empty() {
+            require_immutable_revision("producer.revision", producer_revision).with_context(|| format!(
+                "transcript stream {} (processor {}, release {}) has no recorded immutable processor identity; re-ingest/re-segment it or restore its original processor receipt; changing the exporter revision cannot recover historical provenance",
+                stream.id, stream.processor, stream.processor_version))?;
+        }
         for segment in &ordered_stream.segments {
             let revision = sha256_prefixed(&canonical_json(&segment_revision_material(segment))?);
             evidence.push(BeliefEvidence {
@@ -843,7 +855,7 @@ pub fn export_belief_evidence(
                 },
                 producer: BeliefProducer {
                     name: stream.processor.clone(),
-                    revision: stream.processor_version.clone(),
+                    revision: producer_revision.to_string(),
                     config_hash: stream.processing_config_hash.clone(),
                 },
             });
@@ -863,6 +875,18 @@ pub fn export_belief_evidence(
         evidence,
     };
     Ok(format!("{}\n", serde_json::to_string_pretty(&batch)?))
+}
+
+fn require_immutable_revision(field: &str, value: &str) -> anyhow::Result<()> {
+    let prefixed = ["sha256:", "git:", "commit:"]
+        .iter()
+        .any(|prefix| value.starts_with(prefix) && value.len() > prefix.len());
+    let hex = matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit());
+    anyhow::ensure!(
+        prefixed || hex,
+        "{field} must be an immutable revision, got {value:?}"
+    );
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -923,7 +947,7 @@ pub async fn load_export_snapshot(
     let stream_ids = segments_by_stream.keys().copied().collect::<Vec<_>>();
     let stream_rows = sqlx::query(
         "SELECT st.id, st.video_id, st.source_kind, st.language, st.full_text,
-                st.processor, st.processor_version, st.processing_config
+                st.processor, st.processor_version, st.processor_revision, st.processing_config
          FROM transcript_streams st
          WHERE st.id = ANY($1)
          ORDER BY st.id",
@@ -958,6 +982,7 @@ pub async fn load_export_snapshot(
             full_text: row.try_get("full_text")?,
             processor: row.try_get("processor")?,
             processor_version: row.try_get("processor_version")?,
+            processor_revision: row.try_get("processor_revision")?,
             processing_config_hash: Some(sha256_prefixed(&canonical_json(&processing_config)?)),
             segments,
         });
@@ -1150,6 +1175,7 @@ mod tests {
                 full_text: None,
                 processor: "youtube-corpus".to_string(),
                 processor_version: "0.1.0".to_string(),
+                processor_revision: None,
                 processing_config_hash: None,
                 segments: vec![segment(0, None), segment(1, Some(other_video))],
             }],

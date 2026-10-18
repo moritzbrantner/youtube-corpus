@@ -5,7 +5,7 @@
     "name": "youtube-corpus",
     "revision": "git:fixture"
   },
-  "revision": "sha256:07169578094fbb6bfcf294a31d830f21c4c37769165f8dbbf29a3fdecef1bf3f",
+  "revision": "sha256:0cf7dd698939b8e56c4eae13e4232f8e442db0c41931e78bd920985d13d5b824",
   "evidence": [
     {
       "id": "evidence:youtube-corpus:transcript-segment:5e000000-0000-4000-8000-0000000000a0",
@@ -19,7 +19,7 @@
       },
       "producer": {
         "name": "youtube-corpus",
-        "revision": "0.1.0",
+        "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1",
         "configHash": "sha256:207bcd6a13c7cb90532afab33aa2aa531e38ace35e7fbcfc544ffb5ab1850ae6"
       }
     },
@@ -35,7 +35,7 @@
       },
       "producer": {
         "name": "youtube-corpus",
-        "revision": "0.1.0",
+        "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1",
         "configHash": "sha256:207bcd6a13c7cb90532afab33aa2aa531e38ace35e7fbcfc544ffb5ab1850ae6"
       }
     },
@@ -51,7 +51,7 @@
       },
       "producer": {
         "name": "youtube-corpus",
-        "revision": "0.1.0"
+        "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1"
       }
     },
     {
@@ -66,7 +66,7 @@
       },
       "producer": {
         "name": "youtube-corpus",
-        "revision": "0.1.0"
+        "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1"
       }
     },
     {
@@ -81,7 +81,7 @@
       },
       "producer": {
         "name": "youtube-corpus",
-        "revision": "0.1.0"
+        "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1"
       }
     },
     {
@@ -96,7 +96,7 @@
       },
       "producer": {
         "name": "youtube-corpus",
-        "revision": "0.1.0"
+        "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1"
       }
     },
     {
@@ -111,7 +111,7 @@
       },
       "producer": {
         "name": "youtube-corpus",
-        "revision": "0.1.0"
+        "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1"
       }
     }
   ]

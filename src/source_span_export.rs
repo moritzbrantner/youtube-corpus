@@ -421,6 +421,7 @@ mod tests {
                 full_text: Some("First claim. Second claim.".to_string()),
                 processor: "youtube-corpus".to_string(),
                 processor_version: "0.1.0".to_string(),
+                processor_revision: None,
                 processing_config_hash: None,
                 segments,
             }],
