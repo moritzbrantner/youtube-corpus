@@ -26,7 +26,7 @@ use crate::reprocessing::{ReprocessReport, ReprocessRequest, ReprocessStage};
 use crate::search::{SearchReport, SearchRequest};
 use crate::subscriptions::{
     add_subscription, check_subscriptions, AddSubscriptionRequest, CheckSubscriptionsReport,
-    CheckSubscriptionsRequest, SubscriptionSourceKind,
+    CheckSubscriptionsRequest, PendingItem, ProcessingPolicy, SubscriptionSourceKind,
 };
 
 #[derive(Clone)]
@@ -54,6 +54,18 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
         .route(
             "/api/corpora/{corpus_id}/sources/{source_id}/enabled",
             post(set_source_enabled),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/sources/{source_id}/policy",
+            post(set_source_policy),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/sources/{source_id}/pending",
+            get(list_source_pending),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/sources/{source_id}/pending/approve",
+            post(approve_source_pending),
         )
         .route(
             "/api/corpora/{corpus_id}/labels",
@@ -141,6 +153,7 @@ struct AddCorpusSourceInput {
     transcriber_args: Option<Vec<String>>,
     transcriber_timeout_seconds: Option<u64>,
     max_items: Option<u64>,
+    processing_policy: Option<ProcessingPolicy>,
 }
 
 #[derive(Debug, Serialize)]
@@ -361,6 +374,7 @@ async fn add_source(
             title_excludes: Vec::new(),
             duration_min: None,
             duration_max: None,
+            processing_policy: input.processing_policy.unwrap_or_default(),
             migrate: false,
         })
         .await
@@ -470,6 +484,85 @@ async fn set_source_enabled(
         .await
         .map_err(map_corpus_error)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+struct SetSourcePolicyInput {
+    policy: ProcessingPolicy,
+}
+
+async fn require_source(
+    pool: &sqlx::PgPool,
+    corpus_id: Uuid,
+    source_id: Uuid,
+) -> Result<(), ResearchError> {
+    if crate::corpora::source_belongs_to_corpus(pool, corpus_id, source_id)
+        .await
+        .map_err(ResearchError::internal)?
+    {
+        Ok(())
+    } else {
+        Err(ResearchError::not_found(
+            "Source is not part of this corpus.",
+        ))
+    }
+}
+
+async fn set_source_policy(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, source_id)): AxumPath<(Uuid, Uuid)>,
+    Json(input): Json<SetSourcePolicyInput>,
+) -> Result<StatusCode, ResearchError> {
+    let pool = pool(&state).await?;
+    require_source(&pool, corpus_id, source_id).await?;
+    crate::subscriptions::set_processing_policy(&pool, source_id, input.policy)
+        .await
+        .map_err(ResearchError::internal)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_source_pending(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, source_id)): AxumPath<(Uuid, Uuid)>,
+) -> Result<Json<Vec<PendingItem>>, ResearchError> {
+    let pool = pool(&state).await?;
+    require_source(&pool, corpus_id, source_id).await?;
+    crate::subscriptions::list_pending_items(&pool, source_id)
+        .await
+        .map(Json)
+        .map_err(ResearchError::internal)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApprovePendingInput {
+    source_urls: Vec<String>,
+}
+
+async fn approve_source_pending(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, source_id)): AxumPath<(Uuid, Uuid)>,
+    Json(input): Json<ApprovePendingInput>,
+) -> Result<Json<IngestReport>, ResearchError> {
+    if input.source_urls.is_empty() {
+        return Err(ResearchError::bad_request("Select at least one video."));
+    }
+    let pool = pool(&state).await?;
+    require_source(&pool, corpus_id, source_id).await?;
+    crate::subscriptions::approve_pending_items(
+        &database_url(&state)?,
+        source_id,
+        &input.source_urls,
+    )
+    .await
+    .map(Json)
+    .map_err(|error| {
+        if error.to_string().contains("not awaiting review") {
+            ResearchError::bad_request(error.to_string())
+        } else {
+            ResearchError::internal(format!("{error:#}"))
+        }
+    })
 }
 
 async fn list_videos(

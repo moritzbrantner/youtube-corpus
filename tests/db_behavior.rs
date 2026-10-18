@@ -266,6 +266,7 @@ fn subscription_request(database_url: &str) -> AddSubscriptionRequest {
         title_excludes: Vec::new(),
         duration_min: None,
         duration_max: None,
+        processing_policy: Default::default(),
         migrate: false,
     }
 }

@@ -497,7 +497,7 @@ fn is_probable_youtube_video_id(value: &str) -> bool {
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
 }
 
-fn sanitize_id(value: &str) -> String {
+pub(crate) fn sanitize_id(value: &str) -> String {
     let mut sanitized = value
         .chars()
         .map(|ch| {

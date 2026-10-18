@@ -308,6 +308,9 @@ pub struct SubscribeArgs {
     pub duration_min: Option<f64>,
     #[arg(long)]
     pub duration_max: Option<f64>,
+    /// Analyze new videos automatically, or hold them for review first.
+    #[arg(long, value_enum, default_value_t = crate::subscriptions::ProcessingPolicy::Automatic)]
+    pub processing_policy: crate::subscriptions::ProcessingPolicy,
     #[arg(long)]
     pub disabled: bool,
     #[arg(long)]
@@ -361,6 +364,7 @@ impl SubscribeArgs {
             title_excludes: self.title_excludes,
             duration_min: self.duration_min,
             duration_max: self.duration_max,
+            processing_policy: self.processing_policy,
             migrate: self.migrate,
         })
     }

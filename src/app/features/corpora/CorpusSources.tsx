@@ -25,7 +25,11 @@ import { LabelAssignments, useCorpusLabels, useInvalidateLabels } from "./Corpus
 import {
   addCorpusSource,
   assignSourceLabel,
+  approveSourcePending,
   checkCorpusSource,
+  listSourcePending,
+  setSourcePolicy,
+  type ProcessingPolicy,
   removeSourceLabel,
   listCorpusSources,
   setCorpusSourceEnabled,
@@ -47,6 +51,7 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
   const [monitor, setMonitor] = React.useState(true);
   const [ingestNow, setIngestNow] = React.useState(true);
   const [asrEnabled, setAsrEnabled] = React.useState(false);
+  const [policy, setPolicy] = React.useState<ProcessingPolicy>("automatic");
 
   const sourcesQuery = useQuery({
     queryKey: corpusKeys.sources(corpusId),
@@ -122,6 +127,7 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
       autoCaptionsEnabled: true,
       asrEnabled,
       maxItems: Number.isFinite(parsedMaxItems) && parsedMaxItems > 0 ? parsedMaxItems : null,
+      processingPolicy: policy,
     });
   }
 
@@ -189,6 +195,17 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
               <Switch checked={ingestNow} onCheckedChange={setIngestNow} />
             </label>
             <label className="flex items-center justify-between gap-3">
+              <span className="text-sm font-medium">New videos</span>
+              <NativeSelect
+                aria-label="New video processing"
+                value={policy}
+                onChange={(event) => setPolicy(event.target.value as ProcessingPolicy)}
+              >
+                <option value="automatic">Analyze automatically</option>
+                <option value="review_first">Hold for review first</option>
+              </NativeSelect>
+            </label>
+            <label className="flex items-center justify-between gap-3">
               <span className="text-sm font-medium">Run ASR fallback</span>
               <Switch checked={asrEnabled} onCheckedChange={setAsrEnabled} />
             </label>
@@ -253,6 +270,9 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
                 <span>{source.itemsSeen} seen</span>
                 <span>{source.itemsIndexed} indexed</span>
                 {source.itemsFailed > 0 ? <span>{source.itemsFailed} failed</span> : null}
+                {source.itemsAwaitingReview > 0 ? (
+                  <span>{source.itemsAwaitingReview} awaiting review</span>
+                ) : null}
                 {source.lastCheckedAt ? (
                   <span>checked {formatDate(source.lastCheckedAt)}</span>
                 ) : null}
@@ -272,6 +292,13 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
                 onRemove={(labelId) =>
                   labelMutation.mutate({ sourceId: source.id, labelId, assigned: false })
                 }
+              />
+              <SourceReview
+                corpusId={corpusId}
+                sourceId={source.id}
+                policy={source.processingPolicy}
+                awaiting={source.itemsAwaitingReview}
+                onChanged={invalidateCorpus}
               />
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <label className="flex items-center gap-2 text-sm">
@@ -304,6 +331,126 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
         </div>
       </SurfaceContent>
     </Surface>
+  );
+}
+
+/** Automatic / review-first policy and the approval queue of one source (Atlas 1.6, 1.8). */
+function SourceReview({
+  corpusId,
+  sourceId,
+  policy,
+  awaiting,
+  onChanged,
+}: {
+  corpusId: string;
+  sourceId: string;
+  policy: ProcessingPolicy;
+  awaiting: number;
+  onChanged: () => Promise<void>;
+}) {
+  const [selected, setSelected] = React.useState<string[]>([]);
+  const pendingQuery = useQuery({
+    queryKey: ["corpora", corpusId, "sources", sourceId, "pending"],
+    queryFn: () => listSourcePending(corpusId, sourceId),
+    enabled: awaiting > 0,
+  });
+  const policyMutation = useMutation({
+    mutationFn: (next: ProcessingPolicy) => setSourcePolicy(corpusId, sourceId, next),
+    onSuccess: onChanged,
+  });
+  const approveMutation = useMutation({
+    mutationFn: (urls: string[]) => approveSourcePending(corpusId, sourceId, urls),
+    onSuccess: async () => {
+      setSelected([]);
+      await Promise.all([onChanged(), pendingQuery.refetch()]);
+    },
+  });
+  const pending = pendingQuery.data ?? [];
+  return (
+    <div className="grid gap-2">
+      <label className="flex flex-wrap items-center gap-2 text-sm">
+        New videos
+        <NativeSelect
+          aria-label="Processing policy"
+          value={policy}
+          disabled={policyMutation.isPending}
+          onChange={(event) => policyMutation.mutate(event.target.value as ProcessingPolicy)}
+        >
+          <option value="automatic">Analyze automatically</option>
+          <option value="review_first">Hold for review first</option>
+        </NativeSelect>
+      </label>
+      {policy === "review_first" ? (
+        <p className="text-xs text-muted-foreground">
+          Videos also tracked by an automatic source are analyzed anyway.
+        </p>
+      ) : null}
+      {pending.length > 0 ? (
+        <div
+          className="grid gap-2 rounded-md border border-border p-3"
+          aria-label="Awaiting review"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium">Awaiting review</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                setSelected(
+                  selected.length === pending.length ? [] : pending.map((item) => item.sourceUrl),
+                )
+              }
+            >
+              {selected.length === pending.length ? "Clear" : "Select all"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={selected.length === 0 || approveMutation.isPending}
+              onClick={() => approveMutation.mutate(selected)}
+            >
+              {approveMutation.isPending ? "Analyzing..." : `Approve ${selected.length}`}
+            </Button>
+          </div>
+          <ul className="grid gap-1 text-sm">
+            {pending.map((item) => (
+              <li key={item.sourceUrl} className="flex flex-wrap items-center gap-2">
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${item.title ?? item.sourceUrl}`}
+                  checked={selected.includes(item.sourceUrl)}
+                  onChange={(event) =>
+                    setSelected(
+                      event.target.checked
+                        ? [...selected, item.sourceUrl]
+                        : selected.filter((url) => url !== item.sourceUrl),
+                    )
+                  }
+                />
+                <a className="underline" href={item.sourceUrl} target="_blank" rel="noreferrer">
+                  {item.title ?? item.sourceUrl}
+                </a>
+                <span className="text-xs text-muted-foreground">
+                  {[
+                    item.channel,
+                    item.uploadDate,
+                    item.durationSeconds ? `${Math.round(item.durationSeconds / 60)} min` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {policyMutation.error || approveMutation.error || pendingQuery.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {String(policyMutation.error ?? approveMutation.error ?? pendingQuery.error)}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

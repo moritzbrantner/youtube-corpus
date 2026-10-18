@@ -36,6 +36,35 @@ impl SubscriptionSourceKind {
     }
 }
 
+/// Whether newly discovered videos are analyzed right away or held for review (Atlas 1.6).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ValueEnum)]
+#[serde(rename_all = "snake_case")]
+pub enum ProcessingPolicy {
+    #[default]
+    Automatic,
+    ReviewFirst,
+}
+
+impl ProcessingPolicy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Automatic => "automatic",
+            Self::ReviewFirst => "review_first",
+        }
+    }
+
+    pub fn parse(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "automatic" => Ok(Self::Automatic),
+            "review_first" => Ok(Self::ReviewFirst),
+            other => anyhow::bail!("unknown processing policy `{other}`"),
+        }
+    }
+}
+
+/// Item status of a review-first discovery that waits for approval.
+pub const AWAITING_REVIEW: &str = "awaiting_review";
+
 #[derive(Debug, Clone)]
 pub struct AddSubscriptionRequest {
     pub database_url: String,
@@ -55,6 +84,7 @@ pub struct AddSubscriptionRequest {
     pub title_excludes: Vec<String>,
     pub duration_min: Option<f64>,
     pub duration_max: Option<f64>,
+    pub processing_policy: ProcessingPolicy,
     pub migrate: bool,
 }
 
@@ -86,6 +116,7 @@ pub struct Subscription {
     pub title_excludes: Vec<String>,
     pub duration_min: Option<f64>,
     pub duration_max: Option<f64>,
+    pub processing_policy: ProcessingPolicy,
     pub last_checked_at: Option<DateTime<Utc>>,
     pub last_ingested_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -113,6 +144,9 @@ pub struct SubscriptionCheckReport {
     pub new_videos: u64,
     pub videos_indexed: u64,
     pub segments_indexed: u64,
+    /// Newly held for review by this check (review-first sources).
+    #[serde(default)]
+    pub awaiting_review: u64,
     pub ingest: Option<IngestReport>,
     pub message: Option<String>,
 }
@@ -184,8 +218,9 @@ pub async fn add_subscription(request: AddSubscriptionRequest) -> anyhow::Result
         "INSERT INTO corpus_subscriptions
          (id, source_kind, source_url, name, enabled, work_dir, caption, yt_dlp,
           asr_enabled, transcriber_command, transcriber_args, transcriber_timeout_seconds,
-          max_items, title_contains, title_excludes, duration_min, duration_max)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+          max_items, title_contains, title_excludes, duration_min, duration_max,
+          processing_policy)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
          ON CONFLICT (source_url) DO UPDATE SET
            source_kind = EXCLUDED.source_kind,
            name = EXCLUDED.name,
@@ -202,6 +237,7 @@ pub async fn add_subscription(request: AddSubscriptionRequest) -> anyhow::Result
            title_excludes = EXCLUDED.title_excludes,
            duration_min = EXCLUDED.duration_min,
            duration_max = EXCLUDED.duration_max,
+           processing_policy = EXCLUDED.processing_policy,
            updated_at = now()",
     )
     .bind(id)
@@ -225,6 +261,7 @@ pub async fn add_subscription(request: AddSubscriptionRequest) -> anyhow::Result
     .bind(&request.title_excludes)
     .bind(request.duration_min)
     .bind(request.duration_max)
+    .bind(request.processing_policy.as_str())
     .execute(&pool)
     .await?;
 
@@ -271,6 +308,7 @@ pub async fn check_subscriptions(
                     new_videos: 0,
                     videos_indexed: 0,
                     segments_indexed: 0,
+                    awaiting_review: 0,
                     ingest: None,
                     message: Some(error.to_string()),
                 }
@@ -313,7 +351,10 @@ async fn check_subscription(
         if status.is_none() {
             new_videos += 1;
         }
-        if should_ingest_status(status.as_deref()) {
+        // A source switched to automatic admits what it previously held for review.
+        let released = status.as_deref() == Some(AWAITING_REVIEW)
+            && subscription.processing_policy == ProcessingPolicy::Automatic;
+        if released || should_ingest_status(status.as_deref()) {
             if crate::youtube::filter_item(
                 item,
                 &subscription.title_contains,
@@ -329,13 +370,35 @@ async fn check_subscription(
         }
     }
 
+    let mut admitted = Vec::new();
+    let mut awaiting_review = 0;
+    for item in new_items {
+        match admit_item(pool, subscription, &item).await? {
+            Admission::Process => admitted.push(item),
+            Admission::AlreadyProcessed(status) => {
+                mark_subscription_item_status(pool, subscription.id, &item.source_url, &status)
+                    .await?;
+            }
+            Admission::AwaitReview => {
+                mark_subscription_item_status(
+                    pool,
+                    subscription.id,
+                    &item.source_url,
+                    AWAITING_REVIEW,
+                )
+                .await?;
+                awaiting_review += 1;
+            }
+        }
+    }
+
     let mut ingest = None;
     let mut videos_indexed = 0;
     let mut segments_indexed = 0;
-    if !new_items.is_empty() {
+    if !admitted.is_empty() {
         let report = ingest_video_items(
             subscription.to_ingest_request(database_url.to_string()),
-            new_items,
+            admitted,
         )
         .await?;
         videos_indexed = report.videos_indexed;
@@ -352,9 +415,17 @@ async fn check_subscription(
         new_videos,
         videos_indexed,
         segments_indexed,
+        awaiting_review,
         ingest,
         message: None,
     })
+}
+
+pub async fn get_subscription(pool: &PgPool, id: Uuid) -> anyhow::Result<Option<Subscription>> {
+    Ok(load_subscriptions(pool, Some(id), true)
+        .await?
+        .into_iter()
+        .next())
 }
 
 async fn load_subscriptions(
@@ -399,7 +470,7 @@ fn subscription_select_sql(where_clause: &'static str) -> String {
         "SELECT id, source_kind, source_url, name, enabled, work_dir, caption, asr_enabled,
           yt_dlp, transcriber_command, transcriber_args, transcriber_timeout_seconds,
           max_items, title_contains, title_excludes,
-          duration_min, duration_max, last_checked_at, last_ingested_at, created_at, updated_at
+          duration_min, duration_max, processing_policy, last_checked_at, last_ingested_at, created_at, updated_at
          FROM corpus_subscriptions
          {where_clause}
          ORDER BY created_at, source_url"
@@ -432,6 +503,9 @@ fn subscription_from_row(row: PgRow) -> anyhow::Result<Subscription> {
         title_excludes: row.try_get("title_excludes")?,
         duration_min: row.try_get("duration_min")?,
         duration_max: row.try_get("duration_max")?,
+        processing_policy: ProcessingPolicy::parse(
+            &row.try_get::<String, _>("processing_policy")?,
+        )?,
         last_checked_at: row.try_get("last_checked_at")?,
         last_ingested_at: row.try_get("last_ingested_at")?,
         created_at: row.try_get("created_at")?,
@@ -548,8 +622,195 @@ async fn update_ingested_items(
         .bind(&item.status)
         .execute(pool)
         .await?;
+        settle_pending_elsewhere(pool, subscription_id, &item.source_url, &item.status).await?;
     }
     Ok(())
+}
+
+/// Decision 1.8: once a video is processed through one source, it no longer waits for
+/// approval in any other source.
+pub async fn settle_pending_elsewhere(
+    pool: &PgPool,
+    subscription_id: Uuid,
+    source_url: &str,
+    status: &str,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE corpus_subscription_items o
+         SET status = $2, last_seen_at = now()
+         FROM corpus_subscription_items i
+         WHERE i.subscription_id = $1 AND i.source_url = $3
+           AND o.status = 'awaiting_review'
+           AND (o.source_url = i.source_url
+                OR (i.youtube_id IS NOT NULL AND o.youtube_id = i.youtube_id))",
+    )
+    .bind(subscription_id)
+    .bind(status)
+    .bind(source_url)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// What a source check does with one newly discovered, unfiltered item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Admission {
+    /// Analyze now (automatic source, or another automatic source applies).
+    Process,
+    /// The video was already processed through another source; record that status.
+    AlreadyProcessed(String),
+    /// Hold for explicit approval.
+    AwaitReview,
+}
+
+/// Admission under Decisions 1.6 and 1.8: review-first holds a video only if no applicable
+/// enabled source requests automatic processing, and never re-processes finished work.
+pub async fn admit_item(
+    pool: &PgPool,
+    subscription: &Subscription,
+    item: &VideoItem,
+) -> anyhow::Result<Admission> {
+    let processed = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM corpus_subscription_items
+         WHERE subscription_id <> $1
+           AND (source_url = $2 OR ($3::text IS NOT NULL AND youtube_id = $3))
+           AND status IN ('indexed', 'skipped')
+         ORDER BY ingested_at DESC NULLS LAST
+         LIMIT 1",
+    )
+    .bind(subscription.id)
+    .bind(&item.source_url)
+    .bind(&item.youtube_id)
+    .fetch_optional(pool)
+    .await?;
+    if let Some(status) = processed {
+        return Ok(Admission::AlreadyProcessed(status));
+    }
+    if subscription.processing_policy == ProcessingPolicy::Automatic {
+        return Ok(Admission::Process);
+    }
+    let automatic_elsewhere = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS(
+           SELECT 1 FROM corpus_subscription_items i
+           JOIN corpus_subscriptions s ON s.id = i.subscription_id
+           WHERE i.subscription_id <> $1 AND s.enabled
+             AND s.processing_policy = 'automatic'
+             AND (i.source_url = $2 OR ($3::text IS NOT NULL AND i.youtube_id = $3)))",
+    )
+    .bind(subscription.id)
+    .bind(&item.source_url)
+    .bind(&item.youtube_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(if automatic_elsewhere {
+        Admission::Process
+    } else {
+        Admission::AwaitReview
+    })
+}
+
+pub async fn set_processing_policy(
+    pool: &PgPool,
+    subscription_id: Uuid,
+    policy: ProcessingPolicy,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "UPDATE corpus_subscriptions SET processing_policy = $2, updated_at = now() WHERE id = $1",
+    )
+    .bind(subscription_id)
+    .bind(policy.as_str())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// A discovered video of a review-first source that waits for approval.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PendingItem {
+    pub source_url: String,
+    pub youtube_id: Option<String>,
+    pub title: Option<String>,
+    pub channel: Option<String>,
+    pub duration_seconds: Option<f64>,
+    pub upload_date: Option<String>,
+    pub first_seen_at: DateTime<Utc>,
+}
+
+pub async fn list_pending_items(
+    pool: &PgPool,
+    subscription_id: Uuid,
+) -> anyhow::Result<Vec<PendingItem>> {
+    let rows = sqlx::query(
+        "SELECT source_url, youtube_id, title, channel, duration_seconds, upload_date,
+                first_seen_at
+         FROM corpus_subscription_items
+         WHERE subscription_id = $1 AND status = 'awaiting_review'
+         ORDER BY upload_date DESC NULLS LAST, first_seen_at DESC",
+    )
+    .bind(subscription_id)
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(PendingItem {
+                source_url: row.try_get("source_url")?,
+                youtube_id: row.try_get("youtube_id")?,
+                title: row.try_get("title")?,
+                channel: row.try_get("channel")?,
+                duration_seconds: row.try_get("duration_seconds")?,
+                upload_date: row.try_get("upload_date")?,
+                first_seen_at: row.try_get("first_seen_at")?,
+            })
+        })
+        .collect()
+}
+
+/// Approves pending items of a source and processes them with the source's ingest settings.
+pub async fn approve_pending_items(
+    database_url: &str,
+    subscription_id: Uuid,
+    source_urls: &[String],
+) -> anyhow::Result<IngestReport> {
+    let pool = crate::db::connect(database_url).await?;
+    let subscription = get_subscription(&pool, subscription_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("source not found"))?;
+    let rows = sqlx::query(
+        "SELECT source_url, youtube_id, title, duration_seconds, upload_date, metadata
+         FROM corpus_subscription_items
+         WHERE subscription_id = $1 AND status = 'awaiting_review' AND source_url = ANY($2)",
+    )
+    .bind(subscription_id)
+    .bind(source_urls)
+    .fetch_all(&pool)
+    .await?;
+    if rows.len() != source_urls.len() {
+        anyhow::bail!("some videos are not awaiting review for this source");
+    }
+    let mut items = Vec::new();
+    for row in rows {
+        let source_url: String = row.try_get("source_url")?;
+        let youtube_id: Option<String> = row.try_get("youtube_id")?;
+        let metadata: serde_json::Value = row.try_get("metadata")?;
+        items.push(VideoItem {
+            item_id: crate::youtube::sanitize_id(youtube_id.as_deref().unwrap_or(&source_url)),
+            youtube_id,
+            title: row.try_get("title")?,
+            source_url,
+            duration_seconds: row.try_get("duration_seconds")?,
+            upload_date: row.try_get("upload_date")?,
+            metadata: serde_json::from_value(metadata).unwrap_or_default(),
+            local_video_path: None,
+        });
+    }
+    let report = ingest_video_items(
+        subscription.to_ingest_request(database_url.to_string()),
+        items,
+    )
+    .await?;
+    update_ingested_items(&pool, subscription_id, &report).await?;
+    Ok(report)
 }
 
 async fn mark_checked(pool: &PgPool, subscription_id: Uuid, ingested: bool) -> anyhow::Result<()> {

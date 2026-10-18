@@ -203,6 +203,17 @@ pub fn package_surface() -> PackageSurface {
                 }),
             ),
             surface_operation(
+                "corpus.collections.sources.review",
+                "Review-first source policy",
+                "Sets a tracked source to analyze new videos automatically (default) or hold them for review, lists videos awaiting review, and approves a selection for analysis. A video also tracked by an automatic source is analyzed without approval.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "sourceId": "00000000-0000-0000-0000-000000000000",
+                    "policy": "review_first",
+                    "sourceUrls": ["https://www.youtube.com/watch?v=..."]
+                }),
+            ),
+            surface_operation(
                 "corpus.detectors.profiles",
                 "Edit detector profiles",
                 "Reads or replaces the corpus default detector selection and per-source on/off overrides; unavailable detectors explain why.",
