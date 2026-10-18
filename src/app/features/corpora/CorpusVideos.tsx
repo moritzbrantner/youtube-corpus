@@ -37,6 +37,7 @@ import {
   type ReprocessStage,
   type TranscriptQuality,
 } from "./api";
+import { VideoProcessing } from "./VideoProcessing";
 import { corpusKeys } from "./query-keys";
 
 type CorpusVideosProps = {
@@ -294,6 +295,7 @@ function CorpusVideoRow({ corpusId, video, labels, quality }: CorpusVideoRowProp
         </span>
       </div>
 
+      <VideoProcessing corpusId={corpusId} videoId={video.id} />
       <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
         <NativeSelect
           aria-label={`Reprocess ${video.title ?? video.sourceUrl}`}

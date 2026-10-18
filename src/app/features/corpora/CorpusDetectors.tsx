@@ -274,6 +274,13 @@ function VideoPlan({ corpusId, detectors }: { corpusId: string; detectors: Detec
   });
   const runMutation = useMutation({
     mutationFn: () => runVideoDetectorPlan(corpusId, videoId, refresh),
+    onSettled: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: corpusKeys.detectorPlan(corpusId, videoId) }),
+        queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "videos"] }),
+        queryClient.invalidateQueries({ queryKey: corpusKeys.quality(corpusId) }),
+      ]);
+    },
   });
 
   const plan = planQuery.data

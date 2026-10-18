@@ -492,6 +492,7 @@ pub enum StageOutcome {
     /// Matching output already existed, so nothing ran.
     Reused,
     Completed,
+    Skipped,
     Failed,
     Unavailable,
 }
@@ -521,6 +522,8 @@ pub struct PlanRunRequest {
     pub model_dir: PathBuf,
     /// Re-run stages even when matching output exists.
     pub refresh: bool,
+    /// Retry only these enabled detectors; None runs the entire effective plan.
+    pub detectors: Option<Vec<String>>,
 }
 
 /// Runs every enabled detector of a video's effective plan, reusing existing output of the
@@ -529,8 +532,38 @@ pub struct PlanRunRequest {
 pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, DetectorError> {
     let pool = crate::db::connect(&request.database_url).await?;
     let plan = video_plan(&pool, request.corpus_id, request.video_id).await?;
+    if let Some(selected) = &request.detectors {
+        for id in selected {
+            if !plan
+                .detectors
+                .iter()
+                .any(|p| &p.detector == id && p.enabled)
+            {
+                return Err(DetectorError::Invalid(format!(
+                    "detector {id} is unknown or disabled"
+                )));
+            }
+        }
+    }
+    let status =
+        crate::detector_status::video_status(&pool, request.corpus_id, request.video_id).await?;
+    if status
+        .stages
+        .iter()
+        .any(|s| matches!(s.state, crate::detector_status::StageState::AwaitingReview))
+    {
+        return Err(DetectorError::Invalid(
+            "Approve this video in its source before running detectors.".to_string(),
+        ));
+    }
     let mut stages = Vec::new();
-    for planned in plan.detectors.iter().filter(|planned| planned.enabled) {
+    for planned in plan.detectors.iter().filter(|planned| {
+        planned.enabled
+            && request
+                .detectors
+                .as_ref()
+                .is_none_or(|selected| selected.contains(&planned.detector))
+    }) {
         let detector = planned.detector.as_str();
         if !planned.available {
             stages.push(StageReport {
@@ -540,16 +573,24 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
             });
             continue;
         }
-        let report = match existing_output(&pool, request.video_id, detector).await {
-            Ok(true) if !request.refresh => StageReport {
+        let failed = status.stages.iter().any(|s| {
+            s.detector == detector
+                && matches!(
+                    s.state,
+                    crate::detector_status::StageState::Failed
+                        | crate::detector_status::StageState::Interrupted
+                )
+        });
+        let report = match existing_output(&pool, &request, detector).await {
+            Ok(true) if !request.refresh && !failed => StageReport {
                 detector: detector.to_string(),
                 outcome: StageOutcome::Reused,
                 message: None,
             },
             Ok(_) => match run_stage(&pool, &request, detector).await {
-                Ok(message) => StageReport {
+                Ok((outcome, message)) => StageReport {
                     detector: detector.to_string(),
-                    outcome: StageOutcome::Completed,
+                    outcome,
                     message,
                 },
                 Err(error) => StageReport {
@@ -572,71 +613,271 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
     })
 }
 
-async fn existing_output(pool: &PgPool, video_id: Uuid, detector: &str) -> anyhow::Result<bool> {
-    let sql = match detector {
-        "captions" => {
-            "SELECT EXISTS(SELECT 1 FROM transcript_streams s
-               WHERE s.video_id = $1 AND s.source_kind IN ('caption_manual', 'caption_auto')
-                 AND EXISTS (SELECT 1 FROM transcript_segments t WHERE t.stream_id = s.id))"
+async fn existing_output(
+    pool: &PgPool,
+    request: &PlanRunRequest,
+    detector: &str,
+) -> anyhow::Result<bool> {
+    match detector {
+        "captions" | "asr" => {
+            let reprocess = stage_request(pool, request, detector).await?;
+            let config = if detector == "captions" {
+                serde_json::json!({ "enabled": true, "include_auto_captions": true, "languages": reprocess.caption_languages })
+            } else {
+                serde_json::json!({ "command": reprocess.transcriber_command, "args": reprocess.transcriber_args,
+                    "timeoutSeconds": reprocess.transcriber_timeout_seconds })
+            };
+            let field = if detector == "captions" {
+                "caption"
+            } else {
+                "asr"
+            };
+            // Only reuse producer/config-identical outputs. The other modality's settings
+            // do not invalidate this one. Legacy output remains visible but is not assumed current.
+            let streams = sqlx::query(
+                "SELECT s.processing_config FROM transcript_streams s
+                WHERE s.video_id = $1 AND s.processor_revision = $2
+                  AND (($3 = 'captions' AND s.source_kind IN ('caption_manual', 'caption_auto'))
+                    OR ($3 = 'asr' AND s.source_kind = 'asr'))
+                  AND EXISTS(SELECT 1 FROM transcript_segments t WHERE t.stream_id = s.id)",
+            )
+            .bind(request.video_id)
+            .bind(crate::provenance::PROCESSOR_SOURCE_REVISION)
+            .bind(detector)
+            .fetch_all(pool)
+            .await?;
+            for row in streams {
+                let stored: serde_json::Value = row.try_get("processing_config")?;
+                let matching = if field == "caption" {
+                    stored.get(field) == Some(&config)
+                } else {
+                    stored.get("transcriberCommand") == config.get("command")
+                        && stored.get("transcriberArgs") == config.get("args")
+                        && stored.get("transcriberTimeoutSeconds") == config.get("timeoutSeconds")
+                };
+                if matching {
+                    if detector == "asr" {
+                        let media: Option<String> =
+                            sqlx::query_scalar("SELECT local_video_path FROM videos WHERE id = $1")
+                                .bind(request.video_id)
+                                .fetch_one(pool)
+                                .await?;
+                        if media.as_deref() != stored["input"]["path"].as_str() {
+                            continue;
+                        }
+                        let Some(command) = reprocess
+                            .transcriber_command
+                            .clone()
+                            .or_else(|| crate::asr::resolve_command("whisper"))
+                        else {
+                            continue;
+                        };
+                        let Ok(current) = crate::detector_status::file_identity(&command) else {
+                            continue;
+                        };
+                        if stored.get("transcriberExecutable") != Some(&current) {
+                            continue;
+                        }
+                    }
+                    if let Some(path) = stored["input"]["path"].as_str() {
+                        if let Ok(current) =
+                            crate::detector_status::file_identity(std::path::Path::new(path))
+                        {
+                            if stored.get("input") == Some(&current) {
+                                return Ok(true);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(false)
         }
-        "asr" => {
-            "SELECT EXISTS(SELECT 1 FROM transcript_streams s
-               WHERE s.video_id = $1 AND s.source_kind = 'asr'
-                 AND EXISTS (SELECT 1 FROM transcript_segments t WHERE t.stream_id = s.id))"
-        }
+        // The scene producer checks exact input/config provenance itself; do not skip it
+        // merely because an older run left scene rows behind.
         "scenes" => {
-            "SELECT EXISTS(SELECT 1 FROM media_processing_runs r
-               WHERE r.video_id = $1 AND r.modality = 'scene'
-                 AND EXISTS (SELECT 1 FROM video_scenes s WHERE s.run_id = r.id))"
+            crate::visual_processing::has_current_scene_output(pool, request.video_id).await
         }
         "entities" => {
-            "SELECT EXISTS(SELECT 1 FROM entity_extraction_runs r
-               WHERE r.video_id = $1 AND r.producer_version = $2)"
+            let identity = stage_identity(pool, request.video_id, detector).await?;
+            Ok(sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM detector_attempts
+                WHERE video_id = $1 AND detector = $2 AND identity = $3 AND state = 'completed')",
+            )
+            .bind(request.video_id)
+            .bind(detector)
+            .bind(identity)
+            .fetch_one(pool)
+            .await?)
         }
         _ => anyhow::bail!("detector {detector} has no runner"),
+    }
+}
+
+async fn stage_request(
+    pool: &PgPool,
+    request: &PlanRunRequest,
+    detector: &str,
+) -> anyhow::Result<crate::reprocessing::ReprocessRequest> {
+    use crate::reprocessing::{ReprocessRequest, ReprocessStage};
+    // A targeted retry uses the actual source's configured input settings, including an
+    // explicitly configured native-whisperx compatibility command. Conflicting ASR
+    // configurations cannot be silently resolved by choosing an arbitrary source.
+    let rows = sqlx::query("SELECT DISTINCT s.caption, s.transcriber_command, s.transcriber_args, s.transcriber_timeout_seconds
+        FROM corpus_subscriptions s JOIN corpus_subscription_items i ON i.subscription_id = s.id
+        JOIN videos v ON v.id = $1 AND (v.source_url = i.source_url OR (v.youtube_id IS NOT NULL AND i.youtube_id = v.youtube_id))")
+        .bind(request.video_id).fetch_all(pool).await?;
+    let mut languages = std::collections::BTreeSet::new();
+    let mut asr_configs = std::collections::BTreeSet::new();
+    for row in rows {
+        let caption: serde_json::Value = row.try_get("caption")?;
+        if let Some(values) = caption.get("languages").and_then(|v| v.as_array()) {
+            languages.extend(values.iter().filter_map(|v| v.as_str()).map(str::to_string));
+        }
+        let command: Option<String> = row.try_get("transcriber_command")?;
+        let args: Vec<String> = row.try_get("transcriber_args")?;
+        let timeout: Option<i64> = row.try_get("transcriber_timeout_seconds")?;
+        asr_configs.insert(serde_json::to_string(
+            &serde_json::json!({"command": command, "args": args, "timeout": timeout}),
+        )?);
+    }
+    anyhow::ensure!(detector != "asr" || asr_configs.len() <= 1,
+        "Multiple source ASR configurations request this video; configure a single compatibility provider before retrying (#73).");
+    let config: serde_json::Value = match asr_configs.into_iter().next() {
+        Some(value) => serde_json::from_str(&value)?,
+        None => serde_json::Value::Null,
     };
-    Ok(sqlx::query_scalar::<_, bool>(sql)
-        .bind(video_id)
-        .bind(crate::entities::ENTITY_PRODUCER_VERSION)
-        .fetch_one(pool)
-        .await?)
+    Ok(ReprocessRequest {
+        database_url: request.database_url.clone(),
+        video_id: request.video_id,
+        stage: if detector == "captions" {
+            ReprocessStage::Captions
+        } else {
+            ReprocessStage::Asr
+        },
+        work_dir: request.work_dir.clone(),
+        caption_languages: if languages.is_empty() {
+            vec!["en".to_string()]
+        } else {
+            languages.into_iter().collect()
+        },
+        yt_dlp: request.yt_dlp.clone(),
+        transcriber_command: config["command"].as_str().map(PathBuf::from),
+        transcriber_args: config["args"]
+            .as_array()
+            .map(|v| {
+                v.iter()
+                    .filter_map(|a| a.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        transcriber_timeout_seconds: config["timeout"].as_u64(),
+    })
+}
+
+async fn stage_identity(
+    pool: &PgPool,
+    video: Uuid,
+    detector: &str,
+) -> anyhow::Result<serde_json::Value> {
+    if detector == "scenes" {
+        let path: Option<String> =
+            sqlx::query_scalar("SELECT local_video_path FROM videos WHERE id = $1")
+                .bind(video)
+                .fetch_one(pool)
+                .await?;
+        let input = path
+            .as_deref()
+            .filter(|p| std::path::Path::new(p).is_file())
+            .map(|p| crate::detector_status::file_identity(std::path::Path::new(p)))
+            .transpose()?;
+        return Ok(serde_json::json!({ "detector": detector, "input": input,
+            "producerRevision": crate::visual_processing::VISUAL_ANALYSIS_SCENE_REVISION,
+            "model": "scenedetect-core:content", "threshold": 27.0, "minSceneLen": 15 }));
+    }
+    let stream = crate::entities::transcript_stream_for(pool, video).await?;
+    // Include source IDs, alignment and language, not just row counts/text. Replacing rows
+    // or choosing another preferred transcript must not reuse mentions of deleted evidence.
+    let input: String = sqlx::query_scalar(
+        "SELECT md5(coalesce(jsonb_agg(jsonb_build_array(id, text, start_seconds, end_seconds, language) ORDER BY id)::text, '[]'))
+        FROM (SELECT id, text, start_seconds, end_seconds, language FROM transcript_segments WHERE stream_id = $2
+            UNION ALL SELECT id, text, start_seconds, end_seconds, language FROM visual_text_tracks WHERE video_id = $1) evidence",
+    ).bind(video).bind(stream).fetch_one(pool).await?;
+    Ok(serde_json::json!({ "detector": detector, "input": input,
+        "producerRevision": crate::entities::ENTITY_PRODUCER_VERSION,
+        "model": "bert-base-NER", "minConfidence": crate::entities::MIN_ENTITY_CONFIDENCE }))
 }
 
 async fn run_stage(
     pool: &PgPool,
     request: &PlanRunRequest,
     detector: &str,
-) -> anyhow::Result<Option<String>> {
-    use crate::reprocessing::{reprocess_video, ReprocessRequest, ReprocessStage};
-    let reprocess = |stage| ReprocessRequest {
-        database_url: request.database_url.clone(),
-        video_id: request.video_id,
-        stage,
-        work_dir: request.work_dir.clone(),
-        caption_languages: vec!["en".to_string()],
-        yt_dlp: request.yt_dlp.clone(),
-        transcriber_command: None,
-        transcriber_args: Vec::new(),
-        transcriber_timeout_seconds: None,
+) -> anyhow::Result<(StageOutcome, Option<String>)> {
+    if matches!(detector, "captions" | "asr") {
+        return run_stage_inner(pool, request, detector).await;
+    }
+    let identity = stage_identity(pool, request.video_id, detector).await?;
+    let attempt =
+        crate::detector_status::Attempt::begin(pool, request.video_id, detector, &identity).await?;
+    let mut result = run_stage_inner(pool, request, detector).await;
+    if result.is_ok() && stage_identity(pool, request.video_id, detector).await? != identity {
+        result = Err(anyhow::anyhow!(
+            "{detector} input changed during processing; retry the stage"
+        ));
+    }
+    let (state, message) = match &result {
+        Ok((StageOutcome::Skipped, message)) => ("skipped", message.clone()),
+        Ok((_, message)) => ("completed", message.clone()),
+        Err(error) => ("failed", Some(format!("{error:#}"))),
     };
+    attempt.finish(pool, state, message.as_deref()).await?;
+    result
+}
+
+async fn run_stage_inner(
+    pool: &PgPool,
+    request: &PlanRunRequest,
+    detector: &str,
+) -> anyhow::Result<(StageOutcome, Option<String>)> {
+    use crate::reprocessing::reprocess_video;
     match detector {
         "captions" | "asr" => {
-            let stage = if detector == "captions" {
-                ReprocessStage::Captions
-            } else {
-                ReprocessStage::Asr
-            };
-            reprocess_video(reprocess(stage)).await?;
-            if !existing_output(pool, request.video_id, detector).await? {
+            reprocess_video(stage_request(pool, request, detector).await?).await?;
+            let status =
+                crate::detector_status::video_status(pool, request.corpus_id, request.video_id)
+                    .await?;
+            if let Some(failed) = status.stages.iter().find(|s| {
+                s.detector == detector
+                    && matches!(
+                        s.state,
+                        crate::detector_status::StageState::Failed
+                            | crate::detector_status::StageState::Skipped
+                            | crate::detector_status::StageState::Interrupted
+                    )
+            }) {
+                if matches!(failed.state, crate::detector_status::StageState::Skipped) {
+                    return Ok((StageOutcome::Skipped, failed.message.clone()));
+                }
+                anyhow::bail!(
+                    "{}",
+                    failed
+                        .message
+                        .as_deref()
+                        .unwrap_or("producer returned no evidence")
+                );
+            }
+            if crate::detector_status::output_count(pool, request.video_id, detector).await? == 0 {
                 anyhow::bail!("the producer finished without storing a {detector} transcript");
             }
-            Ok(None)
+            Ok((StageOutcome::Completed, None))
         }
         "scenes" => {
             let report =
                 crate::visual_processing::analyze_stored_video_scenes(pool, request.video_id)
                     .await?;
-            Ok(Some(format!("{} scenes", report.scenes.len())))
+            Ok((
+                StageOutcome::Completed,
+                Some(format!("{} scenes", report.scenes.len())),
+            ))
         }
         "entities" => {
             let report = crate::entities::extract_video_entities(
@@ -646,7 +887,10 @@ async fn run_stage(
                 true,
             )
             .await?;
-            Ok(Some(format!("{} mentions", report.mentions)))
+            Ok((
+                StageOutcome::Completed,
+                Some(format!("{} mentions", report.mentions)),
+            ))
         }
         _ => anyhow::bail!("detector {detector} has no runner"),
     }

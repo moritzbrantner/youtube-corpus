@@ -19,6 +19,8 @@ export const corpusKeys = {
   detectorProfiles: (corpusId: string) => ["corpora", corpusId, "detectors"] as const,
   detectorPlan: (corpusId: string, videoId: string) =>
     ["corpora", corpusId, "detectors", "plan", videoId] as const,
+  processingStatus: (corpusId: string, videoId: string) =>
+    ["corpora", corpusId, "detectors", "plan", videoId, "status"] as const,
   context: (segmentId: string) =>
     ["transcript-context", segmentId, { before: 4, after: 6 }] as const,
 };

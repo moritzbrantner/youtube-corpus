@@ -475,7 +475,10 @@ async fn extract_entities_for_videos(
 }
 
 /// The preferred transcript stream, else the best available one (manual, ASR, automatic).
-async fn transcript_stream_for(pool: &PgPool, video_id: Uuid) -> anyhow::Result<Option<Uuid>> {
+pub(crate) async fn transcript_stream_for(
+    pool: &PgPool,
+    video_id: Uuid,
+) -> anyhow::Result<Option<Uuid>> {
     Ok(sqlx::query_scalar::<_, Uuid>(
         "SELECT s.id FROM transcript_streams s
          LEFT JOIN preferred_transcript_streams p ON p.stream_id = s.id

@@ -179,48 +179,99 @@ async fn ingest_item(
         );
     }
 
-    let mut streams = crate::captions::download_and_parse_captions(
+    // Make a discovered video's running stages visible before expensive producers start.
+    let video_id = stable_video_id(&item.source_url);
+    let mut initial = pool.begin().await?;
+    upsert_video(&mut initial, video_id, &item, video_path.as_deref()).await?;
+    initial.commit().await?;
+
+    let caption_attempt = if request.caption.enabled && item.local_video_path.is_none() {
+        Some(
+            crate::detector_status::Attempt::begin(
+                pool,
+                video_id,
+                "captions",
+                &crate::detector_status::ingest_identity(request, "captions"),
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let caption_result = crate::captions::download_and_parse_captions(
         &item,
         &caption_dir,
         &request.caption,
         &request.yt_dlp,
     )
-    .await
-    .unwrap_or_default();
+    .await;
+    let (mut streams, caption_error) = match caption_result {
+        Ok(streams) => (streams, None),
+        Err(error) => (Vec::new(), Some(format!("{error:#}"))),
+    };
+    let caption_count: usize = streams.iter().map(|s| s.segments.len()).sum();
+    let caption_message = caption_error.or_else(|| {
+        let messages: Vec<_> = streams
+            .iter()
+            .filter_map(|s| s.message.as_deref())
+            .collect();
+        (!messages.is_empty()).then(|| messages.join("; "))
+    });
 
+    let mut asr_attempt = None;
+    let mut asr_state = "skipped";
+    let mut asr_message = None;
     if request.asr_enabled {
-        let media_path = match &video_path {
-            Some(path) => path.clone(),
-            None => {
-                let path = crate::youtube::download_video(
-                    &mut item,
-                    &item_dir.join("media"),
-                    &request.yt_dlp,
-                )
-                .await?;
-                video_path = Some(path.clone());
-                path
+        asr_attempt = Some(
+            crate::detector_status::Attempt::begin(
+                pool,
+                video_id,
+                "asr",
+                &crate::detector_status::ingest_identity(request, "asr"),
+            )
+            .await?,
+        );
+        let result: anyhow::Result<Option<TranscriptStream>> = async {
+            let media_path = match &video_path {
+                Some(path) => path.clone(),
+                None => {
+                    let path = crate::youtube::download_video(
+                        &mut item,
+                        &item_dir.join("media"),
+                        &request.yt_dlp,
+                    )
+                    .await?;
+                    video_path = Some(path.clone());
+                    path
+                }
+            };
+            crate::asr::transcribe_with_command(
+                &media_path,
+                &item_dir,
+                request.transcriber_command.as_ref(),
+                &request.transcriber_args,
+                request.transcriber_timeout_seconds,
+            )
+            .await
+        }
+        .await;
+        match result {
+            Ok(Some(stream)) => {
+                asr_state = if stream.segments.is_empty() {
+                    "skipped"
+                } else {
+                    "completed"
+                };
+                asr_message = stream.message.clone();
+                streams.push(stream);
             }
-        };
-        match crate::asr::transcribe_with_command(
-            &media_path,
-            &item_dir,
-            request.transcriber_command.as_ref(),
-            &request.transcriber_args,
-            request.transcriber_timeout_seconds,
-        )
-        .await
-        {
-            Ok(Some(stream)) => streams.push(stream),
-            Ok(None) => {}
-            Err(error) => streams.push(TranscriptStream {
-                source_kind: crate::config::SourceKind::Asr,
-                language: None,
-                source_path: None,
-                text: None,
-                segments: Vec::new(),
-                message: Some(error.to_string()),
-            }),
+            Ok(None) => {
+                asr_message = Some("Transcriber returned no transcript.".to_string());
+            }
+            Err(error) => {
+                asr_state = "failed";
+                asr_message = Some(format!("{error:#}"));
+            }
         }
     }
 
@@ -242,13 +293,33 @@ async fn ingest_item(
         if stream.segments.is_empty() {
             continue;
         }
+        let mut processing_config =
+            serde_json::to_value(crate::provenance::IngestProvenance::from_request(request))?;
+        let input_path = if stream.source_kind == crate::config::SourceKind::Asr {
+            video_path.as_deref()
+        } else {
+            stream.source_path.as_deref()
+        };
+        if let Some(path) = input_path {
+            processing_config["input"] = crate::detector_status::file_identity(path)?;
+        }
+        if stream.source_kind == crate::config::SourceKind::Asr {
+            if let Some(command) = request
+                .transcriber_command
+                .clone()
+                .or_else(|| crate::asr::resolve_command("whisper"))
+            {
+                processing_config["transcriberExecutable"] =
+                    crate::detector_status::file_identity(&command)?;
+            }
+        }
         let indexed = upsert_stream(
             &mut tx,
             video_id,
             &item.source_url,
             &stream,
             &embedder,
-            &serde_json::to_value(crate::provenance::IngestProvenance::from_request(request))?,
+            &processing_config,
         )
         .await?;
         if indexed > 0 {
@@ -257,6 +328,30 @@ async fn ingest_item(
         }
     }
     tx.commit().await?;
+    if let Some(attempt) = caption_attempt {
+        let state = if caption_count > 0 {
+            "completed"
+        } else if caption_message.is_some() {
+            "failed"
+        } else {
+            "skipped"
+        };
+        attempt
+            .finish(pool, state, caption_message.as_deref())
+            .await?;
+    }
+    if let Some(attempt) = asr_attempt {
+        attempt
+            .finish(pool, asr_state, asr_message.as_deref())
+            .await?;
+    }
+    let mut stage_messages = stage_messages;
+    if let Some(message) = asr_message {
+        stage_messages.push(message);
+    }
+    if let Some(message) = caption_message {
+        stage_messages.push(message);
+    }
 
     Ok(IngestItemReport {
         video_id: Some(video_id),
