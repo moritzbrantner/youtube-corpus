@@ -348,6 +348,25 @@ pub async fn extract_corpus_entities(
         .into_iter()
         .collect();
     video_ids.sort();
+    extract_entities_for_videos(pool, video_ids, model_dir, allow_download).await
+}
+
+/// Runs the canonical NER producer over one video, replacing its previous mentions.
+pub async fn extract_video_entities(
+    pool: &PgPool,
+    video_id: Uuid,
+    model_dir: PathBuf,
+    allow_download: bool,
+) -> anyhow::Result<EntityExtractionReport> {
+    extract_entities_for_videos(pool, vec![video_id], model_dir, allow_download).await
+}
+
+async fn extract_entities_for_videos(
+    pool: &PgPool,
+    video_ids: Vec<Uuid>,
+    model_dir: PathBuf,
+    allow_download: bool,
+) -> anyhow::Result<EntityExtractionReport> {
     let mut recognizer =
         tokio::task::spawn_blocking(move || EntityRecognizer::load(&model_dir, allow_download))
             .await??;

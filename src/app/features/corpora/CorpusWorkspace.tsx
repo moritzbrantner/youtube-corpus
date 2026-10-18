@@ -20,6 +20,7 @@ import {
 
 import { listCorpora } from "./api";
 import { CorpusAnnotations } from "./CorpusAnnotations";
+import { CorpusDetectors } from "./CorpusDetectors";
 import { CorpusEntities } from "./CorpusEntities";
 import { CorpusEvaluation } from "./CorpusEvaluation";
 import { CorpusLabels } from "./CorpusLabels";
@@ -131,6 +132,10 @@ export function CorpusWorkspace() {
                 onUpdateFilters={(filters) => update(filters)}
                 onSubmitQuery={(query) => update({ query })}
                 onSelectSegment={(segmentId) => update({ segmentId })}
+              />
+              <CorpusDetectors
+                key={`detectors:${selectedCorpus.id}`}
+                corpusId={selectedCorpus.id}
               />
               <CorpusEntities key={selectedCorpus.id} corpusId={selectedCorpus.id} />
               <div className="grid gap-4 xl:grid-cols-2">

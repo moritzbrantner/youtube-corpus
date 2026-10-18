@@ -14,6 +14,10 @@ use crate::config::{CaptionConfig, CorpusSource, YtDlpConfig};
 use crate::corpora::{
     Corpus, CorpusLabel, CorpusSourceSummary, CorpusVideoSummary, CreateCorpusRequest, LabelError,
 };
+use crate::detectors::{
+    CorpusDetectorProfiles, DetectorError, DetectorSetting, PlanRunReport, PlanRunRequest,
+    ScopeKind, VideoDetectorPlan,
+};
 use crate::entities::{
     EntityExtractionReport, EntityLookupReport, EntityOccurrencesReport, PersonOccurrencesReport,
 };
@@ -69,6 +73,30 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
         )
         .route("/api/corpora/{corpus_id}/videos", get(list_videos))
         .route("/api/corpora/{corpus_id}/search", post(search_corpus))
+        .route(
+            "/api/corpora/{corpus_id}/detector-profiles",
+            get(get_detector_profiles),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/detector-profiles/corpus",
+            put(set_corpus_detectors),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/detector-profiles/sources/{source_id}",
+            put(set_source_detectors),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/videos/{video_id}/detector-overrides",
+            put(set_video_detectors),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/videos/{video_id}/detector-plan",
+            get(get_video_plan),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/videos/{video_id}/detector-plan/run",
+            post(run_video_plan),
+        )
         .route("/api/corpora/{corpus_id}/entities", get(lookup_entities))
         .route(
             "/api/corpora/{corpus_id}/entities/extract",
@@ -515,6 +543,132 @@ async fn search_corpus(
             .map_err(ResearchError::internal)?,
     );
     Ok(Json(report))
+}
+
+fn map_detector_error(error: DetectorError) -> ResearchError {
+    match error {
+        DetectorError::NotFound(message) => ResearchError::not_found(message),
+        DetectorError::Invalid(message) => ResearchError::bad_request(message),
+        DetectorError::Other(error) => ResearchError::internal(format!("{error:#}")),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct DetectorSettingsInput {
+    settings: Vec<DetectorSetting>,
+}
+
+async fn get_detector_profiles(
+    State(state): State<ResearchState>,
+    AxumPath(corpus_id): AxumPath<Uuid>,
+) -> Result<Json<CorpusDetectorProfiles>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::detectors::corpus_profiles(&pool, corpus_id)
+        .await
+        .map(Json)
+        .map_err(map_detector_error)
+}
+
+async fn set_scope(
+    state: &ResearchState,
+    corpus_id: Uuid,
+    scope: ScopeKind,
+    scope_id: Uuid,
+    settings: &[DetectorSetting],
+) -> Result<StatusCode, ResearchError> {
+    let pool = pool(state).await?;
+    crate::detectors::set_scope_settings(&pool, corpus_id, scope, scope_id, settings)
+        .await
+        .map_err(map_detector_error)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn set_corpus_detectors(
+    State(state): State<ResearchState>,
+    AxumPath(corpus_id): AxumPath<Uuid>,
+    Json(input): Json<DetectorSettingsInput>,
+) -> Result<StatusCode, ResearchError> {
+    set_scope(
+        &state,
+        corpus_id,
+        ScopeKind::Corpus,
+        corpus_id,
+        &input.settings,
+    )
+    .await
+}
+
+async fn set_source_detectors(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, source_id)): AxumPath<(Uuid, Uuid)>,
+    Json(input): Json<DetectorSettingsInput>,
+) -> Result<StatusCode, ResearchError> {
+    set_scope(
+        &state,
+        corpus_id,
+        ScopeKind::Source,
+        source_id,
+        &input.settings,
+    )
+    .await
+}
+
+async fn set_video_detectors(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, video_id)): AxumPath<(Uuid, Uuid)>,
+    Json(input): Json<DetectorSettingsInput>,
+) -> Result<StatusCode, ResearchError> {
+    set_scope(
+        &state,
+        corpus_id,
+        ScopeKind::Video,
+        video_id,
+        &input.settings,
+    )
+    .await
+}
+
+async fn get_video_plan(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, video_id)): AxumPath<(Uuid, Uuid)>,
+) -> Result<Json<VideoDetectorPlan>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::detectors::video_plan(&pool, corpus_id, video_id)
+        .await
+        .map(Json)
+        .map_err(map_detector_error)
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RunPlanInput {
+    refresh: Option<bool>,
+    work_dir: Option<String>,
+}
+
+async fn run_video_plan(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, video_id)): AxumPath<(Uuid, Uuid)>,
+    input: Option<Json<RunPlanInput>>,
+) -> Result<Json<PlanRunReport>, ResearchError> {
+    let input = input.map(|Json(input)| input).unwrap_or_default();
+    crate::detectors::run_video_plan(PlanRunRequest {
+        database_url: database_url(&state)?,
+        corpus_id,
+        video_id,
+        work_dir: PathBuf::from(
+            input
+                .work_dir
+                .as_deref()
+                .unwrap_or("use-case-output/youtube-corpus"),
+        ),
+        yt_dlp: state.yt_dlp.clone(),
+        model_dir: PathBuf::from(crate::entities::DEFAULT_MODEL_DIR),
+        refresh: input.refresh.unwrap_or(false),
+    })
+    .await
+    .map(Json)
+    .map_err(map_detector_error)
 }
 
 #[derive(Debug, Deserialize)]
