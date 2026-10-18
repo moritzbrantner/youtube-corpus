@@ -694,6 +694,7 @@ async fn add_source(
                 title_excludes: title_excludes.clone(),
                 duration_min: input.duration_min,
                 duration_max: input.duration_max,
+                processing_policy: Default::default(),
                 migrate,
             })
             .await

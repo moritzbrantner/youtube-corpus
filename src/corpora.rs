@@ -44,6 +44,10 @@ pub struct CorpusSourceSummary {
     pub items_seen: u64,
     pub items_indexed: u64,
     pub items_failed: u64,
+    /// `automatic` or `review_first` (Atlas 1.6).
+    pub processing_policy: String,
+    /// Discovered videos held for approval.
+    pub items_awaiting_review: u64,
     /// User labels assigned to this tracked source (Atlas 1.3).
     pub labels: Vec<CorpusLabel>,
 }
@@ -335,6 +339,8 @@ pub async fn list_corpus_sources(
                 count(i.id)::bigint AS items_seen,
                 count(i.id) FILTER (WHERE i.status = 'indexed')::bigint AS items_indexed,
                 count(i.id) FILTER (WHERE i.status = 'failed')::bigint AS items_failed,
+                count(i.id) FILTER (WHERE i.status = 'awaiting_review')::bigint AS items_awaiting_review,
+                s.processing_policy,
                 coalesce(
                   (SELECT jsonb_agg(jsonb_build_object('id', l.id, 'name', l.name)
                                     ORDER BY lower(l.name), l.id)
@@ -347,7 +353,7 @@ pub async fn list_corpus_sources(
          JOIN corpus_subscriptions s ON s.id = m.subscription_id
          LEFT JOIN corpus_subscription_items i ON i.subscription_id = s.id
          WHERE m.corpus_id = $1
-         GROUP BY s.id, s.source_kind, s.source_url, s.name, s.enabled,
+         GROUP BY s.id, s.source_kind, s.source_url, s.name, s.enabled, s.processing_policy,
                   s.last_checked_at, s.last_ingested_at, s.last_check_status, s.last_check_message,
                   m.added_at, m.corpus_id
          ORDER BY m.added_at, lower(coalesce(s.name, s.source_url))",
@@ -371,6 +377,8 @@ pub async fn list_corpus_sources(
                 items_seen: row_count(&row, "items_seen")?,
                 items_indexed: row_count(&row, "items_indexed")?,
                 items_failed: row_count(&row, "items_failed")?,
+                processing_policy: row.try_get("processing_policy")?,
+                items_awaiting_review: row_count(&row, "items_awaiting_review")?,
                 labels: row.try_get::<Json<Vec<CorpusLabel>>, _>("labels")?.0,
             })
         })

@@ -34,6 +34,8 @@ export type CorpusSource = {
   itemsSeen: number;
   itemsIndexed: number;
   itemsFailed: number;
+  processingPolicy: ProcessingPolicy;
+  itemsAwaitingReview: number;
   /** User labels assigned to this tracked source. */
   labels: CorpusLabel[];
 };
@@ -212,7 +214,41 @@ export type AddCorpusSourceInput = {
   transcriberArgs?: string[];
   transcriberTimeoutSeconds?: number | null;
   maxItems?: number | null;
+  processingPolicy?: ProcessingPolicy;
 };
+
+/** Whether newly discovered videos are analyzed automatically or held for review (Atlas 1.6). */
+export type ProcessingPolicy = "automatic" | "review_first";
+
+export type PendingItem = {
+  sourceUrl: string;
+  youtubeId: string | null;
+  title: string | null;
+  channel: string | null;
+  durationSeconds: number | null;
+  uploadDate: string | null;
+  firstSeenAt: string;
+};
+
+export function setSourcePolicy(corpusId: string, sourceId: string, policy: ProcessingPolicy) {
+  return apiFetch<void>(`/api/corpora/${corpusId}/sources/${sourceId}/policy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ policy }),
+  });
+}
+
+export function listSourcePending(corpusId: string, sourceId: string) {
+  return apiFetch<PendingItem[]>(`/api/corpora/${corpusId}/sources/${sourceId}/pending`);
+}
+
+export function approveSourcePending(corpusId: string, sourceId: string, sourceUrls: string[]) {
+  return apiFetch<IngestReport>(`/api/corpora/${corpusId}/sources/${sourceId}/pending/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sourceUrls }),
+  });
+}
 
 export type SubscriptionCheckItem = {
   subscription: {

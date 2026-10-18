@@ -180,6 +180,13 @@ cargo run -- videos --parsed
 cargo run -- videos --downloaded --limit 25
 ```
 
+## Review-first sources
+
+A tracked channel or playlist analyzes newly discovered videos automatically by default. Set it
+to **Hold for review first** (`--processing-policy review-first` on `subscribe`, or in the Sources
+panel) to only register new videos; approve them from the source's "Awaiting review" list. A
+video that an automatic source also tracks is analyzed without approval, once.
+
 ## Detector profiles
 
 The corpus workspace's Detectors panel sets which analyses run: a corpus default, per-source
