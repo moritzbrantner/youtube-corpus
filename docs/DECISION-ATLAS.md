@@ -209,6 +209,8 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
 
 - **4.5 Automatically link high-confidence matches, with inspectable uncertainty and correction.**  
   Status: adopted 2026-10-13. Answers 4.4 (option C).  
+  Built scope: face-only automatic corpus matching and reversible researcher corrections (#64). Voice matching, face-to-voice bridges and name attribution remain separate work.
+
   The corpus may automatically associate high-confidence matching face/voice observations or clusters across videos into a shared **inferred, corpus-local person identity**, without requiring user confirmation for every match. These matches are visibly identified as automatic inferences rather than verified real-world identities; retain confidence, source observations, timestamps, and producing algorithm/model/configuration provenance. Users can inspect the supporting evidence, correct, unlink or split incorrect associations, and see updated cross-video results without destroying the original evidence. Reprocessing must not silently reinstate a user-rejected association. Low-confidence or contradictory evidence remains unresolved rather than forcing a match. Similarity alone does not justify assigning a real-world person's name; evidence-grounded name attribution is governed by 4.7 (Answers 4.6).
 
 - **4.6** [question] **When may text mentions give an inferred person a real-world name?**  

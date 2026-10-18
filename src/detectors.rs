@@ -590,7 +590,7 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
                 )
         });
         let report = match existing_output(&pool, &request, detector).await {
-            Ok(true) if !request.refresh && !failed => StageReport {
+            Ok(true) if !request.refresh && !failed && detector != "faces" => StageReport {
                 detector: detector.to_string(),
                 outcome: StageOutcome::Reused,
                 message: None,
@@ -953,6 +953,8 @@ async fn run_stage_inner(
                 },
             )
             .await?;
+            crate::face_matching::match_corpus_faces(pool,request.corpus_id).await
+                .map_err(|error|anyhow::anyhow!("face observations are retained, but automatic corpus matching failed: {error:#}"))?;
             Ok((
                 if report.reused {
                     StageOutcome::Reused

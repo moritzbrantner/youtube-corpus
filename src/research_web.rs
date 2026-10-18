@@ -113,6 +113,18 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
             "/api/corpora/{corpus_id}/videos/{video_id}/detector-plan/run",
             post(run_video_plan),
         )
+        .route(
+            "/api/corpora/{corpus_id}/face-matches",
+            get(get_face_matches),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/face-matches/run",
+            post(run_face_matches),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/face-matches/corrections",
+            post(correct_face_matches),
+        )
         .route("/api/corpora/{corpus_id}/entities", get(lookup_entities))
         .route(
             "/api/corpora/{corpus_id}/entities/extract",
@@ -817,6 +829,44 @@ async fn entity_occurrences(
         .await
         .map(Json)
         .map_err(map_corpus_error)
+}
+
+async fn get_face_matches(
+    State(state): State<ResearchState>,
+    AxumPath(corpus): AxumPath<Uuid>,
+) -> Result<Json<crate::face_matching::FaceMatchReview>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::face_matching::review_face_matches(&pool, corpus)
+        .await
+        .map(Json)
+        .map_err(map_corpus_error)
+}
+async fn run_face_matches(
+    State(state): State<ResearchState>,
+    AxumPath(corpus): AxumPath<Uuid>,
+) -> Result<Json<crate::face_matching::FaceMatchReview>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::face_matching::match_corpus_faces(&pool, corpus)
+        .await
+        .map(Json)
+        .map_err(map_corpus_error)
+}
+async fn correct_face_matches(
+    State(state): State<ResearchState>,
+    AxumPath(corpus): AxumPath<Uuid>,
+    Json(input): Json<crate::face_matching::FaceCorrectionRequest>,
+) -> Result<Json<crate::face_matching::FaceMatchReview>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::face_matching::correct_face_matches(&pool, corpus, input)
+        .await
+        .map(Json)
+        .map_err(|error| {
+            if error.is::<crate::face_matching::CorrectionInputError>() {
+                ResearchError::bad_request(error.to_string())
+            } else {
+                map_corpus_error(error)
+            }
+        })
 }
 
 async fn person_occurrences(

@@ -719,3 +719,56 @@ export function getVideoProcessingStatus(corpusId: string, videoId: string) {
     `/api/corpora/${corpusId}/videos/${videoId}/processing-status`,
   );
 }
+
+export type FaceEvidence = {
+  trackId: string;
+  videoId: string;
+  title: string | null;
+  sourceUrl: string;
+  startSeconds: number;
+  endSeconds: number;
+  observations: number;
+  detectionScore: number | null;
+  processor: string;
+  processorVersion: string;
+  model: string;
+  modelVersion: string;
+  inputHash: string;
+  producerConfig: unknown;
+  similarity: number | null;
+  assignmentSource: string | null;
+  matchingAlgorithm: string | null;
+  matchingVersion: string | null;
+  matchingConfiguration: unknown;
+  protected: boolean;
+  reason: string | null;
+};
+export type FacePersonGroup = {
+  personId: string;
+  label: string;
+  identitySource: string | null;
+  tracks: FaceEvidence[];
+};
+export type FaceMatchReview = {
+  configuration: unknown;
+  groups: FacePersonGroup[];
+  unresolved: FaceEvidence[];
+};
+export type FaceCorrection = {
+  action: "unlink" | "split" | "link" | "confirm";
+  trackIds: string[];
+  personId?: string;
+};
+export function getFaceMatches(corpusId: string) {
+  return apiFetch<FaceMatchReview>(`/api/corpora/${corpusId}/face-matches`);
+}
+export function runFaceMatches(corpusId: string) {
+  return apiFetch<FaceMatchReview>(`/api/corpora/${corpusId}/face-matches/run`, { method: "POST" });
+}
+export function correctFaceMatches(corpusId: string, correction: FaceCorrection) {
+  return apiFetch<FaceMatchReview>(`/api/corpora/${corpusId}/face-matches/corrections`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(correction),
+  });
+}
