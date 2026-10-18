@@ -15,7 +15,7 @@ use crate::visual_timeline::{
 };
 
 /// Exact visual-analysis revision consumed by this source-first integration.
-pub const VISUAL_ANALYSIS_SCENE_REVISION: &str = "f73969447916e5ac47f4559fc51ab47552f4f734";
+pub const VISUAL_ANALYSIS_SCENE_REVISION: &str = "35a53204cea66e7f438b962afe23b6cef1de0004";
 const SCENE_MODEL: &str = "scenedetect-core:content";
 const SCENE_MODEL_VERSION: &str = "0.1.0";
 const DEFAULT_CONTENT_THRESHOLD: f32 = 27.0;

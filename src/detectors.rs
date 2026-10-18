@@ -57,6 +57,10 @@ pub const DETECTORS: &[DetectorInfo] = &[
         takes_languages: false,
     },
     DetectorInfo {
+        id: "faces", label: "Faces and within-video tracks", producer: "visual-analysis YuNet + SFace", available: true,
+        note: Some("Samples retained video once per second; needs ONNX Runtime API 24. Pinned free models download only on request."), takes_languages: false,
+    },
+    DetectorInfo {
         id: "ocr",
         label: "On-screen text (OCR)",
         producer: "visual-analysis OCR",
@@ -697,6 +701,7 @@ async fn existing_output(
         "scenes" => {
             crate::visual_processing::has_current_scene_output(pool, request.video_id).await
         }
+        "faces" => crate::face_processing::has_current_face_output(pool, request.video_id).await,
         "entities" => {
             let identity = stage_identity(pool, request.video_id, detector).await?;
             Ok(sqlx::query_scalar(
@@ -779,6 +784,21 @@ async fn stage_identity(
     video: Uuid,
     detector: &str,
 ) -> anyhow::Result<serde_json::Value> {
+    if detector == "faces" {
+        let path: Option<String> =
+            sqlx::query_scalar("SELECT local_video_path FROM videos WHERE id = $1")
+                .bind(video)
+                .fetch_one(pool)
+                .await?;
+        let input = path
+            .as_deref()
+            .filter(|p| std::path::Path::new(p).is_file())
+            .map(|p| crate::detector_status::file_identity(std::path::Path::new(p)))
+            .transpose()?;
+        return Ok(
+            serde_json::json!({ "detector": detector, "input": input, "config": crate::face_processing::FaceAnalysisConfig::default(), "modelVersion": crate::face_processing::FACE_MODEL_VERSION }),
+        );
+    }
     if detector == "scenes" {
         let path: Option<String> =
             sqlx::query_scalar("SELECT local_video_path FROM videos WHERE id = $1")
@@ -877,6 +897,29 @@ async fn run_stage_inner(
             Ok((
                 StageOutcome::Completed,
                 Some(format!("{} scenes", report.scenes.len())),
+            ))
+        }
+        "faces" => {
+            let report = crate::face_processing::analyze_stored_video_faces(
+                pool,
+                crate::face_processing::FaceAnalysisRequest {
+                    video_id: request.video_id,
+                    model_dir: request.model_dir.clone(),
+                    config: Default::default(),
+                    refresh: request.refresh,
+                },
+            )
+            .await?;
+            Ok((
+                if report.reused {
+                    StageOutcome::Reused
+                } else {
+                    StageOutcome::Completed
+                },
+                Some(format!(
+                    "{} face observations, {} tracks from {} sampled frames",
+                    report.observations, report.tracks, report.sampled_frames
+                )),
             ))
         }
         "entities" => {

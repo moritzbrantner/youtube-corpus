@@ -15,6 +15,7 @@ pub mod diagnostics;
 pub mod discovery;
 pub mod entities;
 pub mod evaluation;
+pub mod face_processing;
 pub mod ingest;
 pub mod media_evidence;
 pub mod multimodal;
