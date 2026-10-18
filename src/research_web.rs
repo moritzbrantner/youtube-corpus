@@ -94,6 +94,10 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
             get(get_video_plan),
         )
         .route(
+            "/api/corpora/{corpus_id}/videos/{video_id}/detector-status",
+            get(get_video_stage_status),
+        )
+        .route(
             "/api/corpora/{corpus_id}/videos/{video_id}/detector-plan/run",
             post(run_video_plan),
         )
@@ -639,10 +643,22 @@ async fn get_video_plan(
         .map_err(map_detector_error)
 }
 
+async fn get_video_stage_status(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, video_id)): AxumPath<(Uuid, Uuid)>,
+) -> Result<Json<crate::detectors::VideoStageStatus>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::detectors::video_stage_status(&pool, corpus_id, video_id)
+        .await
+        .map(Json)
+        .map_err(map_detector_error)
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RunPlanInput {
     refresh: Option<bool>,
+    only: Option<Vec<String>>,
     work_dir: Option<String>,
 }
 
@@ -665,6 +681,7 @@ async fn run_video_plan(
         yt_dlp: state.yt_dlp.clone(),
         model_dir: PathBuf::from(crate::entities::DEFAULT_MODEL_DIR),
         refresh: input.refresh.unwrap_or(false),
+        only: input.only,
     })
     .await
     .map(Json)

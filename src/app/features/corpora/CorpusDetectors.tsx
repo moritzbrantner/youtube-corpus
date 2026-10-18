@@ -22,6 +22,7 @@ import {
 import {
   getDetectorProfiles,
   getVideoDetectorPlan,
+  getVideoStageStatus,
   listCorpusVideos,
   runVideoDetectorPlan,
   setCorpusDetectors,
@@ -30,6 +31,7 @@ import {
   type DetectorInfo,
   type DetectorSetting,
   type PlanContributor,
+  type StageState,
 } from "./api";
 import { errorMessage } from "./CorpusLabels";
 import { corpusKeys } from "./query-keys";
@@ -64,6 +66,16 @@ function fromDraft(draft: Draft): DetectorSetting[] {
           : [],
     }));
 }
+
+const stateLabel: Record<StageState, string> = {
+  disabled: "Not requested",
+  awaiting_review: "Awaiting review",
+  unavailable: "Unavailable",
+  not_run: "Not run yet",
+  running: "Running",
+  complete: "Complete",
+  failed: "Failed",
+};
 
 /** Corpus detector profile, tracked-source overrides and per-video effective plans (#63). */
 export function CorpusDetectors({ corpusId }: { corpusId: string }) {
@@ -270,10 +282,20 @@ function VideoPlan({ corpusId, detectors }: { corpusId: string; detectors: Detec
   const saveMutation = useMutation({
     mutationFn: () => setVideoDetectorOverrides(corpusId, videoId, fromDraft(draft)),
     onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: corpusKeys.detectorPlan(corpusId, videoId) }),
+      queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "detectors"] }),
   });
+  const statusQuery = useQuery({
+    queryKey: corpusKeys.stageStatus(corpusId, videoId),
+    queryFn: () => getVideoStageStatus(corpusId, videoId),
+    enabled: videoId !== "",
+  });
+  const refreshStatus = () =>
+    queryClient.invalidateQueries({ queryKey: corpusKeys.stageStatus(corpusId, videoId) });
   const runMutation = useMutation({
-    mutationFn: () => runVideoDetectorPlan(corpusId, videoId, refresh),
+    mutationFn: (only: string[] | null) =>
+      runVideoDetectorPlan(corpusId, videoId, only ? true : refresh, only),
+    onMutate: refreshStatus,
+    onSettled: refreshStatus,
   });
 
   const plan = planQuery.data
@@ -346,7 +368,11 @@ function VideoPlan({ corpusId, detectors }: { corpusId: string; detectors: Detec
               />
               Re-run even if output exists
             </label>
-            <Button size="sm" disabled={runMutation.isPending} onClick={() => runMutation.mutate()}>
+            <Button
+              size="sm"
+              disabled={runMutation.isPending}
+              onClick={() => runMutation.mutate(null)}
+            >
               {runMutation.isPending ? "Running..." : "Run plan"}
             </Button>
           </div>
@@ -359,6 +385,47 @@ function VideoPlan({ corpusId, detectors }: { corpusId: string; detectors: Detec
             <p role="alert" className="text-sm text-destructive">
               {errorMessage(runMutation.error)}
             </p>
+          ) : null}
+          {statusQuery.data ? (
+            <ul className="grid gap-1 text-sm" aria-label="Stage status">
+              <li className="font-semibold">
+                Stage status
+                {statusQuery.data.awaitingReview ? " (held for review by every source)" : ""}
+              </li>
+              {statusQuery.data.stages.map((stage) => (
+                <li key={stage.detector} className="flex flex-wrap items-center gap-2">
+                  <span className="min-w-48">{stage.label}</span>
+                  <Badge variant={stage.state === "failed" ? "destructive" : "outline"}>
+                    {stateLabel[stage.state]}
+                  </Badge>
+                  {stage.outputCount > 0 ? (
+                    <span className="text-muted-foreground">
+                      {stage.outputCount} {stage.outputUnit}
+                    </span>
+                  ) : null}
+                  {stage.lastAttemptAt ? (
+                    <span className="text-xs text-muted-foreground">
+                      last attempt {new Date(stage.lastAttemptAt).toLocaleString()}
+                    </span>
+                  ) : null}
+                  {stage.enabled && stage.available && stage.state !== "running" ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={runMutation.isPending}
+                      onClick={() => runMutation.mutate([stage.detector])}
+                    >
+                      {stage.state === "complete" ? "Refresh" : "Retry"}
+                    </Button>
+                  ) : null}
+                  {stage.message ? (
+                    <span className="basis-full text-xs text-muted-foreground">
+                      {stage.message}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
           ) : null}
           {runMutation.data ? (
             <ul className="grid gap-1 text-sm" aria-label="Plan run result">

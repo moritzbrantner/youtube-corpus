@@ -640,10 +640,46 @@ export function getVideoDetectorPlan(corpusId: string, videoId: string) {
   return apiFetch<VideoDetectorPlan>(`/api/corpora/${corpusId}/videos/${videoId}/detector-plan`);
 }
 
-export function runVideoDetectorPlan(corpusId: string, videoId: string, refresh: boolean) {
+export function runVideoDetectorPlan(
+  corpusId: string,
+  videoId: string,
+  refresh: boolean,
+  only: string[] | null = null,
+) {
   return apiFetch<PlanRunReport>(`/api/corpora/${corpusId}/videos/${videoId}/detector-plan/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh }),
+    body: JSON.stringify({ refresh, only }),
   });
+}
+
+export type StageState =
+  | "disabled"
+  | "awaiting_review"
+  | "unavailable"
+  | "not_run"
+  | "running"
+  | "complete"
+  | "failed";
+
+/** Truthful per-video stage inventory against the effective plan (Atlas 2.1). */
+export type VideoStageStatus = {
+  corpusId: string;
+  videoId: string;
+  awaitingReview: boolean;
+  stages: {
+    detector: string;
+    label: string;
+    enabled: boolean;
+    available: boolean;
+    state: StageState;
+    outputCount: number;
+    outputUnit: string;
+    message: string | null;
+    lastAttemptAt: string | null;
+  }[];
+};
+
+export function getVideoStageStatus(corpusId: string, videoId: string) {
+  return apiFetch<VideoStageStatus>(`/api/corpora/${corpusId}/videos/${videoId}/detector-status`);
 }

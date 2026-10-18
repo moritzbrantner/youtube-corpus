@@ -212,6 +212,16 @@ pub fn package_surface() -> PackageSurface {
                 }),
             ),
             surface_operation(
+                "corpus.detectors.status",
+                "Per-video stage status",
+                "Reports each detector stage of a video against its effective plan: not requested, awaiting review, unavailable, not run, running, complete (with stored output counts) or failed (with the real error); a targeted retry runs selected stages only.",
+                serde_json::json!({
+                    "corpusId": "00000000-0000-0000-0000-000000000000",
+                    "videoId": "00000000-0000-0000-0000-000000000000",
+                    "only": ["scenes"]
+                }),
+            ),
+            surface_operation(
                 "corpus.detectors.plan",
                 "Preview or run a video's detector plan",
                 "Resolves a video's effective detectors inside one corpus (union of applicable sources, corpus-scoped video overrides) with their contributors, and runs enabled available detectors while reusing existing output.",

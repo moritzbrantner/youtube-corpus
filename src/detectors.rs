@@ -521,6 +521,8 @@ pub struct PlanRunRequest {
     pub model_dir: PathBuf,
     /// Re-run stages even when matching output exists.
     pub refresh: bool,
+    /// Restrict the run to these detectors (targeted retry); `None` runs the whole plan.
+    pub only: Option<Vec<String>>,
 }
 
 /// Runs every enabled detector of a video's effective plan, reusing existing output of the
@@ -530,7 +532,17 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
     let pool = crate::db::connect(&request.database_url).await?;
     let plan = video_plan(&pool, request.corpus_id, request.video_id).await?;
     let mut stages = Vec::new();
-    for planned in plan.detectors.iter().filter(|planned| planned.enabled) {
+    let selected = |detector: &str| {
+        request
+            .only
+            .as_ref()
+            .is_none_or(|only| only.iter().any(|id| id == detector))
+    };
+    for planned in plan
+        .detectors
+        .iter()
+        .filter(|planned| planned.enabled && selected(&planned.detector))
+    {
         let detector = planned.detector.as_str();
         if !planned.available {
             stages.push(StageReport {
@@ -546,18 +558,35 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
                 outcome: StageOutcome::Reused,
                 message: None,
             },
-            Ok(_) => match run_stage(&pool, &request, detector).await {
-                Ok(message) => StageReport {
-                    detector: detector.to_string(),
-                    outcome: StageOutcome::Completed,
-                    message,
-                },
-                Err(error) => StageReport {
-                    detector: detector.to_string(),
-                    outcome: StageOutcome::Failed,
-                    message: Some(format!("{error:#}")),
-                },
-            },
+            Ok(_) => {
+                record_attempt(&pool, request.video_id, detector, "running", None).await?;
+                let report = match run_stage(&pool, &request, detector).await {
+                    Ok(message) => StageReport {
+                        detector: detector.to_string(),
+                        outcome: StageOutcome::Completed,
+                        message,
+                    },
+                    Err(error) => StageReport {
+                        detector: detector.to_string(),
+                        outcome: StageOutcome::Failed,
+                        message: Some(format!("{error:#}")),
+                    },
+                };
+                let state = if report.outcome == StageOutcome::Completed {
+                    "completed"
+                } else {
+                    "failed"
+                };
+                record_attempt(
+                    &pool,
+                    request.video_id,
+                    detector,
+                    state,
+                    report.message.as_deref(),
+                )
+                .await?;
+                report
+            }
             Err(error) => StageReport {
                 detector: detector.to_string(),
                 outcome: StageOutcome::Failed,
@@ -570,6 +599,241 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
         video_id: request.video_id,
         stages,
     })
+}
+
+async fn record_attempt(
+    pool: &PgPool,
+    video_id: Uuid,
+    detector: &str,
+    state: &str,
+    message: Option<&str>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "INSERT INTO detector_stage_attempts (video_id, detector, state, message, started_at, finished_at)
+         VALUES ($1, $2, $3, $4, now(), CASE WHEN $3 = 'running' THEN NULL ELSE now() END)
+         ON CONFLICT (video_id, detector) DO UPDATE SET
+           state = EXCLUDED.state,
+           message = EXCLUDED.message,
+           started_at = CASE WHEN EXCLUDED.state = 'running' THEN now()
+                             ELSE detector_stage_attempts.started_at END,
+           finished_at = EXCLUDED.finished_at",
+    )
+    .bind(video_id)
+    .bind(detector)
+    .bind(state)
+    .bind(message)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Truthful state of one detector stage for a video (Atlas 2.1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StageState {
+    /// Not part of the effective plan in this corpus.
+    Disabled,
+    /// Every applicable source holds the video for review and nothing ran yet.
+    AwaitingReview,
+    /// Requested, but no producer is integrated.
+    Unavailable,
+    /// Requested and never attempted.
+    NotRun,
+    Running,
+    Complete,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StageStatus {
+    pub detector: String,
+    pub label: String,
+    pub enabled: bool,
+    pub available: bool,
+    pub state: StageState,
+    /// Stored output of this kind, whether or not the stage is currently requested.
+    pub output_count: i64,
+    /// What the count measures (segments, scenes, tracks, mentions).
+    pub output_unit: String,
+    pub message: Option<String>,
+    pub last_attempt_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoStageStatus {
+    pub corpus_id: Uuid,
+    pub video_id: Uuid,
+    pub awaiting_review: bool,
+    pub stages: Vec<StageStatus>,
+}
+
+/// Per-video stage inventory against the effective detector plan of one corpus.
+pub async fn video_stage_status(
+    pool: &PgPool,
+    corpus_id: Uuid,
+    video_id: Uuid,
+) -> Result<VideoStageStatus, DetectorError> {
+    let plan = video_plan(pool, corpus_id, video_id).await?;
+    // Held for review only if not added directly and every applicable source item waits.
+    let awaiting_review = !plan.added_directly
+        && sqlx::query_scalar::<_, Option<bool>>(
+            "SELECT bool_and(i.status = 'awaiting_review')
+             FROM corpus_source_memberships sm
+             JOIN corpus_subscription_items i ON i.subscription_id = sm.subscription_id
+             JOIN videos v ON v.id = $2
+               AND (v.source_url = i.source_url OR (v.youtube_id IS NOT NULL AND i.youtube_id = v.youtube_id))
+             WHERE sm.corpus_id = $1",
+        )
+        .bind(corpus_id)
+        .bind(video_id)
+        .fetch_one(pool)
+        .await?
+        .unwrap_or(false);
+    let attempts: BTreeMap<String, (String, Option<String>, chrono::DateTime<chrono::Utc>)> =
+        sqlx::query(
+            "SELECT detector, state, message, started_at FROM detector_stage_attempts
+             WHERE video_id = $1",
+        )
+        .bind(video_id)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|row| {
+            Ok((
+                row.try_get("detector")?,
+                (
+                    row.try_get("state")?,
+                    row.try_get("message")?,
+                    row.try_get("started_at")?,
+                ),
+            ))
+        })
+        .collect::<anyhow::Result<_>>()?;
+
+    let mut stages = Vec::new();
+    for planned in &plan.detectors {
+        let (output_count, output_unit) = output_count(pool, video_id, &planned.detector).await?;
+        let mut message = None;
+        let attempt = attempts.get(&planned.detector);
+        let state = if !planned.enabled {
+            StageState::Disabled
+        } else if attempt.is_some_and(|(state, _, _)| state == "running") {
+            StageState::Running
+        } else if output_count > 0 {
+            StageState::Complete
+        } else if !planned.available {
+            message = planned.note.clone();
+            StageState::Unavailable
+        } else if let Some((state, attempt_message, _)) =
+            attempt.filter(|(state, _, _)| state == "failed")
+        {
+            debug_assert_eq!(state, "failed");
+            message = attempt_message.clone();
+            StageState::Failed
+        } else if let Some(stream_message) =
+            failed_transcript_message(pool, video_id, &planned.detector).await?
+        {
+            message = Some(stream_message);
+            StageState::Failed
+        } else if awaiting_review {
+            StageState::AwaitingReview
+        } else {
+            StageState::NotRun
+        };
+        stages.push(StageStatus {
+            detector: planned.detector.clone(),
+            label: planned.label.clone(),
+            enabled: planned.enabled,
+            available: planned.available,
+            state,
+            output_count,
+            output_unit: output_unit.to_string(),
+            message,
+            last_attempt_at: attempt.map(|(_, _, at)| *at),
+        });
+    }
+    Ok(VideoStageStatus {
+        corpus_id,
+        video_id,
+        awaiting_review,
+        stages,
+    })
+}
+
+async fn output_count(
+    pool: &PgPool,
+    video_id: Uuid,
+    detector: &str,
+) -> anyhow::Result<(i64, &'static str)> {
+    let (sql, unit) = match detector {
+        "captions" => (
+            "SELECT count(*) FROM transcript_segments t JOIN transcript_streams s ON s.id = t.stream_id
+             WHERE s.video_id = $1 AND s.source_kind IN ('caption_manual', 'caption_auto')",
+            "segments",
+        ),
+        "asr" => (
+            "SELECT count(*) FROM transcript_segments t JOIN transcript_streams s ON s.id = t.stream_id
+             WHERE s.video_id = $1 AND s.source_kind = 'asr'",
+            "segments",
+        ),
+        "scenes" => (
+            "SELECT count(*) FROM video_scenes WHERE video_id = $1",
+            "scenes",
+        ),
+        "ocr" => (
+            "SELECT count(*) FROM visual_text_tracks WHERE video_id = $1",
+            "text tracks",
+        ),
+        "entities" => (
+            "SELECT count(*) FROM entity_mentions m JOIN entity_extraction_runs r ON r.id = m.run_id
+             WHERE r.video_id = $1",
+            "mentions",
+        ),
+        _ => return Ok((0, "outputs")),
+    };
+    let count = sqlx::query_scalar::<_, i64>(sql)
+        .bind(video_id)
+        .fetch_one(pool)
+        .await?;
+    // An extraction run without mentions is still a completed stage.
+    if detector == "entities" && count == 0 {
+        let ran = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM entity_extraction_runs WHERE video_id = $1)",
+        )
+        .bind(video_id)
+        .fetch_one(pool)
+        .await?;
+        if ran {
+            return Ok((0, unit));
+        }
+    }
+    Ok((count, unit))
+}
+
+/// The message of a transcript stream that was attempted but stored no segments.
+async fn failed_transcript_message(
+    pool: &PgPool,
+    video_id: Uuid,
+    detector: &str,
+) -> anyhow::Result<Option<String>> {
+    let kinds: &[&str] = match detector {
+        "captions" => &["caption_manual", "caption_auto"],
+        "asr" => &["asr"],
+        _ => return Ok(None),
+    };
+    Ok(sqlx::query_scalar::<_, Option<String>>(
+        "SELECT s.message FROM transcript_streams s
+         WHERE s.video_id = $1 AND s.source_kind = ANY($2) AND s.message IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM transcript_segments t WHERE t.stream_id = s.id)
+         ORDER BY s.created_at DESC LIMIT 1",
+    )
+    .bind(video_id)
+    .bind(kinds)
+    .fetch_optional(pool)
+    .await?
+    .flatten())
 }
 
 async fn existing_output(pool: &PgPool, video_id: Uuid, detector: &str) -> anyhow::Result<bool> {
