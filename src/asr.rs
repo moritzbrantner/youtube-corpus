@@ -112,7 +112,7 @@ fn whisper_json_path(media_path: &Path, output_dir: &Path) -> anyhow::Result<Pat
     Ok(output_dir.join(output_name))
 }
 
-fn resolve_command(command: &str) -> Option<PathBuf> {
+pub(crate) fn resolve_command(command: &str) -> Option<PathBuf> {
     std::env::var_os("PATH").and_then(|paths| {
         std::env::split_paths(&paths)
             .map(|dir| dir.join(command))

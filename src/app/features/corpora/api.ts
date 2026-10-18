@@ -635,7 +635,7 @@ export type PlanRunReport = {
   videoId: string;
   stages: {
     detector: string;
-    outcome: "reused" | "completed" | "failed" | "unavailable";
+    outcome: "reused" | "completed" | "skipped" | "failed" | "unavailable";
     message: string | null;
   }[];
 };
@@ -676,10 +676,46 @@ export function getVideoDetectorPlan(corpusId: string, videoId: string) {
   return apiFetch<VideoDetectorPlan>(`/api/corpora/${corpusId}/videos/${videoId}/detector-plan`);
 }
 
-export function runVideoDetectorPlan(corpusId: string, videoId: string, refresh: boolean) {
+export function runVideoDetectorPlan(
+  corpusId: string,
+  videoId: string,
+  refresh: boolean,
+  detectors?: string[],
+) {
   return apiFetch<PlanRunReport>(`/api/corpora/${corpusId}/videos/${videoId}/detector-plan/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh }),
+    body: JSON.stringify({ refresh, detectors }),
   });
+}
+
+export type VideoProcessingStatus = {
+  videoId: string;
+  stages: {
+    detector: string;
+    label: string;
+    targetLanguage: string | null;
+    sourceLanguages: string[];
+    state:
+      | "disabled"
+      | "awaiting_review"
+      | "missing"
+      | "missing_source"
+      | "running"
+      | "completed"
+      | "skipped"
+      | "failed"
+      | "unavailable"
+      | "interrupted";
+    outputCount: number;
+    message: string | null;
+    startedAt: string | null;
+    finishedAt: string | null;
+  }[];
+};
+
+export function getVideoProcessingStatus(corpusId: string, videoId: string) {
+  return apiFetch<VideoProcessingStatus>(
+    `/api/corpora/${corpusId}/videos/${videoId}/processing-status`,
+  );
 }

@@ -15,7 +15,7 @@ use crate::visual_timeline::{
 };
 
 /// Exact visual-analysis revision consumed by this source-first integration.
-pub const VISUAL_ANALYSIS_SCENE_REVISION: &str = "8852f257de6ddc4580698ad00d4c9a9ab8461b70";
+pub const VISUAL_ANALYSIS_SCENE_REVISION: &str = "f73969447916e5ac47f4559fc51ab47552f4f734";
 const SCENE_MODEL: &str = "scenedetect-core:content";
 const SCENE_MODEL_VERSION: &str = "0.1.0";
 const DEFAULT_CONTENT_THRESHOLD: f32 = 27.0;
@@ -218,6 +218,42 @@ fn fnv1a_update(mut state: u64, bytes: &[u8]) -> u64 {
         state = state.wrapping_mul(FNV1A_PRIME);
     }
     state
+}
+
+/// A retained scene output is reusable only for these actual bytes and producer defaults.
+pub(crate) async fn has_current_scene_output(pool: &PgPool, video: Uuid) -> anyhow::Result<bool> {
+    let path: Option<String> =
+        sqlx::query_scalar("SELECT local_video_path FROM videos WHERE id = $1")
+            .bind(video)
+            .fetch_one(pool)
+            .await?;
+    let Some(path) = path.filter(|p| Path::new(p).is_file()) else {
+        return Ok(false);
+    };
+    let input = fingerprint_file(Path::new(&path))?;
+    let config = fingerprint_bytes(
+        format!(
+            "content-threshold={:08x};min-scene-len={}",
+            DEFAULT_CONTENT_THRESHOLD.to_bits(),
+            DEFAULT_MIN_SCENE_LEN
+        )
+        .as_bytes(),
+    );
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM media_processing_runs r
+        WHERE video_id = $1 AND modality = 'scene' AND processor = 'visual-analysis'
+        AND processor_version = $2 AND model = $3 AND model_version = $4
+        AND input_hash = $5 AND config_hash = $6
+        AND EXISTS(SELECT 1 FROM video_scenes s WHERE s.run_id = r.id))",
+    )
+    .bind(video)
+    .bind(VISUAL_ANALYSIS_SCENE_REVISION)
+    .bind(SCENE_MODEL)
+    .bind(SCENE_MODEL_VERSION)
+    .bind(input)
+    .bind(config)
+    .fetch_one(pool)
+    .await?)
 }
 
 #[cfg(test)]

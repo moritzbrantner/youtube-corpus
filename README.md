@@ -195,6 +195,20 @@ through several sources gets every detector any of them requests. Pick a video t
 effective plan and who requested each detector, then **Run plan**: existing output is reused,
 and detectors without an integrated producer (OCR, translation) are reported as unavailable.
 
+In **Videos**, expand **Processing stages** to inspect the effective per-detector state,
+retained output and source languages. Translation reports each requested target separately.
+Run one stage to retry missing/failed work or reuse identical output; **Refresh** explicitly
+reruns that stage. ASR retries retain the tracked source's configured transcriber command,
+arguments and timeout. Failed refreshes retain earlier searchable evidence. Changed local
+input bytes, executable content, producer revision or relevant settings prevent stale reuse.
+Review-first videos must be approved in their source before processing. Interrupted requests
+are shown as interrupted rather than remaining running indefinitely. Stages started by an
+older binary have no attempt history; only their retained evidence can be reported.
+
+The status API is `GET /api/corpora/{corpusId}/videos/{videoId}/processing-status`.
+`POST …/detector-plan/run` accepts `{"detectors":["asr"],"refresh":false}` to target
+one enabled stage; omitting `detectors` runs the enabled plan.
+
 ## Entities
 
 Extract people, places and other named entities from each corpus video's transcript and

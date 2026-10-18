@@ -106,6 +106,10 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
             get(get_video_plan),
         )
         .route(
+            "/api/corpora/{corpus_id}/videos/{video_id}/processing-status",
+            get(get_processing_status),
+        )
+        .route(
             "/api/corpora/{corpus_id}/videos/{video_id}/detector-plan/run",
             post(run_video_plan),
         )
@@ -732,9 +736,21 @@ async fn get_video_plan(
         .map_err(map_detector_error)
 }
 
+async fn get_processing_status(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, video_id)): AxumPath<(Uuid, Uuid)>,
+) -> Result<Json<crate::detector_status::VideoProcessingStatus>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::detector_status::video_status(&pool, corpus_id, video_id)
+        .await
+        .map(Json)
+        .map_err(map_detector_error)
+}
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RunPlanInput {
+    detectors: Option<Vec<String>>,
     refresh: Option<bool>,
     work_dir: Option<String>,
 }
@@ -758,6 +774,7 @@ async fn run_video_plan(
         yt_dlp: state.yt_dlp.clone(),
         model_dir: PathBuf::from(crate::entities::DEFAULT_MODEL_DIR),
         refresh: input.refresh.unwrap_or(false),
+        detectors: input.detectors,
     })
     .await
     .map(Json)
@@ -855,6 +872,18 @@ async fn reprocess_video(
     if !allowed_video_ids.contains(&video_id) {
         return Err(ResearchError::not_found(
             "Video is not part of this corpus.",
+        ));
+    }
+    let status = crate::detector_status::video_status(&pool, corpus_id, video_id)
+        .await
+        .map_err(map_detector_error)?;
+    if status
+        .stages
+        .iter()
+        .any(|s| matches!(s.state, crate::detector_status::StageState::AwaitingReview))
+    {
+        return Err(ResearchError::bad_request(
+            "Approve this video in its source before reprocessing.",
         ));
     }
     crate::reprocessing::reprocess_video(ReprocessRequest {

@@ -16,6 +16,7 @@ struct Seed {
     outside_source: Uuid,
     shared: Uuid,
     direct: Uuid,
+    _files: tempfile::TempDir,
 }
 
 async fn seed() -> Option<Seed> {
@@ -98,7 +99,18 @@ async fn seed() -> Option<Seed> {
         .execute(&pool)
         .await
         .unwrap();
+    let files = tempfile::tempdir().unwrap();
+    let caption = files.path().join("caption.vtt");
+    std::fs::write(&caption, "hello").unwrap();
     seed_captions(&pool, shared).await;
+    use sha2::{Digest, Sha256};
+    let config = json!({
+        "caption": { "enabled": true, "include_auto_captions": true, "languages": ["en"] },
+        "input": { "path": caption, "sha256": Sha256::digest(b"hello").iter().map(|b| format!("{b:02x}")).collect::<String>() }
+    });
+    sqlx::query("UPDATE transcript_streams SET processor_revision = $2, processing_config = $3 WHERE video_id = $1")
+        .bind(shared).bind(youtube_corpus::provenance::PROCESSOR_SOURCE_REVISION).bind(config)
+        .execute(&pool).await.unwrap();
 
     Some(Seed {
         app,
@@ -109,6 +121,7 @@ async fn seed() -> Option<Seed> {
         outside_source,
         shared,
         direct,
+        _files: files,
     })
 }
 
@@ -424,4 +437,337 @@ async fn running_a_plan_reuses_existing_output_and_reports_unavailable_detectors
         .as_str()
         .unwrap()
         .contains("OCR"));
+}
+
+async fn processing_status(seed: &Seed, video: Uuid) -> Value {
+    let (status, body) = call(
+        &seed.app,
+        Method::GET,
+        &format!(
+            "/api/corpora/{}/videos/{video}/processing-status",
+            seed.corpus
+        ),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    body
+}
+
+fn stage<'a>(status: &'a Value, detector: &str) -> &'a Value {
+    status["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["detector"] == detector)
+        .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
+async fn status_tracks_effective_selection_failures_review_and_each_translation_language() {
+    let Some(seed) = seed().await else {
+        return;
+    };
+    let pool = youtube_corpus::db::connect(&std::env::var("DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    let base = format!("/api/corpora/{}", seed.corpus);
+    put_settings(
+        &seed.app,
+        &format!("{base}/detector-profiles/corpus"),
+        json!([
+            {"detector": "captions", "enabled": true},
+            {"detector": "asr", "enabled": true},
+            {"detector": "scenes", "enabled": true},
+            {"detector": "translate_spoken", "enabled": true, "targetLanguages": ["de", "es"]},
+            {"detector": "translate_ocr", "enabled": true, "targetLanguages": ["de", "es"]}
+        ]),
+    )
+    .await;
+    let status = processing_status(&seed, seed.shared).await;
+    assert_eq!(stage(&status, "captions")["state"], "completed");
+    assert_eq!(stage(&status, "captions")["outputCount"], 1);
+    assert_eq!(stage(&status, "asr")["state"], "missing");
+    assert_eq!(stage(&status, "ocr")["state"], "disabled");
+    let translations: Vec<_> = status["stages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|s| s["detector"] == "translate_spoken")
+        .collect();
+    assert_eq!(translations.len(), 2);
+    assert_eq!(translations[0]["targetLanguage"], "de");
+    assert_eq!(translations[1]["targetLanguage"], "es");
+    assert!(translations.iter().all(|s| s["state"] == "unavailable"));
+    assert_eq!(stage(&status, "translate_ocr")["state"], "missing_source");
+
+    // A failed new attempt must not hide retained evidence or be masked by it.
+    sqlx::query("INSERT INTO detector_attempts (id, video_id, detector, identity, state, backend_pid, message, finished_at)
+        VALUES ($1, $2, 'captions', '{}', 'failed', 0, 'caption provider failed', now())")
+        .bind(Uuid::new_v4()).bind(seed.shared).execute(&pool).await.unwrap();
+    let failed = processing_status(&seed, seed.shared).await;
+    assert_eq!(stage(&failed, "captions")["state"], "failed");
+    assert_eq!(stage(&failed, "captions")["outputCount"], 1);
+    assert_eq!(
+        stage(&failed, "captions")["message"],
+        "caption provider failed"
+    );
+
+    // Retry exactly scenes: no caption network call and no ASR invocation. A real missing
+    // media failure persists across subsequent status reads instead of disappearing.
+    let (code, report) = call(
+        &seed.app,
+        Method::POST,
+        &format!("{base}/videos/{}/detector-plan/run", seed.shared),
+        Some(json!({"detectors": ["scenes"]})),
+    )
+    .await;
+    assert_eq!(code, StatusCode::OK, "{report}");
+    assert_eq!(report["stages"].as_array().unwrap().len(), 1);
+    assert_eq!(report["stages"][0]["outcome"], "failed");
+    let failed = processing_status(&seed, seed.shared).await;
+    assert_eq!(stage(&failed, "scenes")["state"], "failed");
+    assert!(stage(&failed, "scenes")["message"]
+        .as_str()
+        .unwrap()
+        .contains("no retained local media"));
+    // A corpus-scoped override disables the same failed detector without deleting its history.
+    put_settings(
+        &seed.app,
+        &format!("{base}/videos/{}/detector-overrides", seed.shared),
+        json!([{"detector": "scenes", "enabled": false}]),
+    )
+    .await;
+    assert_eq!(
+        stage(&processing_status(&seed, seed.shared).await, "scenes")["state"],
+        "disabled"
+    );
+    let (code, _) = call(
+        &seed.app,
+        Method::POST,
+        &format!("{base}/videos/{}/detector-plan/run", seed.shared),
+        Some(json!({"detectors": ["scenes"]})),
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+
+    // Both source memberships require review; an automatic source anywhere admits the
+    // canonical video, even if the current corpus contains a review-first source.
+    sqlx::query("DELETE FROM transcript_streams WHERE video_id = $1")
+        .bind(seed.shared)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM detector_attempts WHERE video_id = $1")
+        .bind(seed.shared)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE corpus_subscription_items SET status = 'awaiting_review' WHERE youtube_id = $1",
+    )
+    .bind(format!("yt{}", seed.shared))
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE corpus_subscriptions SET processing_policy = 'review_first' WHERE id IN ($1,$2,$3)",
+    )
+    .bind(seed.playlist_a)
+    .bind(seed.playlist_b)
+    .bind(seed.outside_source)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        stage(&processing_status(&seed, seed.shared).await, "captions")["state"],
+        "awaiting_review"
+    );
+    let (code, _) = call(
+        &seed.app,
+        Method::POST,
+        &format!("{base}/videos/{}/detector-plan/run", seed.shared),
+        Some(json!({"detectors": ["scenes"]})),
+    )
+    .await;
+    assert_eq!(code, StatusCode::BAD_REQUEST);
+    sqlx::query("UPDATE corpus_subscriptions SET processing_policy = 'automatic' WHERE id = $1")
+        .bind(seed.outside_source)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        stage(&processing_status(&seed, seed.shared).await, "captions")["state"],
+        "missing"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
+async fn interrupted_attempts_are_not_reported_as_running_and_retained_outputs_survive() {
+    let Some(seed) = seed().await else {
+        return;
+    };
+    let pool = youtube_corpus::db::connect(&std::env::var("DATABASE_URL").unwrap())
+        .await
+        .unwrap();
+    put_settings(
+        &seed.app,
+        &format!("/api/corpora/{}/detector-profiles/corpus", seed.corpus),
+        json!([{"detector": "captions", "enabled": true}]),
+    )
+    .await;
+    let mut lock = pool.begin().await.unwrap();
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))")
+        .bind(format!("detector:{}:captions", seed.shared))
+        .execute(&mut *lock)
+        .await
+        .unwrap();
+    let pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *lock)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO detector_attempts(id,video_id,detector,identity,state,backend_pid) VALUES($1,$2,'captions','{}','running',$3)")
+        .bind(Uuid::new_v4()).bind(seed.shared).bind(pid).execute(&pool).await.unwrap();
+    assert_eq!(
+        stage(&processing_status(&seed, seed.shared).await, "captions")["state"],
+        "running"
+    );
+    lock.rollback().await.unwrap();
+    let status = processing_status(&seed, seed.shared).await;
+    assert_eq!(stage(&status, "captions")["state"], "interrupted");
+    assert_eq!(stage(&status, "captions")["outputCount"], 1);
+}
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
+#[cfg(unix)]
+async fn targeted_asr_reuses_only_identical_input_producer_and_config_and_preserves_failures() {
+    use std::os::unix::fs::PermissionsExt;
+    let Some(seed) = seed().await else {
+        return;
+    };
+    let database_url = std::env::var("DATABASE_URL").unwrap();
+    let pool = youtube_corpus::db::connect(&database_url).await.unwrap();
+    let files = tempfile::tempdir().unwrap();
+    let media = files.path().join("speech.wav");
+    let command = files.path().join("transcriber");
+    std::fs::write(&media, "media v1").unwrap();
+    std::fs::write(&command, r#"#!/usr/bin/env python3
+import json, pathlib, sys
+root = pathlib.Path(__file__).parent
+with (root / 'calls').open('a') as calls: calls.write('called\n')
+if (root / 'fail').exists():
+    print('deliberate transcriber failure', file=sys.stderr)
+    sys.exit(1)
+out = pathlib.Path(sys.argv[sys.argv.index('--output_dir') + 1])
+out.mkdir(parents=True, exist_ok=True)
+(out / (pathlib.Path(sys.argv[1]).stem + '.json')).write_text(json.dumps({
+    'language': 'en', 'segments': [{'id': 0, 'start': 0.0, 'end': 2.0, 'text': 'Test speech evidence.'}]
+}))
+"#).unwrap();
+    std::fs::set_permissions(&command, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let source = media.to_str().unwrap();
+    let video = youtube_corpus::youtube::stable_video_id(source);
+    sqlx::query("INSERT INTO videos(id, source_url, local_video_path) VALUES($1,$2,$2)")
+        .bind(video)
+        .bind(source)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO corpus_video_memberships(corpus_id,video_id) VALUES($1,$2)")
+        .bind(seed.corpus)
+        .bind(video)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO corpus_subscription_items(id,subscription_id,source_url,status) VALUES($1,$2,$3,'indexed')")
+        .bind(Uuid::new_v4()).bind(seed.playlist_a).bind(source).execute(&pool).await.unwrap();
+    sqlx::query("UPDATE corpus_subscriptions SET transcriber_command = $2 WHERE id = $1")
+        .bind(seed.playlist_a)
+        .bind(command.to_str().unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    put_settings(
+        &seed.app,
+        &format!("/api/corpora/{}/detector-profiles/corpus", seed.corpus),
+        json!([{"detector": "asr", "enabled": true}]),
+    )
+    .await;
+    let run = |refresh| {
+        youtube_corpus::detectors::run_video_plan(youtube_corpus::detectors::PlanRunRequest {
+            database_url: database_url.clone(),
+            corpus_id: seed.corpus,
+            video_id: video,
+            work_dir: files.path().join("work"),
+            yt_dlp: Default::default(),
+            model_dir: files.path().join("models"),
+            refresh,
+            detectors: Some(vec!["asr".to_string()]),
+        })
+    };
+    let calls = || {
+        std::fs::read_to_string(files.path().join("calls"))
+            .unwrap()
+            .lines()
+            .count()
+    };
+    assert!(matches!(
+        run(false).await.unwrap().stages[0].outcome,
+        youtube_corpus::detectors::StageOutcome::Completed
+    ));
+    assert_eq!(calls(), 1);
+    assert!(matches!(
+        run(false).await.unwrap().stages[0].outcome,
+        youtube_corpus::detectors::StageOutcome::Reused
+    ));
+    assert_eq!(calls(), 1);
+    std::fs::write(&media, "media v2").unwrap();
+    assert!(matches!(
+        run(false).await.unwrap().stages[0].outcome,
+        youtube_corpus::detectors::StageOutcome::Completed
+    ));
+    assert_eq!(calls(), 2);
+    sqlx::query(
+        "UPDATE corpus_subscriptions SET transcriber_args = ARRAY['--model','tiny'] WHERE id = $1",
+    )
+    .bind(seed.playlist_a)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(matches!(
+        run(false).await.unwrap().stages[0].outcome,
+        youtube_corpus::detectors::StageOutcome::Completed
+    ));
+    assert_eq!(calls(), 3);
+    std::fs::write(files.path().join("fail"), "fail").unwrap();
+    let failed = run(true).await.unwrap();
+    assert!(matches!(
+        failed.stages[0].outcome,
+        youtube_corpus::detectors::StageOutcome::Failed
+    ));
+    let status = processing_status(&seed, video).await;
+    assert_eq!(stage(&status, "asr")["state"], "failed");
+    assert_eq!(stage(&status, "asr")["outputCount"], 1);
+    std::fs::remove_file(files.path().join("fail")).unwrap();
+    assert!(matches!(
+        run(false).await.unwrap().stages[0].outcome,
+        youtube_corpus::detectors::StageOutcome::Completed
+    ));
+    assert_eq!(calls(), 5);
+    assert_eq!(
+        stage(&processing_status(&seed, video).await, "asr")["outputCount"],
+        1
+    );
+    // Same configured path, revised executable content: a different producer is not reused.
+    let mut script = std::fs::read_to_string(&command).unwrap();
+    script.push_str("\n# producer revision 2\n");
+    std::fs::write(&command, script).unwrap();
+    assert!(matches!(
+        run(false).await.unwrap().stages[0].outcome,
+        youtube_corpus::detectors::StageOutcome::Completed
+    ));
+    assert_eq!(calls(), 6);
 }
