@@ -61,6 +61,10 @@ pub const DETECTORS: &[DetectorInfo] = &[
         note: Some("Samples retained video once per second; needs ONNX Runtime API 24. Pinned free models download only on request."), takes_languages: false,
     },
     DetectorInfo {
+        id: "voices", label: "Voices and within-video speaker tracks", producer: "audio-analysis WeSpeaker + diarization", available: true,
+        note: Some("Needs retained audio and ONNX Runtime API 24. Pinned free speaker model downloads on request; speaker labels are inferred."), takes_languages: false,
+    },
+    DetectorInfo {
         id: "ocr",
         label: "On-screen text (OCR)",
         producer: "visual-analysis OCR",
@@ -702,6 +706,7 @@ async fn existing_output(
             crate::visual_processing::has_current_scene_output(pool, request.video_id).await
         }
         "faces" => crate::face_processing::has_current_face_output(pool, request.video_id).await,
+        "voices" => crate::voice_processing::has_current_voice_output(pool, request.video_id).await,
         "entities" => {
             let identity = stage_identity(pool, request.video_id, detector).await?;
             Ok(sqlx::query_scalar(
@@ -784,6 +789,22 @@ async fn stage_identity(
     video: Uuid,
     detector: &str,
 ) -> anyhow::Result<serde_json::Value> {
+    if detector == "voices" {
+        let path: Option<String> =
+            sqlx::query_scalar("SELECT local_video_path FROM videos WHERE id = $1")
+                .bind(video)
+                .fetch_one(pool)
+                .await?;
+        let input = path
+            .as_deref()
+            .filter(|p| std::path::Path::new(p).is_file())
+            .map(|p| crate::detector_status::file_identity(std::path::Path::new(p)))
+            .transpose()?;
+        return Ok(
+            serde_json::json!({"detector":detector,"input":input,"settings":crate::voice_processing::settings(),
+            "producerRevision":crate::voice_processing::AUDIO_ANALYSIS_REVISION,"modelVersion":crate::voice_processing::VOICE_MODEL_VERSION}),
+        );
+    }
     if detector == "faces" {
         let path: Option<String> =
             sqlx::query_scalar("SELECT local_video_path FROM videos WHERE id = $1")
@@ -897,6 +918,28 @@ async fn run_stage_inner(
             Ok((
                 StageOutcome::Completed,
                 Some(format!("{} scenes", report.scenes.len())),
+            ))
+        }
+        "voices" => {
+            let report = crate::voice_processing::analyze_stored_video_voices(
+                pool,
+                crate::voice_processing::VoiceAnalysisRequest {
+                    video_id: request.video_id,
+                    model_dir: request.model_dir.clone(),
+                    refresh: request.refresh,
+                },
+            )
+            .await?;
+            Ok((
+                if report.reused {
+                    StageOutcome::Reused
+                } else {
+                    StageOutcome::Completed
+                },
+                Some(format!(
+                    "{} speaker observations in {} inferred tracks",
+                    report.observations, report.tracks
+                )),
             ))
         }
         "faces" => {

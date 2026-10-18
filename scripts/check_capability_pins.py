@@ -19,7 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OWNERS = {
     f"https://github.com/moritzbrantner/{name}"
-    for name in ("nlp-stack", "moenarch-foundation", "visual-analysis")
+    for name in ("nlp-stack", "moenarch-foundation", "visual-analysis", "audio-analysis")
 }
 FULL_REV = re.compile(r"^[0-9a-f]{40}$")
 ALLOWED_KEYS = {"package", "git", "rev", "features", "default-features", "optional"}

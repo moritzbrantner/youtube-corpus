@@ -115,6 +115,7 @@ pub(crate) async fn output_count(
         "ocr" => "SELECT count(*) FROM visual_text_observations WHERE video_id = $1",
         "entities" => "SELECT count(*) FROM entity_mentions WHERE video_id = $1",
         "faces" => "SELECT count(*) FROM face_observations WHERE video_id = $1",
+        "voices" => "SELECT count(*) FROM voice_observations WHERE video_id = $1",
         _ => return Ok(0),
     };
     Ok(sqlx::query_scalar(sql).bind(video).fetch_one(pool).await?)
@@ -163,9 +164,9 @@ async fn status_for_plan(
         } else if !planned.available {
             StageState::Unavailable
         } else if count > 0
-            || (planned.detector == "faces"
-                && sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM media_processing_runs WHERE video_id = $1 AND modality = 'face' AND processing_config->>'complete' = 'true')")
-                    .bind(plan.video_id).fetch_one(pool).await?)
+            || (matches!(planned.detector.as_str(), "faces" | "voices")
+                && sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM media_processing_runs WHERE video_id = $1 AND modality = $2 AND processing_config->>'complete' = 'true')")
+                    .bind(plan.video_id).bind(if planned.detector == "faces" { "face" } else { "voice" }).fetch_one(pool).await?)
         {
             StageState::Completed
         } else {
