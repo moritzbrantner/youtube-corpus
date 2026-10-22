@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ErrorState, StateViewTitle, StateViewDescription, Button } from "@moritzbrantner/ui";
 
 import LegacyApp from "./LegacyApp";
 import {
@@ -8,13 +9,16 @@ import {
 import { YouTubeAnalyzer } from "./app/features/analyzer/YouTubeAnalyzer";
 import { CorpusWorkspace } from "./app/features/corpora/CorpusWorkspace";
 
-type AppRoute = "analyzer" | "corpora" | "legacy";
+type AppRoute = "analyzer" | "corpora" | "search" | "legacy";
 
 function routeFromLocation(): AppRoute {
   if (typeof window === "undefined") {
     return "analyzer";
   }
-  if (window.location.hash === "#corpora") {
+  if (window.location.pathname === "/search") {
+    return "search";
+  }
+  if (window.location.pathname === "/corpora" || window.location.hash === "#corpora") {
     return "corpora";
   }
   if (window.location.hash === "#legacy") {
@@ -29,15 +33,32 @@ export default function App() {
   React.useEffect(() => {
     const syncRoute = () => setRoute(routeFromLocation());
     window.addEventListener("hashchange", syncRoute);
-    return () => window.removeEventListener("hashchange", syncRoute);
+    window.addEventListener("popstate", syncRoute);
+    return () => {
+      window.removeEventListener("hashchange", syncRoute);
+      window.removeEventListener("popstate", syncRoute);
+    };
   }, []);
 
   if (shouldUseDirectBrowserAnalyzer()) {
+    if (route === "corpora" || route === "search") {
+      return (
+        <ErrorState>
+          <StateViewTitle>Local corpus app required</StateViewTitle>
+          <StateViewDescription>
+            Corpora and Search need the local app and its database.
+          </StateViewDescription>
+          <Button asChild>
+            <a href="./?mode=browser">Open browser analyzer</a>
+          </Button>
+        </ErrorState>
+      );
+    }
     return <DirectBrowserYouTubeAnalyzer />;
   }
 
-  if (route === "corpora") {
-    return <CorpusWorkspace />;
+  if (route === "corpora" || route === "search") {
+    return <CorpusWorkspace page={route} />;
   }
 
   if (route === "legacy") {
