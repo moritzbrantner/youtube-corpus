@@ -407,6 +407,42 @@ pub struct BeliefEvidence {
     pub score: Option<BeliefScore>,
     #[serde(default)]
     pub parent_evidence_ids: Vec<String>,
+    #[serde(default)]
+    pub media_span: Option<BeliefMediaSpan>,
+    #[serde(default)]
+    pub scene_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BeliefMediaSpan {
+    pub start: BeliefMediaTime,
+    pub end: BeliefMediaTime,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BeliefMediaTime {
+    pub pts: i64,
+    pub timebase: BeliefTimebase,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BeliefTimebase {
+    pub num: u32,
+    pub den: u32,
+}
+
+impl BeliefMediaTime {
+    /// pts·num/den compared exactly, as belief-lab compares spans across timebases.
+    fn exact(self, other: Self) -> std::cmp::Ordering {
+        (i128::from(self.pts) * i128::from(self.timebase.num) * i128::from(other.timebase.den)).cmp(
+            &(i128::from(other.pts)
+                * i128::from(other.timebase.num)
+                * i128::from(self.timebase.den)),
+        )
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -474,7 +510,7 @@ fn immutable_revision(field: &str, value: &str) -> Result<(), String> {
 pub fn validate_belief_batch(json: &str) -> Result<BeliefBatch, String> {
     let batch: BeliefBatch =
         serde_json::from_str(json).map_err(|error| format!("invalid JSON: {error}"))?;
-    if batch.schema != "belief_evidence_interchange" || batch.schema_version != 1 {
+    if batch.schema != "belief_evidence_interchange" || !matches!(batch.schema_version, 1 | 2) {
         return Err(format!(
             "unsupported schema {}@{}",
             batch.schema, batch.schema_version
@@ -523,6 +559,40 @@ pub fn validate_belief_batch(json: &str) -> Result<BeliefBatch, String> {
             }
             if !score.value.is_finite() || !(0.0..=1.0).contains(&score.value) {
                 return Err(format!("evidence {} has an invalid score", evidence.id));
+            }
+        }
+        // belief-lab interchange v2: an optional media span and the scenes covering it.
+        if (evidence.media_span.is_some() || evidence.scene_ids.is_some())
+            && batch.schema_version < 2
+        {
+            return Err(format!(
+                "evidence {} uses media fields without schemaVersion 2",
+                evidence.id
+            ));
+        }
+        if evidence.scene_ids.is_some() && evidence.media_span.is_none() {
+            return Err(format!(
+                "evidence {} names scenes without a media span",
+                evidence.id
+            ));
+        }
+        if let Some(span) = &evidence.media_span {
+            let positive = |time: BeliefMediaTime| time.timebase.num > 0 && time.timebase.den > 0;
+            if !positive(span.start)
+                || !positive(span.end)
+                || span.start.pts < 0
+                || span.start.exact(span.end) != std::cmp::Ordering::Less
+            {
+                return Err(format!(
+                    "evidence {} has an invalid media span",
+                    evidence.id
+                ));
+            }
+        }
+        if let Some(scenes) = &evidence.scene_ids {
+            let unique = scenes.iter().collect::<BTreeSet<_>>();
+            if unique.len() != scenes.len() || scenes.iter().any(|id| id.trim().is_empty()) {
+                return Err(format!("evidence {} has invalid scene ids", evidence.id));
             }
         }
         for parent in &evidence.parent_evidence_ids {
