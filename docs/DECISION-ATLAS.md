@@ -189,6 +189,10 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
   Status: adopted 2026-10-13. Answers 3.12 (option B).  
   Users can select **one or more target languages** for generated translated evidence, with the **corpus/group processing profile** providing the normal set and optional **channel/playlist and per-video overrides** under 2.6. Each video's effective translation plan must show the target languages actually requested and which applicable profiles requested them; overlapping sources/groups combine applicable translation requests under 2.8 without duplicating identical video/input/modality/target-language/model/configuration work (2.2). Transcript and OCR translation remain independently selectable under 3.11; enabling one does not force the other. Generate and index only the **chosen, supported** language outputs, preserving original-language text, modality, timestamps, and translation provenance under 3.9. Do not silently translate into every supported language, invent a universal default target language, or treat an unavailable language pair as successfully translated. The specific initially selected languages and provider availability are not owner-approved here.
 
+- **3.14 Promote an optional Tantivy search provider only after demonstrated superiority.**  
+  Status: adopted 2026-10-20 (owner choice B, [#76](https://github.com/moritzbrantner/youtube-corpus/issues/76)).  
+  Start Tantivy through Search Engine as an opt-in local lexical provider. Keep the existing search backend as default until representative real-corpus comparisons show meaningful improvements in retrieval quality, correctness and performance while preserving exact source provenance, filters and navigation. Do not claim hybrid semantic/OCR fusion parity from lexical evidence; promote only after demonstrated non-regression in the supported scope. Preserve a documented fallback during evaluation.
+
 ## 4. People, places, and other entities
 
 - **4.1 Record source-grounded entity occurrences.**  
