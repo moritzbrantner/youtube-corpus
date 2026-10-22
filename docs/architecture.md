@@ -184,3 +184,5 @@ immutable legacy processor-version value. A release label alone fails with the
 stream identity and guidance to reprocess or restore the original receipt. Export
 never substitutes its own revision or hashes a release label to invent history.
 The independent fixture generator and import-rule mirror enforce this distinction.
+
+Since #115 the belief export also says where each segment is in the media. A segment with stored start and end times gets a half-open `mediaSpan` in rational media time (microsecond ticks, `timebase 1/1000000`, rounded to the nearest tick), and the export becomes `belief_evidence_interchange@2`. `sceneIds` lists the stored `video_scenes` records (visual-analysis scene detection) that overlap the span on the segment's video, from all scene runs, ordered by start and id. Untimed segments get neither field, and a corpus without timing still exports version 1. The corpus never invents timing or scenes.

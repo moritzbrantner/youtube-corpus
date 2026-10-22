@@ -15,6 +15,7 @@ It reads `tests/fixtures/exports/corpus-snapshot.json` and writes
 """
 
 import hashlib
+import math
 import json
 import pathlib
 import struct
@@ -100,7 +101,7 @@ def load():
     runs = sorted(snapshot.get("visualTextRuns", []), key=lambda run: run["id"])
     for run in runs:
         run["tracks"] = sorted(run["tracks"], key=track_sort_key)
-    return videos, streams, runs
+    return videos, streams, runs, snapshot.get("scenes", [])
 
 
 def optional(record, key, value):
@@ -442,7 +443,22 @@ def corpus_core(videos, streams, runs):
     return "\n".join(lines) + "\n"
 
 
-def belief_evidence(videos, streams):
+MEDIA_TICKS = 1_000_000
+
+
+def media_ticks(seconds):
+    # Microsecond ticks, rounding halves away from zero like Rust's f64::round for non-negative times.
+    if seconds is None or seconds < 0 or seconds != seconds or seconds in (float("inf"),):
+        return None
+    return math.floor(seconds * MEDIA_TICKS + 0.5)
+
+
+def media_time(pts):
+    return {"pts": pts, "timebase": {"num": 1, "den": MEDIA_TICKS}}
+
+
+def belief_evidence(videos, streams, scenes):
+    scenes = sorted(scenes, key=lambda scene: (scene["startSeconds"], scene["id"]))
     evidence = []
     for stream in streams:
         for seg in stream["segments"]:
@@ -454,6 +470,20 @@ def belief_evidence(videos, streams):
                 raise ValueError(f"stream {stream['id']} lacks immutable processor provenance")
             producer = {"name": stream["processor"], "revision": revision}
             optional(producer, "configHash", stream.get("processingConfigHash"))
+            video = seg.get("videoId", stream["videoId"])
+            start, end = media_ticks(seg.get("startSeconds")), media_ticks(seg.get("endSeconds"))
+            media = {}
+            if start is not None and end is not None and start < end:
+                media["mediaSpan"] = {"start": media_time(start), "end": media_time(end)}
+                covering = [
+                    f"scene:{scene['id']}"
+                    for scene in scenes
+                    if scene["videoId"] == video
+                    and media_ticks(scene["startSeconds"]) < end
+                    and start < media_ticks(scene["endSeconds"])
+                ]
+                if covering:
+                    media["sceneIds"] = covering
             evidence.append(
                 {
                     "id": f"evidence:youtube-corpus:transcript-segment:{seg['id']}",
@@ -466,13 +496,14 @@ def belief_evidence(videos, streams):
                         "revision": sha(compact(segment_material(seg))),
                     },
                     "producer": producer,
+                    **media,
                 }
             )
     evidence.sort(key=lambda record: record["id"])
     return pretty(
         {
             "schema": "belief_evidence_interchange",
-            "schemaVersion": 1,
+            "schemaVersion": 2 if any("mediaSpan" in record for record in evidence) else 1,
             "exporter": {"name": PRODUCER, "revision": REVISION},
             "revision": sha(canonical(evidence)),
             "evidence": evidence,
@@ -481,12 +512,12 @@ def belief_evidence(videos, streams):
 
 
 def main():
-    videos, streams, runs = load()
+    videos, streams, runs, scenes = load()
     out = HERE / "expected"
     out.mkdir(exist_ok=True)
     (out / "source-span.json").write_text(source_span(videos, streams, runs), encoding="utf-8")
     (out / "corpus-core.jsonl").write_text(corpus_core(videos, streams, runs), encoding="utf-8")
-    (out / "belief-evidence.json").write_text(belief_evidence(videos, streams), encoding="utf-8")
+    (out / "belief-evidence.json").write_text(belief_evidence(videos, streams, scenes), encoding="utf-8")
 
 
 if __name__ == "__main__":

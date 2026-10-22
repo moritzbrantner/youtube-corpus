@@ -11,8 +11,8 @@
 //!    (built by the same code as [`crate::export_source_span_batch`]);
 //! 2. [`export_corpus_core_jsonl`]: `moenarch_corpus_core_batch@1` JSONL built from the real
 //!    `corpus_core` types, the intake format of philosophy-extractor;
-//! 3. [`export_belief_evidence`]: `belief_evidence_interchange@1`, belief-lab evidence
-//!    references, one per transcript segment, copying no text.
+//! 3. [`export_belief_evidence`]: `belief_evidence_interchange@1` (or `@2` once a segment has
+//!    timing), belief-lab evidence references, one per transcript segment, copying no text.
 
 use anyhow::{bail, ensure, Context};
 use corpus_core::{
@@ -34,6 +34,10 @@ pub const CORPUS_CORE_BATCH_SCHEMA: &str = "moenarch_corpus_core_batch";
 pub const CORPUS_CORE_BATCH_VERSION_V1: u32 = 1;
 pub const BELIEF_EVIDENCE_INTERCHANGE_SCHEMA: &str = "belief_evidence_interchange";
 pub const BELIEF_EVIDENCE_INTERCHANGE_VERSION_V1: u32 = 1;
+/// Version 2 adds each reference's media span and the scene records that cover it.
+pub const BELIEF_EVIDENCE_INTERCHANGE_VERSION_V2: u32 = 2;
+/// Segment times are exported in microsecond ticks of rational media time.
+const MEDIA_TICKS_PER_SECOND: u32 = 1_000_000;
 
 const PRODUCER_NAME: &str = "youtube-corpus";
 const CORPUS_CORE_PROVENANCE_PRODUCER: &str = "youtube-corpus/corpus-export";
@@ -48,6 +52,19 @@ pub struct CorpusExportSnapshot {
     pub transcript_streams: Vec<ExportTranscriptStream>,
     #[serde(default)]
     pub visual_text_runs: Vec<ExportVisualTextRun>,
+    /// Stored scene records (from visual-analysis scene detection), used only to name the
+    /// scenes that cover an exported segment.
+    #[serde(default)]
+    pub scenes: Vec<ExportScene>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportScene {
+    pub id: Uuid,
+    pub video_id: Uuid,
+    pub start_seconds: f64,
+    pub end_seconds: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -164,6 +181,7 @@ impl CorpusExportSnapshot {
             !stream.segments.is_empty() || (!had_segments && stream_video == video_id)
         });
         self.visual_text_runs.retain(|run| run.video_id == video_id);
+        self.scenes.retain(|scene| scene.video_id == video_id);
         let mut referenced = BTreeSet::from([video_id]);
         for stream in &self.transcript_streams {
             referenced.insert(stream.video_id);
@@ -800,6 +818,45 @@ struct BeliefEvidence {
     family_id: String,
     source: BeliefSource,
     producer: BeliefProducer,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    media_span: Option<BeliefMediaSpan>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    scene_ids: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct BeliefMediaSpan {
+    start: BeliefMediaTime,
+    end: BeliefMediaTime,
+}
+
+#[derive(Serialize)]
+struct BeliefMediaTime {
+    pts: i64,
+    timebase: BeliefTimebase,
+}
+
+#[derive(Serialize)]
+struct BeliefTimebase {
+    num: u32,
+    den: u32,
+}
+
+/// Microsecond ticks of a stored time, or `None` when it is missing, negative or not finite.
+fn media_ticks(seconds: Option<f64>) -> Option<i64> {
+    let seconds = seconds.filter(|value| value.is_finite() && *value >= 0.0)?;
+    let ticks = (seconds * f64::from(MEDIA_TICKS_PER_SECOND)).round();
+    (ticks <= i64::MAX as f64).then_some(ticks as i64)
+}
+
+fn media_time(pts: i64) -> BeliefMediaTime {
+    BeliefMediaTime {
+        pts,
+        timebase: BeliefTimebase {
+            num: 1,
+            den: MEDIA_TICKS_PER_SECOND,
+        },
+    }
 }
 
 #[derive(Serialize)]
@@ -829,6 +886,12 @@ pub fn export_belief_evidence(
     let ordered = order_snapshot(snapshot, exporter_revision, "exporter", false)?;
 
     require_immutable_revision("exporter.revision", exporter_revision)?;
+    let mut scenes = snapshot.scenes.iter().collect::<Vec<_>>();
+    scenes.sort_by(|left, right| {
+        left.start_seconds
+            .total_cmp(&right.start_seconds)
+            .then_with(|| left.id.cmp(&right.id))
+    });
     let mut evidence = Vec::new();
     for ordered_stream in &ordered.streams {
         let stream = ordered_stream.stream;
@@ -843,6 +906,29 @@ pub fn export_belief_evidence(
         }
         for segment in &ordered_stream.segments {
             let revision = sha256_prefixed(&canonical_json(&segment_revision_material(segment))?);
+            let video = segment.effective_video_id(stream);
+            // Only stored timing becomes a span; an untimed or empty segment gets none.
+            let span = match (
+                media_ticks(segment.start_seconds),
+                media_ticks(segment.end_seconds),
+            ) {
+                (Some(start), Some(end)) if start < end => Some((start, end)),
+                _ => None,
+            };
+            let scene_ids = span
+                .map(|(start, end)| {
+                    scenes
+                        .iter()
+                        .filter(|scene| {
+                            scene.video_id == video
+                                && media_ticks(Some(scene.start_seconds))
+                                    .zip(media_ticks(Some(scene.end_seconds)))
+                                    .is_some_and(|(from, to)| from < end && start < to)
+                        })
+                        .map(|scene| format!("scene:{}", scene.id))
+                        .collect()
+                })
+                .unwrap_or_default();
             evidence.push(BeliefEvidence {
                 id: format!("evidence:youtube-corpus:transcript-segment:{}", segment.id),
                 class: "transcript",
@@ -858,6 +944,11 @@ pub fn export_belief_evidence(
                     revision: producer_revision.to_string(),
                     config_hash: stream.processing_config_hash.clone(),
                 },
+                media_span: span.map(|(start, end)| BeliefMediaSpan {
+                    start: media_time(start),
+                    end: media_time(end),
+                }),
+                scene_ids,
             });
         }
     }
@@ -866,7 +957,12 @@ pub fn export_belief_evidence(
 
     let batch = BeliefEvidenceBatch {
         schema: BELIEF_EVIDENCE_INTERCHANGE_SCHEMA,
-        schema_version: BELIEF_EVIDENCE_INTERCHANGE_VERSION_V1,
+        // Version 1 consumers keep working until a reference carries media fields.
+        schema_version: if evidence.iter().any(|item| item.media_span.is_some()) {
+            BELIEF_EVIDENCE_INTERCHANGE_VERSION_V2
+        } else {
+            BELIEF_EVIDENCE_INTERCHANGE_VERSION_V1
+        },
         exporter: BeliefExporter {
             name: PRODUCER_NAME,
             revision: exporter_revision,
@@ -1076,10 +1172,32 @@ pub async fn load_export_snapshot(
         });
     }
 
+    let scene_rows = sqlx::query(
+        "SELECT s.id, s.video_id, s.start_seconds, s.end_seconds
+         FROM video_scenes s
+         WHERE ($1::uuid IS NULL OR s.video_id = $1)
+         ORDER BY s.video_id, s.start_seconds, s.id",
+    )
+    .bind(video_id)
+    .fetch_all(pool)
+    .await?;
+    let scenes = scene_rows
+        .into_iter()
+        .map(|row| {
+            Ok(ExportScene {
+                id: row.try_get("id")?,
+                video_id: row.try_get("video_id")?,
+                start_seconds: row.try_get("start_seconds")?,
+                end_seconds: row.try_get("end_seconds")?,
+            })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
     Ok(CorpusExportSnapshot {
         videos,
         transcript_streams,
         visual_text_runs,
+        scenes,
     })
 }
 
@@ -1180,6 +1298,7 @@ mod tests {
                 segments: vec![segment(0, None), segment(1, Some(other_video))],
             }],
             visual_text_runs: Vec::new(),
+            scenes: Vec::new(),
         };
 
         let mut other = snapshot.clone();

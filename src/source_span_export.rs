@@ -426,6 +426,7 @@ mod tests {
                 segments,
             }],
             visual_text_runs: Vec::new(),
+            scenes: Vec::new(),
         }
     }
 

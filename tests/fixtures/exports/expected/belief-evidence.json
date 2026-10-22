@@ -1,11 +1,11 @@
 {
   "schema": "belief_evidence_interchange",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "exporter": {
     "name": "youtube-corpus",
     "revision": "git:fixture"
   },
-  "revision": "sha256:0cf7dd698939b8e56c4eae13e4232f8e442db0c41931e78bd920985d13d5b824",
+  "revision": "sha256:9ba943395e2e8737f90c7bce92cf397ff85903848c887ee9aa0063a0cc24c8a7",
   "evidence": [
     {
       "id": "evidence:youtube-corpus:transcript-segment:5e000000-0000-4000-8000-0000000000a0",
@@ -21,7 +21,26 @@
         "name": "youtube-corpus",
         "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1",
         "configHash": "sha256:207bcd6a13c7cb90532afab33aa2aa531e38ace35e7fbcfc544ffb5ab1850ae6"
-      }
+      },
+      "mediaSpan": {
+        "start": {
+          "pts": 0,
+          "timebase": {
+            "num": 1,
+            "den": 1000000
+          }
+        },
+        "end": {
+          "pts": 2500000,
+          "timebase": {
+            "num": 1,
+            "den": 1000000
+          }
+        }
+      },
+      "sceneIds": [
+        "scene:5c000000-0000-4000-8000-000000000001"
+      ]
     },
     {
       "id": "evidence:youtube-corpus:transcript-segment:5e000000-0000-4000-8000-0000000000a1",
@@ -37,7 +56,27 @@
         "name": "youtube-corpus",
         "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1",
         "configHash": "sha256:207bcd6a13c7cb90532afab33aa2aa531e38ace35e7fbcfc544ffb5ab1850ae6"
-      }
+      },
+      "mediaSpan": {
+        "start": {
+          "pts": 2500000,
+          "timebase": {
+            "num": 1,
+            "den": 1000000
+          }
+        },
+        "end": {
+          "pts": 5250000,
+          "timebase": {
+            "num": 1,
+            "den": 1000000
+          }
+        }
+      },
+      "sceneIds": [
+        "scene:5c000000-0000-4000-8000-000000000001",
+        "scene:5c000000-0000-4000-8000-000000000002"
+      ]
     },
     {
       "id": "evidence:youtube-corpus:transcript-segment:5e000000-0000-4000-8000-0000000000b0",
@@ -52,6 +91,22 @@
       "producer": {
         "name": "youtube-corpus",
         "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1"
+      },
+      "mediaSpan": {
+        "start": {
+          "pts": 1000000,
+          "timebase": {
+            "num": 1,
+            "den": 1000000
+          }
+        },
+        "end": {
+          "pts": 3000000,
+          "timebase": {
+            "num": 1,
+            "den": 1000000
+          }
+        }
       }
     },
     {
@@ -67,6 +122,22 @@
       "producer": {
         "name": "youtube-corpus",
         "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1"
+      },
+      "mediaSpan": {
+        "start": {
+          "pts": 3000000,
+          "timebase": {
+            "num": 1,
+            "den": 1000000
+          }
+        },
+        "end": {
+          "pts": 4750000,
+          "timebase": {
+            "num": 1,
+            "den": 1000000
+          }
+        }
       }
     },
     {
@@ -82,7 +153,27 @@
       "producer": {
         "name": "youtube-corpus",
         "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1"
-      }
+      },
+      "mediaSpan": {
+        "start": {
+          "pts": 0,
+          "timebase": {
+            "num": 1,
+            "den": 1000000
+          }
+        },
+        "end": {
+          "pts": 3125000,
+          "timebase": {
+            "num": 1,
+            "den": 1000000
+          }
+        }
+      },
+      "sceneIds": [
+        "scene:5c000000-0000-4000-8000-000000000001",
+        "scene:5c000000-0000-4000-8000-000000000002"
+      ]
     },
     {
       "id": "evidence:youtube-corpus:transcript-segment:5e000000-0000-4000-8000-0000000000c1",
@@ -97,7 +188,26 @@
       "producer": {
         "name": "youtube-corpus",
         "revision": "sha256:c8552d5dee64018f89d41a07a2cf23031c3b09d67e634482002859a487cccea1"
-      }
+      },
+      "mediaSpan": {
+        "start": {
+          "pts": 3125000,
+          "timebase": {
+            "num": 1,
+            "den": 1000000
+          }
+        },
+        "end": {
+          "pts": 6000000,
+          "timebase": {
+            "num": 1,
+            "den": 1000000
+          }
+        }
+      },
+      "sceneIds": [
+        "scene:5c000000-0000-4000-8000-000000000002"
+      ]
     },
     {
       "id": "evidence:youtube-corpus:transcript-segment:5e000000-0000-4000-8000-0000000000c2",
