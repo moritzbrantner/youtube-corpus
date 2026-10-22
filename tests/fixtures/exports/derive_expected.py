@@ -100,7 +100,12 @@ def load():
     runs = sorted(snapshot.get("visualTextRuns", []), key=lambda run: run["id"])
     for run in runs:
         run["tracks"] = sorted(run["tracks"], key=track_sort_key)
-    return videos, streams, runs
+    scenes = {}
+    for scene in snapshot.get("scenes", []):
+        scenes.setdefault(scene["videoId"], []).append(
+            (ms(scene["startSeconds"]), ms(scene["endSeconds"]), scene["id"])
+        )
+    return videos, streams, runs, {video: sorted(items) for video, items in scenes.items()}
 
 
 def optional(record, key, value):
@@ -442,7 +447,11 @@ def corpus_core(videos, streams, runs):
     return "\n".join(lines) + "\n"
 
 
-def belief_evidence(videos, streams):
+def media_time(pts):
+    return {"pts": pts, "timebase": {"num": 1, "den": 1000}}
+
+
+def belief_evidence(videos, streams, scenes):
     evidence = []
     for stream in streams:
         for seg in stream["segments"]:
@@ -468,11 +477,19 @@ def belief_evidence(videos, streams):
                     "producer": producer,
                 }
             )
+            start, end = seg.get("startSeconds"), seg.get("endSeconds")
+            if start is not None and end is not None and ms(start) < ms(end):
+                lo, hi = ms(start), ms(end)
+                evidence[-1]["mediaSpan"] = {"start": media_time(lo), "end": media_time(hi)}
+                covering = [f"scene:{sid}" for (s0, s1, sid) in scenes.get(stream["videoId"], [])
+                            if s0 < hi and lo < s1]
+                if covering:
+                    evidence[-1]["sceneIds"] = covering
     evidence.sort(key=lambda record: record["id"])
     return pretty(
         {
             "schema": "belief_evidence_interchange",
-            "schemaVersion": 1,
+            "schemaVersion": 2,
             "exporter": {"name": PRODUCER, "revision": REVISION},
             "revision": sha(canonical(evidence)),
             "evidence": evidence,
@@ -481,12 +498,12 @@ def belief_evidence(videos, streams):
 
 
 def main():
-    videos, streams, runs = load()
+    videos, streams, runs, scenes = load()
     out = HERE / "expected"
     out.mkdir(exist_ok=True)
     (out / "source-span.json").write_text(source_span(videos, streams, runs), encoding="utf-8")
     (out / "corpus-core.jsonl").write_text(corpus_core(videos, streams, runs), encoding="utf-8")
-    (out / "belief-evidence.json").write_text(belief_evidence(videos, streams), encoding="utf-8")
+    (out / "belief-evidence.json").write_text(belief_evidence(videos, streams, scenes), encoding="utf-8")
 
 
 if __name__ == "__main__":

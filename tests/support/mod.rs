@@ -407,6 +407,31 @@ pub struct BeliefEvidence {
     pub score: Option<BeliefScore>,
     #[serde(default)]
     pub parent_evidence_ids: Vec<String>,
+    #[serde(default)]
+    pub media_span: Option<BeliefMediaSpan>,
+    #[serde(default)]
+    pub scene_ids: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BeliefMediaSpan {
+    pub start: BeliefMediaTime,
+    pub end: BeliefMediaTime,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BeliefMediaTime {
+    pub pts: i64,
+    pub timebase: BeliefTimebase,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BeliefTimebase {
+    pub num: i64,
+    pub den: i64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -470,11 +495,11 @@ fn immutable_revision(field: &str, value: &str) -> Result<(), String> {
     }
 }
 
-/// Parses and validates a `belief_evidence_interchange@1` batch like belief-lab's importer.
+/// Parses and validates a `belief_evidence_interchange@1`/`@2` batch like belief-lab's importer.
 pub fn validate_belief_batch(json: &str) -> Result<BeliefBatch, String> {
     let batch: BeliefBatch =
         serde_json::from_str(json).map_err(|error| format!("invalid JSON: {error}"))?;
-    if batch.schema != "belief_evidence_interchange" || batch.schema_version != 1 {
+    if batch.schema != "belief_evidence_interchange" || !matches!(batch.schema_version, 1 | 2) {
         return Err(format!(
             "unsupported schema {}@{}",
             batch.schema, batch.schema_version
@@ -525,6 +550,7 @@ pub fn validate_belief_batch(json: &str) -> Result<BeliefBatch, String> {
                 return Err(format!("evidence {} has an invalid score", evidence.id));
             }
         }
+        validate_media(batch.schema_version, evidence)?;
         for parent in &evidence.parent_evidence_ids {
             if parent == &evidence.id {
                 return Err(format!("evidence {} is its own parent", evidence.id));
@@ -1074,4 +1100,49 @@ pub fn assert_source_span_matches_snapshot(json: &str, snapshot: &Value) {
         assert_eq!(&span.source_id, source_id);
         assert_eq!(&span.text, text);
     }
+}
+
+/// belief-lab #60: version 2 only; positive timebases, non-negative start strictly before end
+/// (exactly, across timebases); unique non-empty scene ids that require a span.
+fn validate_media(version: u32, evidence: &BeliefEvidence) -> Result<(), String> {
+    if evidence.media_span.is_none() && evidence.scene_ids.is_none() {
+        return Ok(());
+    }
+    if version < 2 {
+        return Err(format!(
+            "evidence {} uses media fields under version 1",
+            evidence.id
+        ));
+    }
+    let Some(span) = &evidence.media_span else {
+        return Err(format!(
+            "evidence {} has scene ids without a media span",
+            evidence.id
+        ));
+    };
+    for time in [span.start, span.end] {
+        if time.timebase.num <= 0 || time.timebase.den <= 0 {
+            return Err(format!(
+                "evidence {} has a non-positive timebase",
+                evidence.id
+            ));
+        }
+    }
+    let ticks = |time: BeliefMediaTime, other: BeliefMediaTime| {
+        i128::from(time.pts) * i128::from(time.timebase.num) * i128::from(other.timebase.den)
+    };
+    if span.start.pts < 0 || ticks(span.start, span.end) >= ticks(span.end, span.start) {
+        return Err(format!(
+            "evidence {} has an invalid media span",
+            evidence.id
+        ));
+    }
+    if let Some(ids) = &evidence.scene_ids {
+        let unique = ids.iter().collect::<BTreeSet<_>>();
+        if ids.is_empty() || unique.len() != ids.len() || ids.iter().any(|id| id.trim().is_empty())
+        {
+            return Err(format!("evidence {} has invalid scene ids", evidence.id));
+        }
+    }
+    Ok(())
 }

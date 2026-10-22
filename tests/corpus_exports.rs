@@ -11,7 +11,7 @@
 //! pub const CORPUS_CORE_BATCH_SCHEMA: &str = "moenarch_corpus_core_batch";
 //! pub const CORPUS_CORE_BATCH_VERSION_V1: u32 = 1;
 //! pub const BELIEF_EVIDENCE_INTERCHANGE_SCHEMA: &str = "belief_evidence_interchange";
-//! pub const BELIEF_EVIDENCE_INTERCHANGE_VERSION_V1: u32 = 1;
+//! pub const BELIEF_EVIDENCE_INTERCHANGE_VERSION_V2: u32 = 2;
 //!
 //! pub fn export_source_span(snapshot: &CorpusExportSnapshot, producer_revision: &str)
 //!     -> anyhow::Result<String>;
@@ -34,7 +34,9 @@
 //!
 //! ```text
 //! CorpusExportSnapshot { videos: Vec<ExportVideo>, transcript_streams: Vec<ExportTranscriptStream>,
-//!                        #[serde(default)] visual_text_runs: Vec<ExportVisualTextRun> }
+//!                        #[serde(default)] visual_text_runs: Vec<ExportVisualTextRun>,
+//!                        #[serde(default)] scenes: Vec<ExportScene> }
+//! ExportScene { id: Uuid, video_id: Uuid, start_seconds: f64, end_seconds: f64 }
 //! ExportVideo { id: Uuid, youtube_id: Option<String>, source_url: String, title: Option<String>,
 //!               channel: Option<String>, channel_id: Option<String>, uploader: Option<String>,
 //!               uploader_id: Option<String> }
@@ -118,9 +120,9 @@
 //! every segment has a scalar character range into one text representation per asset whose
 //! text travels as a payload.
 //!
-//! ## Format 3: `belief_evidence_interchange@1`
+//! ## Format 3: `belief_evidence_interchange@2`
 //!
-//! `serde_json::to_string_pretty + "\n"` of `{schema, schemaVersion: 1, exporter: {name:
+//! `serde_json::to_string_pretty + "\n"` of `{schema, schemaVersion: 2, exporter: {name:
 //! "youtube-corpus", revision: <exporter rev>}, revision, evidence}`; `revision` =
 //! `"sha256:" + sha256(canonical JSON of the evidence array)`. One record per transcript
 //! segment, ordered by `id`: `{id: "evidence:youtube-corpus:transcript-segment:<segment id>",
@@ -129,7 +131,12 @@
 //! "transcript-segment:<segment id>", revision: "sha256:" + sha256(segment revision
 //! material)}, producer: {name: stream.processor, revision: stream.processor_revision (or an already immutable legacy processor_version),
 //! configHash: stream.processing_config_hash (omitted when None)}}`. No `subject`, `score`,
-//! `model` or `parentEvidenceIds` keys are emitted, and no text is copied.
+//! `model` or `parentEvidenceIds` keys are emitted, and no text is copied. Version 2 (#115,
+//! belief-lab #60) adds, after `producer`: `mediaSpan: {start: {pts, timebase: {num: 1, den:
+//! 1000}}, end: …}` from the segment's stored start/end (ms, `round(seconds * 1000)`), only when
+//! both exist and start < end; and `sceneIds: ["scene:<uuid>", …]`, the snapshot scenes of the
+//! segment's video whose ms range overlaps the half-open span, ordered by (start, end, id),
+//! omitted when none.
 //!
 //! ## CLI
 //!
@@ -166,7 +173,7 @@ use youtube_corpus::cli::{Cli, Command, ExportFormat};
 use youtube_corpus::corpus_export::{
     export_belief_evidence, export_corpus_core_jsonl, export_source_span, CorpusExportSnapshot,
     ExportTranscriptSegment, BELIEF_EVIDENCE_INTERCHANGE_SCHEMA,
-    BELIEF_EVIDENCE_INTERCHANGE_VERSION_V1, CORPUS_CORE_BATCH_SCHEMA, CORPUS_CORE_BATCH_VERSION_V1,
+    BELIEF_EVIDENCE_INTERCHANGE_VERSION_V2, CORPUS_CORE_BATCH_SCHEMA, CORPUS_CORE_BATCH_VERSION_V1,
 };
 use youtube_corpus::source_span_export::{
     SOURCE_SPAN_INTERCHANGE_SCHEMA, SOURCE_SPAN_INTERCHANGE_VERSION_V1,
@@ -305,13 +312,45 @@ fn belief_evidence_export_matches_committed_fixture() {
         BELIEF_EVIDENCE_INTERCHANGE_SCHEMA,
         "belief_evidence_interchange"
     );
-    assert_eq!(BELIEF_EVIDENCE_INTERCHANGE_VERSION_V1, 1);
+    assert_eq!(BELIEF_EVIDENCE_INTERCHANGE_VERSION_V2, 2);
     let value: Value = serde_json::from_str(&output).unwrap();
     assert_eq!(value["schema"], BELIEF_EVIDENCE_INTERCHANGE_SCHEMA);
     assert_eq!(
         value["schemaVersion"],
-        BELIEF_EVIDENCE_INTERCHANGE_VERSION_V1
+        BELIEF_EVIDENCE_INTERCHANGE_VERSION_V2
     );
+
+    // #115: media spans with covering scenes, a span without scene evidence, and no span
+    // without stored end time.
+    let evidence = value["evidence"].as_array().unwrap();
+    let by_scope = |video: &str| {
+        evidence
+            .iter()
+            .filter(|record| record["source"]["scopeId"] == format!("video:{video}"))
+            .collect::<Vec<_>>()
+    };
+    let covered = by_scope("11111111-1111-4111-8111-111111111111");
+    assert!(covered.iter().any(|record| {
+        record["mediaSpan"]["start"]["pts"] == 2500
+            && record["mediaSpan"]["end"]["pts"] == 5250
+            && record["mediaSpan"]["end"]["timebase"] == serde_json::json!({"num": 1, "den": 1000})
+            && record["sceneIds"]
+                == serde_json::json!([
+                    "scene:5c000000-0000-4000-8000-000000000001",
+                    "scene:5c000000-0000-4000-8000-000000000002"
+                ])
+    }));
+    assert!(covered
+        .iter()
+        .any(|record| record.get("mediaSpan").is_none() && record.get("sceneIds").is_none()));
+    for record in by_scope("22222222-2222-4222-8222-222222222222") {
+        assert!(record["mediaSpan"].is_object());
+        assert!(
+            record.get("sceneIds").is_none(),
+            "no scene evidence for this video"
+        );
+    }
+    support::validate_belief_batch(&output).expect("importable by belief-lab rules");
 }
 
 // --- Criterion 3: one segment edit changes only dependent records --------------------------

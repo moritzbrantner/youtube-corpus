@@ -354,7 +354,7 @@ cargo run -- export --format belief-evidence --producer-revision git:abc123 \
 | ----------------- | ------------------------------- | -------------------------------------------------------------------------------- |
 | `source-span`     | `source_span_interchange@1`     | Generic source/span records with stable ids, timed locators, hashes, revisions   |
 | `corpus-core`     | `moenarch_corpus_core_batch@1`  | philosophy-extractor corpus-core intake (document-search's JSONL envelope)       |
-| `belief-evidence` | `belief_evidence_interchange@1` | belief-lab evidence import: one reference per transcript segment, no text copied |
+| `belief-evidence` | `belief_evidence_interchange@2` | belief-lab evidence import: one reference per transcript segment with its `mediaSpan` and covering `sceneIds` (latest scene run), no text copied |
 
 Without `--snapshot`, the export reads Postgres (`--migrate` applies migrations
 first). With `--snapshot <file.json>` it reads a `CorpusExportSnapshot` JSON

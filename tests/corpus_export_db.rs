@@ -374,3 +374,78 @@ async fn resegmentation_records_actual_processor_without_restamping_other_stream
         .unwrap();
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
+async fn belief_evidence_uses_scenes_of_the_latest_scene_run() {
+    let Ok(database_url) = std::env::var("DATABASE_URL") else {
+        eprintln!("DATABASE_URL unset; skipping");
+        return;
+    };
+    let pool = youtube_corpus::db::connect(&database_url).await.unwrap();
+    youtube_corpus::db::migrate(&pool).await.unwrap();
+
+    let video = Uuid::new_v4();
+    insert_video(&pool, video, "Scene video").await;
+    let stream = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO transcript_streams (id, video_id, source_kind, language, status, processor_revision)
+         VALUES ($1, $2, 'asr', 'en', 'completed', 'git:synthetic-db-processor')",
+    )
+    .bind(stream)
+    .bind(video)
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO transcript_segments (id, stream_id, video_id, segment_index, start_seconds, end_seconds, text)
+         VALUES ($1, $2, $3, 0, 1.0, 4.0, 'Covered segment.')",
+    )
+    .bind(Uuid::new_v4())
+    .bind(stream)
+    .bind(video)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (old_scene, new_scene) = (Uuid::new_v4(), Uuid::new_v4());
+    for (age, scene) in [("2 days", old_scene), ("1 day", new_scene)] {
+        let run = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO media_processing_runs
+               (id, video_id, modality, processor, processor_version, model, model_version,
+                input_hash, config_hash, created_at)
+             VALUES ($1, $2, 'scene', 'visual-analysis', 'test', 'scenedetect', '1', $3, 'cfg',
+                     now() - $4::interval)",
+        )
+        .bind(run)
+        .bind(video)
+        .bind(run.to_string())
+        .bind(age)
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO video_scenes
+               (id, run_id, video_id, scene_index, start_frame, end_frame, start_seconds, end_seconds)
+             VALUES ($1, $2, $3, 0, 0, 250, 0.0, 10.0)",
+        )
+        .bind(scene)
+        .bind(run)
+        .bind(video)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+
+    let snapshot = load_export_snapshot(&pool, Some(video)).await.unwrap();
+    let belief: Value =
+        serde_json::from_str(&export_belief_evidence(&snapshot, "git:scope").unwrap()).unwrap();
+    let record = &belief["evidence"][0];
+    assert_eq!(record["mediaSpan"]["start"]["pts"], 1000);
+    assert_eq!(record["mediaSpan"]["end"]["pts"], 4000);
+    assert_eq!(
+        record["sceneIds"],
+        serde_json::json!([format!("scene:{new_scene}")])
+    );
+}
