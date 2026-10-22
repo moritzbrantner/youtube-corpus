@@ -15,9 +15,9 @@ use youtube_corpus::corpus_export::{
     CorpusExportSnapshot,
 };
 use youtube_corpus::{
-    begin_visual_processing_run, export_source_span_batch, upsert_visual_text_track,
-    BeginVisualProcessingRunRequest, ProcessingProvenance, UpsertVisualTextTrackRequest,
-    VisualProcessingKind, VisualTextRole,
+    begin_visual_processing_run, export_source_span_batch, upsert_video_scene,
+    upsert_visual_text_track, BeginVisualProcessingRunRequest, ProcessingProvenance,
+    UpsertVideoSceneRequest, UpsertVisualTextTrackRequest, VisualProcessingKind, VisualTextRole,
 };
 
 async fn insert_video(pool: &sqlx::PgPool, id: Uuid, title: &str) {
@@ -253,6 +253,61 @@ async fn loader_keeps_segment_video_scope_and_database_track_order() {
         spans_by_id(&assert_snapshot_matches_database(&pool, Some(stream_video)).await);
     assert!(span(&spans, own_segment).is_some());
     assert!(span(&spans, foreign_segment).is_none());
+
+    // Stored scenes name the scenes covering each segment's span, only on the segment's video.
+    let scene_run = begin_visual_processing_run(
+        &pool,
+        BeginVisualProcessingRunRequest {
+            video_id: stream_video,
+            kind: VisualProcessingKind::Scene,
+            provenance: ProcessingProvenance {
+                processor: "visual-analysis".to_string(),
+                processor_version: "scene-fixture".to_string(),
+                model: "scenedetect-core".to_string(),
+                model_version: "fixture".to_string(),
+                input_hash: "sha256:video".to_string(),
+                config_hash: "sha256:scene-config".to_string(),
+                processing_config: serde_json::json!({}),
+            },
+        },
+    )
+    .await
+    .unwrap();
+    let scene = upsert_video_scene(
+        &pool,
+        UpsertVideoSceneRequest {
+            run_id: scene_run,
+            video_id: stream_video,
+            scene_index: 0,
+            start_frame: 12,
+            end_frame: 36,
+            start_seconds: 0.5,
+            end_seconds: 1.5,
+            metadata: serde_json::json!({}),
+        },
+    )
+    .await
+    .unwrap();
+    let snapshot = load_export_snapshot(&pool, None).await.unwrap();
+    let belief: Value =
+        serde_json::from_str(&export_belief_evidence(&snapshot, "git:scenes").unwrap()).unwrap();
+    let reference = |segment: Uuid| {
+        belief["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|item| item["source"]["recordId"] == format!("transcript-segment:{segment}"))
+            .cloned()
+            .unwrap()
+    };
+    assert_eq!(belief["schemaVersion"], 2);
+    let own = reference(own_segment);
+    assert_eq!(own["mediaSpan"]["end"]["pts"], 1_000_000);
+    assert_eq!(
+        own["sceneIds"],
+        serde_json::json!([format!("scene:{}", scene.id)])
+    );
+    assert!(reference(foreign_segment).get("sceneIds").is_none());
 
     for video in [stream_video, segment_video] {
         sqlx::query("DELETE FROM videos WHERE id = $1")

@@ -166,7 +166,8 @@ use youtube_corpus::cli::{Cli, Command, ExportFormat};
 use youtube_corpus::corpus_export::{
     export_belief_evidence, export_corpus_core_jsonl, export_source_span, CorpusExportSnapshot,
     ExportTranscriptSegment, BELIEF_EVIDENCE_INTERCHANGE_SCHEMA,
-    BELIEF_EVIDENCE_INTERCHANGE_VERSION_V1, CORPUS_CORE_BATCH_SCHEMA, CORPUS_CORE_BATCH_VERSION_V1,
+    BELIEF_EVIDENCE_INTERCHANGE_VERSION_V1, BELIEF_EVIDENCE_INTERCHANGE_VERSION_V2,
+    CORPUS_CORE_BATCH_SCHEMA, CORPUS_CORE_BATCH_VERSION_V1,
 };
 use youtube_corpus::source_span_export::{
     SOURCE_SPAN_INTERCHANGE_SCHEMA, SOURCE_SPAN_INTERCHANGE_VERSION_V1,
@@ -306,12 +307,80 @@ fn belief_evidence_export_matches_committed_fixture() {
         "belief_evidence_interchange"
     );
     assert_eq!(BELIEF_EVIDENCE_INTERCHANGE_VERSION_V1, 1);
+    assert_eq!(BELIEF_EVIDENCE_INTERCHANGE_VERSION_V2, 2);
     let value: Value = serde_json::from_str(&output).unwrap();
     assert_eq!(value["schema"], BELIEF_EVIDENCE_INTERCHANGE_SCHEMA);
     assert_eq!(
         value["schemaVersion"],
-        BELIEF_EVIDENCE_INTERCHANGE_VERSION_V1
+        BELIEF_EVIDENCE_INTERCHANGE_VERSION_V2
     );
+}
+
+#[test]
+fn belief_evidence_carries_stored_timing_and_covering_scenes_only() {
+    let snapshot = snapshot();
+    let output: Value =
+        serde_json::from_str(&export_belief_evidence(&snapshot, FIXTURE_REVISION).unwrap())
+            .unwrap();
+    for evidence in output["evidence"].as_array().unwrap() {
+        let segment_id = evidence["source"]["recordId"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches("transcript-segment:");
+        let (stream, segment) = snapshot
+            .transcript_streams
+            .iter()
+            .find_map(|stream| {
+                stream
+                    .segments
+                    .iter()
+                    .find(|segment| segment.id.to_string() == segment_id)
+                    .map(|segment| (stream, segment))
+            })
+            .unwrap();
+        match (segment.start_seconds, segment.end_seconds) {
+            (Some(start), Some(end)) => {
+                let span = &evidence["mediaSpan"];
+                assert_eq!(
+                    span["start"]["timebase"],
+                    serde_json::json!({"num": 1, "den": 1_000_000})
+                );
+                assert_eq!(span["start"]["pts"], (start * 1e6).round() as i64);
+                assert_eq!(span["end"]["pts"], (end * 1e6).round() as i64);
+                let video = segment.effective_video_id(stream);
+                let expected = snapshot
+                    .scenes
+                    .iter()
+                    .filter(|scene| {
+                        scene.video_id == video
+                            && scene.start_seconds < end
+                            && start < scene.end_seconds
+                    })
+                    .count();
+                let actual = evidence["sceneIds"].as_array().map_or(0, Vec::len);
+                assert_eq!(actual, expected, "{segment_id}");
+            }
+            _ => {
+                assert!(
+                    evidence.get("mediaSpan").is_none(),
+                    "untimed {segment_id} has no span"
+                );
+                assert!(evidence.get("sceneIds").is_none());
+            }
+        }
+    }
+
+    // Without any timing the export stays version 1 for existing consumers.
+    let mut untimed = snapshot.clone();
+    for stream in &mut untimed.transcript_streams {
+        for segment in &mut stream.segments {
+            segment.start_seconds = None;
+            segment.end_seconds = None;
+        }
+    }
+    let output: Value =
+        serde_json::from_str(&export_belief_evidence(&untimed, FIXTURE_REVISION).unwrap()).unwrap();
+    assert_eq!(output["schemaVersion"], 1);
 }
 
 // --- Criterion 3: one segment edit changes only dependent records --------------------------
