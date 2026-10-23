@@ -28,6 +28,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
+use crate::annotations::AnnotationSourceKind;
 use crate::source_span_export::{build_source_span_batch, validate_optional_timed_range};
 
 pub const CORPUS_CORE_BATCH_SCHEMA: &str = "moenarch_corpus_core_batch";
@@ -43,6 +44,9 @@ const PRODUCER_NAME: &str = "youtube-corpus";
 const CORPUS_CORE_PROVENANCE_PRODUCER: &str = "youtube-corpus/corpus-export";
 const TEXT_MEDIA_TYPE: &str = "text/plain; charset=utf-8";
 const CORPUS_CORE_TEXT_SEPARATOR: &str = "\n";
+/// Versioned, structured data inside corpus-core's existing string-valued source metadata.
+/// An additional segment record would break philosophy-extractor's text-only v1 intake.
+const SPEAKER_TURNS_METADATA_SCHEMA: &str = "youtube-corpus/speaker_turns@1";
 
 /// The corpus state every export is computed from.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -56,6 +60,36 @@ pub struct CorpusExportSnapshot {
     /// scenes that cover an exported segment.
     #[serde(default)]
     pub scenes: Vec<ExportScene>,
+    /// Persisted `research_annotations.kind = 'speaker_turn'` rows, not inferred from captions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub speaker_turns: Vec<ExportSpeakerTurn>,
+}
+
+/// One source-local diarization annotation and its original persisted provenance.
+/// An absent field stays absent; an annotation revision is not a model revision.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportSpeakerTurn {
+    pub id: Uuid,
+    pub corpus_id: Uuid,
+    pub video_id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segment_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_seconds: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_seconds: Option<f64>,
+    pub source_kind: AnnotationSourceKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer: Option<String>,
+    /// `research_annotations.processor_version` as recorded, not synthesized or upgraded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer_revision: Option<String>,
+    pub annotation_revision: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -182,6 +216,7 @@ impl CorpusExportSnapshot {
         });
         self.visual_text_runs.retain(|run| run.video_id == video_id);
         self.scenes.retain(|scene| scene.video_id == video_id);
+        self.speaker_turns.retain(|turn| turn.video_id == video_id);
         let mut referenced = BTreeSet::from([video_id]);
         for stream in &self.transcript_streams {
             referenced.insert(stream.video_id);
@@ -488,6 +523,11 @@ pub fn export_corpus_core_jsonl(
     producer_revision: &str,
 ) -> anyhow::Result<String> {
     let ordered = order_snapshot(snapshot, producer_revision, "producer", true)?;
+    let speaker_turns = order_speaker_turns(snapshot, &ordered)?;
+    let mut turns_by_video = BTreeMap::<Uuid, Vec<&ExportSpeakerTurn>>::new();
+    for turn in speaker_turns {
+        turns_by_video.entry(turn.video_id).or_default().push(turn);
+    }
 
     let mut records = Vec::new();
     let mut payloads = BTreeMap::<ContentHash, String>::new();
@@ -507,6 +547,16 @@ pub fn export_corpus_core_jsonl(
             if let Some(value) = value.as_deref().filter(|value| !value.trim().is_empty()) {
                 metadata.insert(key.to_string(), value.to_string());
             }
+        }
+        if let Some(video_turns) = turns_by_video.get(&video.id) {
+            metadata.insert(
+                "speaker_turns_schema".to_string(),
+                SPEAKER_TURNS_METADATA_SCHEMA.to_string(),
+            );
+            metadata.insert(
+                "speaker_turns".to_string(),
+                serde_json::to_string(&video_turns)?,
+            );
         }
         records.push(CorpusRecord::Source(Source {
             id: source_id.clone(),
@@ -662,6 +712,45 @@ pub fn export_corpus_core_jsonl(
         output.push('\n');
     }
     Ok(output)
+}
+
+/// Keep annotation identity and raw media seconds intact. All tie-breakers are stored data;
+/// no ingestion order, exporter clock or downstream identity inference is involved.
+fn order_speaker_turns<'a>(
+    snapshot: &'a CorpusExportSnapshot,
+    ordered: &OrderedSnapshot<'_>,
+) -> anyhow::Result<Vec<&'a ExportSpeakerTurn>> {
+    let mut seen = BTreeSet::new();
+    let mut turns = Vec::with_capacity(snapshot.speaker_turns.len());
+    for turn in &snapshot.speaker_turns {
+        ordered.video(turn.video_id)?;
+        ensure!(seen.insert(turn.id), "duplicate speaker turn {}", turn.id);
+        validate_optional_timed_range(
+            turn.id,
+            turn.start_seconds,
+            turn.end_seconds,
+            "speaker turn",
+        )?;
+        turns.push(turn);
+    }
+    turns.sort_by(|left, right| {
+        left.video_id
+            .cmp(&right.video_id)
+            .then_with(|| compare_optional_seconds(left.start_seconds, right.start_seconds))
+            .then_with(|| compare_optional_seconds(left.end_seconds, right.end_seconds))
+            .then_with(|| left.corpus_id.cmp(&right.corpus_id))
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    Ok(turns)
+}
+
+fn compare_optional_seconds(left: Option<f64>, right: Option<f64>) -> Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) => (left + 0.0).total_cmp(&(right + 0.0)),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
 }
 
 struct TextAsset<'a> {
@@ -1147,6 +1236,46 @@ pub async fn load_export_snapshot(
         "visual text tracks reference missing runs"
     );
 
+    // Export only stored speaker-turn annotations, including their corpus scope and original
+    // producer/version fields. They also keep videos with no transcript in the core export.
+    let speaker_rows = sqlx::query(
+        "SELECT id, corpus_id, video_id, stream_id, segment_id, label,
+                start_seconds, end_seconds, source_kind, processor, processor_version, revision
+         FROM research_annotations
+         WHERE kind = 'speaker_turn' AND ($1::uuid IS NULL OR video_id = $1)
+         ORDER BY video_id, start_seconds NULLS LAST, end_seconds NULLS LAST, corpus_id, id",
+    )
+    .bind(video_id)
+    .fetch_all(pool)
+    .await?;
+    let mut speaker_turns = Vec::with_capacity(speaker_rows.len());
+    for row in speaker_rows {
+        let turn_video: Uuid = row.try_get("video_id")?;
+        let source_kind: String = row.try_get("source_kind")?;
+        let annotation_revision: i64 = row.try_get("revision")?;
+        referenced_videos.insert(turn_video);
+        speaker_turns.push(ExportSpeakerTurn {
+            id: row.try_get("id")?,
+            corpus_id: row.try_get("corpus_id")?,
+            video_id: turn_video,
+            stream_id: row.try_get("stream_id")?,
+            segment_id: row.try_get("segment_id")?,
+            speaker_label: row.try_get("label")?,
+            start_seconds: row.try_get("start_seconds")?,
+            end_seconds: row.try_get("end_seconds")?,
+            source_kind: match source_kind.as_str() {
+                "user" => AnnotationSourceKind::User,
+                "processor" => AnnotationSourceKind::Processor,
+                other => bail!("unsupported speaker turn source kind {other:?}"),
+            },
+            producer: row.try_get("processor")?,
+            producer_revision: row.try_get("processor_version")?,
+            annotation_revision: annotation_revision
+                .try_into()
+                .context("speaker turn annotation revision must be non-negative")?,
+        });
+    }
+
     let referenced_videos = referenced_videos.into_iter().collect::<Vec<_>>();
     let video_rows = sqlx::query(
         "SELECT v.id, v.youtube_id, v.source_url, v.title, v.channel, v.channel_id,
@@ -1198,6 +1327,7 @@ pub async fn load_export_snapshot(
         transcript_streams,
         visual_text_runs,
         scenes,
+        speaker_turns,
     })
 }
 
@@ -1299,6 +1429,7 @@ mod tests {
             }],
             visual_text_runs: Vec::new(),
             scenes: Vec::new(),
+            speaker_turns: Vec::new(),
         };
 
         let mut other = snapshot.clone();

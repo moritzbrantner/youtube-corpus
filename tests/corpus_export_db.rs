@@ -81,6 +81,95 @@ async fn assert_snapshot_matches_database(pool: &sqlx::PgPool, video_id: Option<
 
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
+async fn loader_exports_only_persisted_speaker_turn_rows_with_original_provenance() {
+    let Ok(database_url) = std::env::var("DATABASE_URL") else {
+        eprintln!("DATABASE_URL unset; skipping");
+        return;
+    };
+    let pool = youtube_corpus::db::connect(&database_url).await.unwrap();
+    youtube_corpus::db::migrate(&pool).await.unwrap();
+
+    let (with_turn, without_turn, corpus_id) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+    insert_video(&pool, with_turn, "Speaker-only video").await;
+    insert_video(&pool, without_turn, "Unannotated video").await;
+    sqlx::query("INSERT INTO corpora (id, slug, name) VALUES ($1, $2, 'Speaker export test')")
+        .bind(corpus_id)
+        .bind(format!("speaker-export-{corpus_id}"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO corpus_video_memberships (corpus_id, video_id) VALUES ($1, $2)")
+        .bind(corpus_id)
+        .bind(with_turn)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let turn_id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO research_annotations
+           (id, corpus_id, video_id, kind, start_seconds, end_seconds, label,
+            source_kind, processor, processor_version)
+         VALUES ($1, $2, $3, 'speaker_turn', 1.125, 2.75, 'SPEAKER_03',
+                 'processor', 'audio-analysis/diarization', 'git:model-fixture')",
+    )
+    .bind(turn_id)
+    .bind(corpus_id)
+    .bind(with_turn)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let snapshot = load_export_snapshot(&pool, Some(with_turn)).await.unwrap();
+    assert_eq!(snapshot.videos.len(), 1, "turn-only video is included");
+    assert!(snapshot.transcript_streams.is_empty());
+    assert_eq!(snapshot.speaker_turns.len(), 1);
+    let turn = &snapshot.speaker_turns[0];
+    assert_eq!(turn.id, turn_id);
+    assert_eq!(turn.speaker_label.as_deref(), Some("SPEAKER_03"));
+    assert_eq!(turn.start_seconds, Some(1.125));
+    assert_eq!(turn.end_seconds, Some(2.75));
+    assert_eq!(turn.producer_revision.as_deref(), Some("git:model-fixture"));
+    assert_eq!(turn.annotation_revision, 1);
+    let batch = parse_corpus_core_jsonl(
+        &export_corpus_core_jsonl(&snapshot, "git:db-speaker-test").unwrap(),
+    )
+    .unwrap();
+    let source = batch
+        .records
+        .iter()
+        .find_map(|record| match record {
+            corpus_core::CorpusRecord::Source(source) => Some(source),
+            _ => None,
+        })
+        .unwrap();
+    let exported: Vec<Value> = serde_json::from_str(&source.metadata["speaker_turns"]).unwrap();
+    assert_eq!(exported.len(), 1);
+    assert_eq!(exported[0]["id"], turn_id.to_string());
+    assert_eq!(exported[0]["sourceKind"], "processor");
+    assert_eq!(exported[0]["producerRevision"], "git:model-fixture");
+
+    let empty = load_export_snapshot(&pool, Some(without_turn))
+        .await
+        .unwrap();
+    assert!(empty.speaker_turns.is_empty(), "no turn may be invented");
+
+    // These randomly identified rows belong exclusively to this ignored database test.
+    for video in [with_turn, without_turn] {
+        sqlx::query("DELETE FROM videos WHERE id = $1")
+            .bind(video)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    sqlx::query("DELETE FROM corpora WHERE id = $1")
+        .bind(corpus_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn loader_keeps_segment_video_scope_and_database_track_order() {
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         eprintln!("DATABASE_URL unset; skipping");
