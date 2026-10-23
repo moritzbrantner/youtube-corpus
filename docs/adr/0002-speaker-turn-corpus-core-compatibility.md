@@ -25,7 +25,7 @@ observation without either compatibility break.
 - The transcript corpus-core segment IDs and media locators are unchanged;
   proposition `sourceSegments` can join by segment ID and/or stored time overlap
   through the video's stable source identity.
-- Source metadata is a structured JSON *string* under the v1 contract, so
+- Source metadata is a structured JSON _string_ under the v1 contract, so
   downstream attribution adapters parse this one versioned field explicitly.
   Existing consumers may ignore it without losing transcript functionality.
 - Turn IDs, corpus ownership, speaker labels and producer/model versions are
