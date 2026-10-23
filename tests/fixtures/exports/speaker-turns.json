@@ -1,0 +1,29 @@
+[
+  {
+    "id": "a9000000-0000-4000-8000-000000000002",
+    "corpusId": "c0000000-0000-4000-8000-000000000001",
+    "videoId": "11111111-1111-4111-8111-111111111111",
+    "streamId": "0a200000-0000-4000-8000-000000000002",
+    "speakerLabel": "SPEAKER_01",
+    "startSeconds": 3.125,
+    "endSeconds": 6.0,
+    "sourceKind": "processor",
+    "producer": "audio-analysis/diarization",
+    "producerRevision": "git:diarization-model-fixture",
+    "annotationRevision": 2
+  },
+  {
+    "id": "a9000000-0000-4000-8000-000000000001",
+    "corpusId": "c0000000-0000-4000-8000-000000000001",
+    "videoId": "11111111-1111-4111-8111-111111111111",
+    "streamId": "0a200000-0000-4000-8000-000000000002",
+    "segmentId": "5e000000-0000-4000-8000-0000000000c0",
+    "speakerLabel": "SPEAKER_00",
+    "startSeconds": 0.0,
+    "endSeconds": 3.125,
+    "sourceKind": "processor",
+    "producer": "audio-analysis/diarization",
+    "producerRevision": "git:diarization-model-fixture",
+    "annotationRevision": 1
+  }
+]

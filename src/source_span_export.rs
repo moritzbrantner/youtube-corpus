@@ -427,6 +427,7 @@ mod tests {
             }],
             visual_text_runs: Vec::new(),
             scenes: Vec::new(),
+            speaker_turns: Vec::new(),
         }
     }
 

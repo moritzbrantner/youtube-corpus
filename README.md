@@ -363,6 +363,37 @@ file and needs no database. Output goes to stdout, or byte-for-byte to
 fixtures and the contract are in `tests/fixtures/exports/` and
 `tests/corpus_exports.rs`.
 
+### Speaker turns in corpus-core exports
+
+`--format corpus-core` also includes **persisted** `research_annotations` of kind
+`speaker_turn`. The existing `moenarch_corpus_core_batch@1` envelope and transcript
+segment IDs are unchanged. Each video's `source` record gains two string metadata
+fields only when that video has turns:
+
+- `speaker_turns_schema`: `youtube-corpus/speaker_turns@1`
+- `speaker_turns`: a compact JSON array of records with `id`, `corpusId`, `videoId`,
+  optional original `streamId`/`segmentId`, `speakerLabel`, `startSeconds`,
+  `endSeconds`, `sourceKind`, `producer`, `producerRevision` and
+  `annotationRevision`. Fields absent in persistence remain absent; in particular,
+  `producerRevision` is the stored annotation `processor_version`, not a
+  synthesized immutable model commit. `annotationRevision` is the database row
+  revision, **not** a producer/model revision.
+
+Turns are ordered by video, start/end media seconds, corpus and annotation ID;
+no speaker turns are inferred from transcript text or invented for videos without
+annotations. `speakerLabel` is a raw, source-local diarization label (for example
+`SPEAKER_00`), not a confirmed person's identity. Corpus IDs prevent annotations
+from different research corpora being silently conflated.
+
+To join a proposition candidate's philosophy-extractor `sourceSegments`, look
+up the corpus-core `segmentId`, follow its asset to the video's source record,
+and use the source's stored turns. For a direct segment match, the original
+transcript UUID is also retained in the segment's `transcript_segment_id`
+metadata; otherwise intersect the already-stored `startSeconds`/`endSeconds`
+intervals. No audio timestamp inference is necessary. Naming people and deciding
+their stance remain Belief Lab responsibilities; the corpus does not perform
+either operation. See [the compatibility decision](docs/adr/0002-speaker-turn-corpus-core-compatibility.md).
+
 ## Benchmark
 
 ```bash
