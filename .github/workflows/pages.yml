@@ -29,8 +29,8 @@ jobs:
     with:
       source_sha: ${{ github.event.workflow_run.head_sha || github.sha }}
       artifact_key: youtube-corpus-embedded-web-v1
-      bun_version: "1.4.3"
-      rust_toolchain: "1.98.1"
+      bun_version: latest
+      rust_toolchain: stable
       rust_targets: wasm32-unknown-unknown
       cache_bun: true
       bun_cache_dependency_path: bun.lock
