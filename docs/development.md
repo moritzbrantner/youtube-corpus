@@ -187,3 +187,14 @@ bun run verify:postgres
 For a faster loop without Docker, use `bun run verify:fast`. Network-backed
 `yt-dlp` checks stay outside the default verification path and can be run with
 `bun run verify:yt-dlp` when `yt-dlp` and network access are available.
+
+### Corpus navigation
+
+The local app serves `/corpora` for corpus selection and management and `/search`
+for unified spoken/OCR search. Both pages expose the current corpus. Their URLs
+retain the corpus, submitted query, evidence selection and search filters through
+reloads and browser history. Changing corpus retains the page and filters while
+clearing the selected evidence. An unknown corpus requires an explicit replacement
+selection. Search currently requires one corpus; there is no all-corpora option.
+The root page remains the standalone analyzer; static Pages does not provide the
+local database workspaces.

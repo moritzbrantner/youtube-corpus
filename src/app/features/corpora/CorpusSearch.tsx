@@ -35,7 +35,7 @@ type CorpusSearchProps = {
   submittedQuery: string;
   filters: CorpusSearchFilters;
   selectedSegmentId: string | null;
-  onSubmitQuery: (query: string) => void;
+  onSubmitQuery: (query: string, filters: CorpusSearchFilters) => void;
   onUpdateFilters: (filters: Partial<CorpusSearchFilters>) => void;
   onSelectSegment: (segmentId: string | null) => void;
 };
@@ -148,8 +148,7 @@ export function CorpusSearch({
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
-    onUpdateFilters(draftFilters);
-    onSubmitQuery(draft.trim());
+    onSubmitQuery(draft.trim(), draftFilters);
   }
 
   return (

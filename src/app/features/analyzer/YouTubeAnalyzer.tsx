@@ -151,7 +151,7 @@ export function YouTubeAnalyzer() {
           </p>
         </div>
         <nav className="analyzer-nav" aria-label="YouTube Corpus views">
-          <a href="#corpora">Research corpora</a>
+          <a href="/corpora">Research corpora</a>
           <a href="#legacy">Advanced local UI</a>
         </nav>
       </header>

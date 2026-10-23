@@ -54,8 +54,10 @@ function selected<T extends string>(value: string | null, options: readonly T[],
   return options.find((option) => option === value) ?? fallback;
 }
 
-function readUrlState(): CorpusUrlState {
-  if (typeof window === "undefined") {
+export function readUrlState(
+  url = typeof window === "undefined" ? null : new URL(window.location.href),
+): CorpusUrlState {
+  if (!url) {
     return {
       corpusId: null,
       query: "",
@@ -72,7 +74,7 @@ function readUrlState(): CorpusUrlState {
       uploadDateTo: "",
     };
   }
-  const params = new URL(window.location.href).searchParams;
+  const params = url.searchParams;
   return {
     corpusId: params.get("corpus"),
     query: params.get("q") ?? "",
@@ -107,21 +109,40 @@ export function useCorpusUrlState() {
     };
   }, []);
 
-  const update = React.useCallback((patch: CorpusUrlPatch) => {
-    const url = new URL(window.location.href);
-    for (const [field, param] of keys) {
-      if (patch[field] !== undefined) {
-        setOrDelete(url, param, patch[field] as string | null);
+  const update = React.useCallback(
+    (patch: CorpusUrlPatch, history: "push" | "replace" = "push") => {
+      const url = patchCorpusUrl(new URL(window.location.href), patch);
+      if (url.href === window.location.href) {
+        return;
       }
-    }
-    if (Object.keys(patch).some((field) => field !== "segmentId")) {
-      url.searchParams.delete("segment");
-    }
-    window.history.replaceState(null, "", url);
-    setState(readUrlState());
-  }, []);
+      window.history[history === "push" ? "pushState" : "replaceState"](null, "", url);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    },
+    [],
+  );
 
   return { state, update };
+}
+
+export function patchCorpusUrl(current: URL, patch: CorpusUrlPatch): URL {
+  const url = new URL(current);
+  for (const [field, param] of keys) {
+    const value = patch[field];
+    if (value !== undefined) {
+      setOrDelete(url, param, value);
+    }
+  }
+  if (Object.keys(patch).some((field) => field !== "segmentId")) {
+    url.searchParams.delete("segment");
+  }
+  return url;
+}
+
+export function corpusPageUrl(current: URL, page: "corpora" | "search"): URL {
+  const url = new URL(current);
+  url.pathname = `/${page}`;
+  url.hash = "";
+  return url;
 }
 
 function setOrDelete(url: URL, key: string, value: string | null) {
