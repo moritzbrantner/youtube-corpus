@@ -65,6 +65,10 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
             post(set_source_policy),
         )
         .route(
+            "/api/corpora/{corpus_id}/sources/{source_id}/interval",
+            post(set_source_interval),
+        )
+        .route(
             "/api/corpora/{corpus_id}/sources/{source_id}/pending",
             get(list_source_pending),
         )
@@ -201,6 +205,8 @@ struct AddCorpusSourceInput {
     processing_policy: Option<ProcessingPolicy>,
     /// Initial history to backfill for a monitored source; full history when omitted (1.12).
     history: Option<HistoryScopeInput>,
+    /// Automatic check interval of a monitored source; the default when omitted (1.18).
+    check_interval_seconds: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -427,10 +433,12 @@ async fn add_source(
             duration_min: None,
             duration_max: None,
             processing_policy: input.processing_policy.unwrap_or_default(),
+            check_interval_seconds: input.check_interval_seconds,
             migrate: false,
         })
         .await
         .map_err(ResearchError::internal)?;
+        crate::source_monitor::wake();
         crate::corpora::link_source(&pool, corpus_id, subscription.id)
             .await
             .map_err(map_corpus_error)?;
@@ -517,7 +525,6 @@ async fn check_source(
     })
     .await
     .map_err(ResearchError::internal)?;
-    persist_check_outcome(&pool, source_id, &report).await?;
     Ok(Json(report))
 }
 
@@ -530,6 +537,29 @@ async fn set_source_enabled(
     crate::corpora::set_source_enabled(&pool, corpus_id, source_id, input.enabled)
         .await
         .map_err(map_corpus_error)?;
+    crate::source_monitor::wake();
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetSourceIntervalInput {
+    interval_seconds: u64,
+}
+
+async fn set_source_interval(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, source_id)): AxumPath<(Uuid, Uuid)>,
+    Json(input): Json<SetSourceIntervalInput>,
+) -> Result<StatusCode, ResearchError> {
+    let pool = pool(&state).await?;
+    require_source(&pool, corpus_id, source_id).await?;
+    crate::subscriptions::validate_check_interval(input.interval_seconds)
+        .map_err(|error| ResearchError::bad_request(error.to_string()))?;
+    crate::subscriptions::set_check_interval(&pool, source_id, input.interval_seconds)
+        .await
+        .map_err(ResearchError::internal)?;
+    crate::source_monitor::wake();
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1080,22 +1110,6 @@ async fn reprocess_video(
     .await
     .map(Json)
     .map_err(ResearchError::internal)
-}
-
-async fn persist_check_outcome(
-    pool: &sqlx::PgPool,
-    subscription_id: Uuid,
-    report: &CheckSubscriptionsReport,
-) -> Result<(), ResearchError> {
-    let item = report
-        .items
-        .iter()
-        .find(|item| item.subscription.id == subscription_id);
-    let status = item.map(|item| item.status.as_str()).unwrap_or("completed");
-    let message = item.and_then(|item| item.message.as_deref());
-    crate::corpora::record_check_outcome(pool, subscription_id, status, message)
-        .await
-        .map_err(ResearchError::internal)
 }
 
 fn normalized_languages(languages: Option<Vec<String>>) -> Vec<String> {

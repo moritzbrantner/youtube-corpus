@@ -697,6 +697,7 @@ async fn add_source(
                 duration_min: input.duration_min,
                 duration_max: input.duration_max,
                 processing_policy: Default::default(),
+                check_interval_seconds: None,
                 migrate,
             })
             .await

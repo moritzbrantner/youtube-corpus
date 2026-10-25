@@ -267,6 +267,7 @@ fn subscription_request(database_url: &str) -> AddSubscriptionRequest {
         duration_min: None,
         duration_max: None,
         processing_policy: Default::default(),
+        check_interval_seconds: None,
         migrate: false,
     }
 }

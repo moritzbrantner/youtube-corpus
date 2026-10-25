@@ -311,6 +311,9 @@ pub struct SubscribeArgs {
     /// Analyze new videos automatically, or hold them for review first.
     #[arg(long, value_enum, default_value_t = crate::subscriptions::ProcessingPolicy::Automatic)]
     pub processing_policy: crate::subscriptions::ProcessingPolicy,
+    /// How often the running server checks this source (default: 6 hours).
+    #[arg(long)]
+    pub check_interval_seconds: Option<u64>,
     #[arg(long)]
     pub disabled: bool,
     #[arg(long)]
@@ -365,6 +368,7 @@ impl SubscribeArgs {
             duration_min: self.duration_min,
             duration_max: self.duration_max,
             processing_policy: self.processing_policy,
+            check_interval_seconds: self.check_interval_seconds,
             migrate: self.migrate,
         })
     }

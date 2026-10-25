@@ -31,6 +31,12 @@ export type CorpusSource = {
   lastIngestedAt: string | null;
   lastCheckStatus: string | null;
   lastCheckMessage: string | null;
+  /** Automatic check interval while the source is enabled (Atlas 1.18). */
+  checkIntervalSeconds: number;
+  /** When the running server checks this source next; overdue while in the past. */
+  nextCheckAt: string | null;
+  /** A check of this source is running. */
+  checkInProgress: boolean;
   itemsSeen: number;
   itemsIndexed: number;
   itemsFailed: number;
@@ -305,6 +311,8 @@ export type AddCorpusSourceInput = {
   processingPolicy?: ProcessingPolicy;
   /** Initial history of a monitored source; the server applies full history when omitted. */
   history?: HistoryScopeInput;
+  /** Automatic check interval of a monitored source; the server default when omitted. */
+  checkIntervalSeconds?: number | null;
 };
 
 /** Whether newly discovered videos are analyzed automatically or held for review (Atlas 1.6). */
@@ -425,6 +433,16 @@ export function checkCorpusSource(corpusId: string, sourceId: string) {
     `/api/corpora/${corpusId}/sources/${sourceId}/check`,
     {},
   );
+}
+
+export function setCorpusSourceInterval(
+  corpusId: string,
+  sourceId: string,
+  intervalSeconds: number,
+) {
+  return jsonPost<void>(`/api/corpora/${corpusId}/sources/${sourceId}/interval`, {
+    intervalSeconds,
+  });
 }
 
 export function setCorpusSourceEnabled(corpusId: string, sourceId: string, enabled: boolean) {
