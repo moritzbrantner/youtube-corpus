@@ -177,7 +177,16 @@ cargo run -- status
 
 `subscriptions check` discovers videos with `yt-dlp`, remembers which videos
 were already seen for each subscription, and ingests only newly discovered
-items. To run continuously instead of from cron or systemd:
+items.
+
+While the local server runs (`cargo run` without a subcommand), every enabled
+monitored source is checked automatically on its own interval (default 6 hours,
+set with `subscriptions add --check-interval-seconds` or edited per source in the
+Sources view, which also shows the last check result and the next or overdue
+check). After a restart, each overdue source gets one prompt catch-up check and
+then resumes its interval. Check now remains available and joins a check of the
+same source that is already running. Checks while the server is stopped do not
+happen. The CLI watch mode remains for use without the server:
 
 ```bash
 cargo run -- subscriptions check --watch --interval-seconds 3600

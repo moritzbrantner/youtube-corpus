@@ -33,6 +33,7 @@ import {
   removeSourceLabel,
   listCorpusSources,
   setCorpusSourceEnabled,
+  setCorpusSourceInterval,
   controlBackfill,
   listBackfillEntries,
   type AddCorpusSourceInput,
@@ -62,12 +63,16 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
   const [limitCount, setLimitCount] = React.useState("20");
   const [asrEnabled, setAsrEnabled] = React.useState(false);
   const [policy, setPolicy] = React.useState<ProcessingPolicy>("automatic");
+  const [checkInterval, setCheckInterval] = React.useState<IntervalValue>(
+    intervalValue(DEFAULT_CHECK_INTERVAL_SECONDS),
+  );
 
   const sourcesQuery = useQuery({
     queryKey: corpusKeys.sources(corpusId),
     queryFn: () => listCorpusSources(corpusId),
-    // Background work continues server-side; refresh its progress while any is active.
-    refetchInterval: (query) => (query.state.data?.some(hasActiveWork) ? 3000 : false),
+    // Background work and scheduled checks continue server-side; refresh their progress
+    // quickly while any is active and slowly otherwise, so scheduled check results appear.
+    refetchInterval: (query) => (query.state.data?.some(hasActiveWork) ? 3000 : 30000),
   });
   const labelsQuery = useCorpusLabels(corpusId);
   const invalidateLabels = useInvalidateLabels(corpusId);
@@ -91,8 +96,12 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: corpusKeys.all }),
       queryClient.invalidateQueries({ queryKey: corpusKeys.sources(corpusId) }),
-      queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "videos"] }),
-      queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "search"] }),
+      queryClient.invalidateQueries({
+        queryKey: ["corpora", corpusId, "videos"],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["corpora", corpusId, "search"],
+      }),
     ]);
   }
 
@@ -114,17 +123,20 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: corpusKeys.all }),
-        queryClient.invalidateQueries({ queryKey: corpusKeys.sources(corpusId) }),
+        queryClient.invalidateQueries({
+          queryKey: corpusKeys.sources(corpusId),
+        }),
       ]);
     },
   });
 
   const history = historyInput(historyScope, recentDays, limitCount);
+  const intervalSeconds = intervalToSeconds(checkInterval);
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
     const url = sourceUrl.trim();
-    if (!url || (monitor && !history)) {
+    if (!url || (monitor && (!history || intervalSeconds === null))) {
       return;
     }
     const parsedMaxItems = Number(maxItems);
@@ -143,6 +155,7 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
       asrEnabled,
       maxItems: Number.isFinite(parsedMaxItems) && parsedMaxItems > 0 ? parsedMaxItems : null,
       processingPolicy: policy,
+      checkIntervalSeconds: monitor ? intervalSeconds : null,
     });
   }
 
@@ -151,7 +164,8 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
       <SurfaceHeader>
         <SurfaceTitle>Sources</SurfaceTitle>
         <SurfaceDescription>
-          Add a channel or playlist once, or monitor it and check for newly published videos later.
+          Add a channel or playlist once, or monitor it so the running server checks it for newly
+          published videos on its own schedule.
         </SurfaceDescription>
       </SurfaceHeader>
       <SurfaceContent className="grid gap-6">
@@ -224,6 +238,25 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
             </label>
           </div>
           {monitor ? (
+            <label className="grid gap-2">
+              <span className="text-sm font-medium">Check for new videos every</span>
+              <IntervalInput
+                label="New source check interval"
+                value={checkInterval}
+                onChange={setCheckInterval}
+              />
+              {intervalSeconds === null ? (
+                <span className="text-xs text-destructive">
+                  Choose an interval between 1 minute and 90 days.
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  The running server checks this source automatically; Check now stays available.
+                </span>
+              )}
+            </label>
+          ) : null}
+          {monitor ? (
             <HistoryScopeFields
               sourceKind={sourceKind}
               scope={historyScope}
@@ -244,7 +277,11 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
           ) : null}
           <Button
             type="submit"
-            disabled={!sourceUrl.trim() || (monitor && !history) || addMutation.isPending}
+            disabled={
+              !sourceUrl.trim() ||
+              (monitor && (!history || intervalSeconds === null)) ||
+              addMutation.isPending
+            }
           >
             {addMutation.isPending
               ? "Adding source..."
@@ -287,7 +324,7 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
                   <p className="mt-1 truncate text-xs text-muted-foreground">{source.sourceUrl}</p>
                 </div>
                 <Badge variant={source.lastCheckStatus === "failed" ? "destructive" : "outline"}>
-                  {source.lastCheckStatus ?? "not checked"}
+                  {source.checkInProgress ? "checking" : (source.lastCheckStatus ?? "not checked")}
                 </Badge>
               </div>
               <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
@@ -304,6 +341,7 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
               {source.lastCheckMessage ? (
                 <p className="text-sm text-destructive">{source.lastCheckMessage}</p>
               ) : null}
+              <SourceSchedule corpusId={corpusId} source={source} onChanged={invalidateCorpus} />
               <QueueActivity source={source} />
               {source.backfill ? (
                 <BackfillPanel
@@ -320,10 +358,18 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
                 pending={labelMutation.isPending}
                 error={labelMutation.variables?.sourceId === source.id ? labelMutation.error : null}
                 onAssign={(labelId) =>
-                  labelMutation.mutate({ sourceId: source.id, labelId, assigned: true })
+                  labelMutation.mutate({
+                    sourceId: source.id,
+                    labelId,
+                    assigned: true,
+                  })
                 }
                 onRemove={(labelId) =>
-                  labelMutation.mutate({ sourceId: source.id, labelId, assigned: false })
+                  labelMutation.mutate({
+                    sourceId: source.id,
+                    labelId,
+                    assigned: false,
+                  })
                 }
               />
               <SourceReview
@@ -348,10 +394,11 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={checkMutation.isPending}
+                  disabled={checkMutation.isPending || source.checkInProgress}
                   onClick={() => checkMutation.mutate(source.id)}
                 >
-                  {checkMutation.isPending && checkMutation.variables === source.id
+                  {source.checkInProgress ||
+                  (checkMutation.isPending && checkMutation.variables === source.id)
                     ? "Checking..."
                     : "Check now"}
                 </Button>
@@ -508,6 +555,7 @@ const ACTIVE_BACKFILL_STATES = new Set(["discovering", "running", "paused"]);
 function hasActiveWork(source: CorpusSource) {
   const { queue, backfill } = source;
   return (
+    source.checkInProgress ||
     queue.newQueued + queue.newRunning + queue.historyQueued + queue.historyRunning > 0 ||
     (backfill !== null && (ACTIVE_BACKFILL_STATES.has(backfill.state) || backfill.running > 0))
   );
@@ -795,4 +843,152 @@ function BackfillPanel({
 function formatDate(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+/** Matches the server default for a new monitored source (6 hours). */
+const DEFAULT_CHECK_INTERVAL_SECONDS = 6 * 60 * 60;
+const MIN_CHECK_INTERVAL_SECONDS = 60;
+const MAX_CHECK_INTERVAL_SECONDS = 90 * 24 * 60 * 60;
+
+type IntervalUnit = "minutes" | "hours" | "days";
+type IntervalValue = { amount: string; unit: IntervalUnit };
+
+const UNIT_SECONDS: Record<IntervalUnit, number> = {
+  minutes: 60,
+  hours: 60 * 60,
+  days: 24 * 60 * 60,
+};
+
+/** Largest whole unit that represents the interval exactly. */
+function intervalValue(seconds: number): IntervalValue {
+  for (const unit of ["days", "hours", "minutes"] as const) {
+    if (seconds % UNIT_SECONDS[unit] === 0) {
+      return { amount: String(seconds / UNIT_SECONDS[unit]), unit };
+    }
+  }
+  return {
+    amount: String(Math.max(1, Math.round(seconds / 60))),
+    unit: "minutes",
+  };
+}
+
+/** Seconds of a valid interval, or null outside 1 minute to 90 days. */
+function intervalToSeconds(value: IntervalValue): number | null {
+  const amount = Number(value.amount);
+  if (!value.amount.trim() || !Number.isFinite(amount) || amount <= 0) {
+    return null;
+  }
+  const seconds = Math.round(amount * UNIT_SECONDS[value.unit]);
+  return seconds >= MIN_CHECK_INTERVAL_SECONDS && seconds <= MAX_CHECK_INTERVAL_SECONDS
+    ? seconds
+    : null;
+}
+
+function formatInterval(seconds: number) {
+  const { amount, unit } = intervalValue(seconds);
+  return `${amount} ${Number(amount) === 1 ? unit.slice(0, -1) : unit}`;
+}
+
+function IntervalInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: IntervalValue;
+  onChange: (value: IntervalValue) => void;
+}) {
+  return (
+    <span className="flex items-center gap-2">
+      <Input
+        aria-label={`${label} amount`}
+        className="w-24"
+        inputMode="decimal"
+        value={value.amount}
+        onChange={(event) => onChange({ ...value, amount: event.target.value })}
+      />
+      <NativeSelect
+        aria-label={`${label} unit`}
+        value={value.unit}
+        onChange={(event) => onChange({ ...value, unit: event.target.value as IntervalUnit })}
+      >
+        <option value="minutes">minutes</option>
+        <option value="hours">hours</option>
+        <option value="days">days</option>
+      </NativeSelect>
+    </span>
+  );
+}
+
+/** Automatic check cadence of one source: interval, next/overdue check and its editor (1.18). */
+function SourceSchedule({
+  corpusId,
+  source,
+  onChanged,
+}: {
+  corpusId: string;
+  source: CorpusSource;
+  onChanged: () => Promise<void>;
+}) {
+  const [draft, setDraft] = React.useState<IntervalValue>(() =>
+    intervalValue(source.checkIntervalSeconds),
+  );
+  React.useEffect(() => {
+    setDraft(intervalValue(source.checkIntervalSeconds));
+  }, [source.checkIntervalSeconds]);
+  const mutation = useMutation({
+    mutationFn: (seconds: number) => setCorpusSourceInterval(corpusId, source.id, seconds),
+    onSuccess: onChanged,
+  });
+  const seconds = intervalToSeconds(draft);
+  const changed = seconds !== null && seconds !== source.checkIntervalSeconds;
+  const next = source.nextCheckAt ? new Date(source.nextCheckAt) : null;
+  const overdue = next !== null && next.getTime() <= Date.now();
+
+  let schedule: string;
+  if (!source.enabled) {
+    schedule = "Disabled: not checked automatically.";
+  } else if (source.checkInProgress) {
+    schedule = "Checking now.";
+  } else if (!next) {
+    schedule = "Next check not scheduled yet.";
+  } else if (overdue) {
+    schedule = `Due since ${formatDate(source.nextCheckAt!)}; checked while the server runs.`;
+  } else {
+    schedule = `Next check ${formatDate(source.nextCheckAt!)}.`;
+  }
+
+  return (
+    <section
+      aria-label="Check schedule"
+      className="grid gap-2 rounded-md border border-border px-3 py-2"
+    >
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>Checks every {formatInterval(source.checkIntervalSeconds)}</span>
+        <span data-testid="next-check">{schedule}</span>
+      </div>
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (seconds !== null && changed) {
+            mutation.mutate(seconds);
+          }
+        }}
+      >
+        <IntervalInput label="Check interval" value={draft} onChange={setDraft} />
+        <Button type="submit" variant="outline" size="sm" disabled={!changed || mutation.isPending}>
+          {mutation.isPending ? "Saving..." : "Save interval"}
+        </Button>
+        {seconds === null ? (
+          <span className="text-xs text-destructive">Between 1 minute and 90 days.</span>
+        ) : null}
+      </form>
+      {mutation.error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {String(mutation.error)}
+        </p>
+      ) : null}
+    </section>
+  );
 }

@@ -41,6 +41,12 @@ pub struct CorpusSourceSummary {
     pub last_ingested_at: Option<DateTime<Utc>>,
     pub last_check_status: Option<String>,
     pub last_check_message: Option<String>,
+    /// Automatic check interval of this source (Atlas 1.18).
+    pub check_interval_seconds: u64,
+    /// When the server checks this source next; overdue while in the past.
+    pub next_check_at: Option<DateTime<Utc>>,
+    /// A check of this source is running.
+    pub check_in_progress: bool,
     pub items_seen: u64,
     pub items_indexed: u64,
     pub items_failed: u64,
@@ -322,25 +328,6 @@ pub async fn set_source_enabled(
     Ok(())
 }
 
-pub async fn record_check_outcome(
-    pool: &PgPool,
-    subscription_id: Uuid,
-    status: &str,
-    message: Option<&str>,
-) -> anyhow::Result<()> {
-    sqlx::query(
-        "UPDATE corpus_subscriptions
-         SET last_check_status = $2, last_check_message = $3, updated_at = now()
-         WHERE id = $1",
-    )
-    .bind(subscription_id)
-    .bind(status)
-    .bind(message)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
 pub async fn list_corpus_sources(
     pool: &PgPool,
     corpus_id: Uuid,
@@ -349,6 +336,8 @@ pub async fn list_corpus_sources(
     let rows = sqlx::query(
         "SELECT s.id, s.source_kind, s.source_url, s.name, s.enabled,
                 s.last_checked_at, s.last_ingested_at, s.last_check_status, s.last_check_message,
+                s.check_interval_seconds, s.next_check_at,
+                s.check_started_at IS NOT NULL AS check_in_progress,
                 count(i.id)::bigint AS items_seen,
                 count(i.id) FILTER (WHERE i.status = 'indexed')::bigint AS items_indexed,
                 count(i.id) FILTER (WHERE i.status = 'failed')::bigint AS items_failed,
@@ -372,6 +361,7 @@ pub async fn list_corpus_sources(
          WHERE m.corpus_id = $1
          GROUP BY s.id, s.source_kind, s.source_url, s.name, s.enabled, s.processing_policy,
                   s.last_checked_at, s.last_ingested_at, s.last_check_status, s.last_check_message,
+                  s.check_interval_seconds, s.next_check_at, s.check_started_at,
                   m.added_at, m.corpus_id
          ORDER BY m.added_at, lower(coalesce(s.name, s.source_url))",
     )
@@ -392,6 +382,9 @@ pub async fn list_corpus_sources(
                 last_ingested_at: row.try_get("last_ingested_at")?,
                 last_check_status: row.try_get("last_check_status")?,
                 last_check_message: row.try_get("last_check_message")?,
+                check_interval_seconds: row.try_get::<i64, _>("check_interval_seconds")? as u64,
+                next_check_at: row.try_get("next_check_at")?,
+                check_in_progress: row.try_get("check_in_progress")?,
                 items_seen: row_count(&row, "items_seen")?,
                 items_indexed: row_count(&row, "items_indexed")?,
                 items_failed: row_count(&row, "items_failed")?,

@@ -1,4 +1,6 @@
+use std::future::Future;
 use std::path::PathBuf;
+use std::pin::Pin;
 
 use chrono::{DateTime, Utc};
 use clap::ValueEnum;
@@ -65,6 +67,52 @@ impl ProcessingPolicy {
 /// Item status of a review-first discovery that waits for approval.
 pub const AWAITING_REVIEW: &str = "awaiting_review";
 
+/// Check interval of a source when none is chosen (Atlas 1.18): every six hours. A routine
+/// configuration value, not an owner-approved freshness SLA.
+pub const DEFAULT_CHECK_INTERVAL_SECONDS: u64 = 6 * 60 * 60;
+/// Shortest and longest accepted per-source check intervals.
+pub const MIN_CHECK_INTERVAL_SECONDS: u64 = 60;
+pub const MAX_CHECK_INTERVAL_SECONDS: u64 = 90 * 24 * 60 * 60;
+/// A check claim older than this is treated as abandoned (e.g. a killed CLI check).
+pub(crate) const STALE_CHECK_SECONDS: i64 = 6 * 60 * 60;
+
+/// Status of a check request that joined a check of the same source already running.
+pub const ALREADY_CHECKING: &str = "already_checking";
+
+pub fn validate_check_interval(seconds: u64) -> anyhow::Result<()> {
+    if !(MIN_CHECK_INTERVAL_SECONDS..=MAX_CHECK_INTERVAL_SECONDS).contains(&seconds) {
+        anyhow::bail!(
+            "check interval must be between {MIN_CHECK_INTERVAL_SECONDS} seconds and {} days",
+            MAX_CHECK_INTERVAL_SECONDS / 86_400
+        );
+    }
+    Ok(())
+}
+
+/// Lists a monitored source's current uploads; production uses yt-dlp, tests a fixture.
+pub trait SourceLister: Send + Sync {
+    fn list<'a>(
+        &'a self,
+        subscription: &'a Subscription,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<VideoItem>>> + Send + 'a>>;
+}
+
+/// Lists a source with yt-dlp, capped by the source's per-check maximum.
+pub struct YtDlpLister;
+
+impl SourceLister for YtDlpLister {
+    fn list<'a>(
+        &'a self,
+        subscription: &'a Subscription,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<Vec<VideoItem>>> + Send + 'a>> {
+        Box::pin(crate::youtube::discover_collection(
+            &subscription.source_url,
+            subscription.max_items,
+            &subscription.yt_dlp,
+        ))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct AddSubscriptionRequest {
     pub database_url: String,
@@ -85,6 +133,8 @@ pub struct AddSubscriptionRequest {
     pub duration_min: Option<f64>,
     pub duration_max: Option<f64>,
     pub processing_policy: ProcessingPolicy,
+    /// Automatic check interval; the default for a new source, unchanged for an existing one.
+    pub check_interval_seconds: Option<u64>,
     pub migrate: bool,
 }
 
@@ -129,6 +179,12 @@ pub struct Subscription {
     pub duration_min: Option<f64>,
     pub duration_max: Option<f64>,
     pub processing_policy: ProcessingPolicy,
+    /// How often the server checks this source while it is enabled (Atlas 1.18).
+    pub check_interval_seconds: u64,
+    /// When the server's scheduler checks this source next; overdue while in the past.
+    pub next_check_at: Option<DateTime<Utc>>,
+    /// Set while a check of this source runs.
+    pub check_started_at: Option<DateTime<Utc>>,
     pub last_checked_at: Option<DateTime<Utc>>,
     pub last_ingested_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
@@ -221,6 +277,9 @@ pub async fn add_subscription(request: AddSubscriptionRequest) -> anyhow::Result
     if request.migrate {
         crate::db::migrate(&pool).await?;
     }
+    if let Some(seconds) = request.check_interval_seconds {
+        validate_check_interval(seconds)?;
+    }
 
     let id = stable_video_id(&request.source_url);
     let max_items = request.max_items.map(|value| value as i64);
@@ -234,8 +293,9 @@ pub async fn add_subscription(request: AddSubscriptionRequest) -> anyhow::Result
          (id, source_kind, source_url, name, enabled, work_dir, caption, yt_dlp,
           asr_enabled, transcriber_command, transcriber_args, transcriber_timeout_seconds,
           max_items, title_contains, title_excludes, duration_min, duration_max,
-          processing_policy)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          processing_policy, check_interval_seconds, next_check_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+                 coalesce($19, $20), now() + coalesce($19, $20) * interval '1 second')
          ON CONFLICT (source_url) DO UPDATE SET
            source_kind = EXCLUDED.source_kind,
            name = EXCLUDED.name,
@@ -253,6 +313,10 @@ pub async fn add_subscription(request: AddSubscriptionRequest) -> anyhow::Result
            duration_min = EXCLUDED.duration_min,
            duration_max = EXCLUDED.duration_max,
            processing_policy = EXCLUDED.processing_policy,
+           check_interval_seconds = coalesce($19, corpus_subscriptions.check_interval_seconds),
+           next_check_at = CASE WHEN $19::bigint IS NULL THEN corpus_subscriptions.next_check_at
+             ELSE coalesce(corpus_subscriptions.last_checked_at, corpus_subscriptions.created_at)
+                  + $19 * interval '1 second' END,
            updated_at = now()",
     )
     .bind(id)
@@ -277,6 +341,8 @@ pub async fn add_subscription(request: AddSubscriptionRequest) -> anyhow::Result
     .bind(request.duration_min)
     .bind(request.duration_max)
     .bind(request.processing_policy.as_str())
+    .bind(request.check_interval_seconds.map(|value| value as i64))
+    .bind(DEFAULT_CHECK_INTERVAL_SECONDS as i64)
     .execute(&pool)
     .await?;
 
@@ -312,31 +378,15 @@ pub async fn check_subscriptions(
     let mut segments_indexed = 0;
 
     for subscription in subscriptions {
-        let item = match check_subscription(
+        let item = check_one(
             &pool,
             &request.database_url,
             &subscription,
             request.dispatch,
+            &YtDlpLister,
+            checked_at,
         )
-        .await
-        {
-            Ok(report) => report,
-            Err(error) => {
-                mark_checked(&pool, subscription.id, false).await?;
-                SubscriptionCheckReport {
-                    subscription: SubscriptionSummary::from(&subscription),
-                    status: "failed".to_string(),
-                    videos_discovered: 0,
-                    new_videos: 0,
-                    videos_indexed: 0,
-                    segments_indexed: 0,
-                    awaiting_review: 0,
-                    queued: 0,
-                    ingest: None,
-                    message: Some(error.to_string()),
-                }
-            }
-        };
+        .await?;
         videos_discovered += item.videos_discovered;
         new_videos += item.new_videos;
         videos_indexed += item.videos_indexed;
@@ -355,37 +405,165 @@ pub async fn check_subscriptions(
     })
 }
 
+/// Checks one source, coalescing with a check of the same source that is already running
+/// (scheduled, manual or restart catch-up). The outcome, last check and next due time are
+/// persisted: a completed or failed check schedules the next one `interval` after `now`, so
+/// however many intervals were missed, an overdue source is checked once (Atlas 1.18, 1.20).
+pub async fn check_one(
+    pool: &PgPool,
+    database_url: &str,
+    subscription: &Subscription,
+    dispatch: CheckDispatch,
+    lister: &dyn SourceLister,
+    now: DateTime<Utc>,
+) -> anyhow::Result<SubscriptionCheckReport> {
+    if !claim_check(pool, subscription.id, now).await? {
+        return Ok(SubscriptionCheckReport {
+            message: Some("A check of this source is already running.".to_string()),
+            ..empty_report(subscription, ALREADY_CHECKING)
+        });
+    }
+    let report = match check_subscription(pool, database_url, subscription, dispatch, lister).await
+    {
+        Ok(report) => report,
+        Err(error) => SubscriptionCheckReport {
+            message: Some(error.to_string()),
+            ..empty_report(subscription, "failed")
+        },
+    };
+    finish_check(pool, subscription, &report, now).await?;
+    Ok(report)
+}
+
+fn empty_report(subscription: &Subscription, status: &str) -> SubscriptionCheckReport {
+    SubscriptionCheckReport {
+        subscription: SubscriptionSummary::from(subscription),
+        status: status.to_string(),
+        videos_discovered: 0,
+        new_videos: 0,
+        videos_indexed: 0,
+        segments_indexed: 0,
+        awaiting_review: 0,
+        queued: 0,
+        ingest: None,
+        message: None,
+    }
+}
+
+/// Marks the source as being checked unless another check of it is running.
+async fn claim_check(
+    pool: &PgPool,
+    subscription_id: Uuid,
+    now: DateTime<Utc>,
+) -> anyhow::Result<bool> {
+    let claimed = sqlx::query(
+        "UPDATE corpus_subscriptions SET check_started_at = $2
+         WHERE id = $1
+           AND (check_started_at IS NULL
+                OR check_started_at < $2 - $3 * interval '1 second')
+         RETURNING id",
+    )
+    .bind(subscription_id)
+    .bind(now)
+    .bind(STALE_CHECK_SECONDS)
+    .fetch_optional(pool)
+    .await?;
+    Ok(claimed.is_some())
+}
+
+/// Records a check's outcome, releases its claim and schedules the next check.
+async fn finish_check(
+    pool: &PgPool,
+    subscription: &Subscription,
+    report: &SubscriptionCheckReport,
+    now: DateTime<Utc>,
+) -> anyhow::Result<()> {
+    if report.status == "waiting_for_history" {
+        // Nothing was checked yet; the source becomes due again once its history is recorded.
+        sqlx::query(
+            "UPDATE corpus_subscriptions
+             SET check_started_at = NULL, last_check_status = $2, last_check_message = $3,
+                 updated_at = now()
+             WHERE id = $1",
+        )
+        .bind(subscription.id)
+        .bind(&report.status)
+        .bind(&report.message)
+        .execute(pool)
+        .await?;
+        return Ok(());
+    }
+    sqlx::query(
+        "UPDATE corpus_subscriptions
+         SET check_started_at = NULL,
+             last_checked_at = $2,
+             last_ingested_at = CASE WHEN $3 THEN $2 ELSE last_ingested_at END,
+             next_check_at = $2 + check_interval_seconds * interval '1 second',
+             last_check_status = $4, last_check_message = $5, updated_at = now()
+         WHERE id = $1",
+    )
+    .bind(subscription.id)
+    .bind(now)
+    .bind(report.ingest.is_some())
+    .bind(&report.status)
+    .bind(&report.message)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Releases check claims a stopped server or CLI left behind, so restart catch-up checks run.
+pub async fn recover_interrupted_checks(pool: &PgPool) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        "UPDATE corpus_subscriptions SET check_started_at = NULL
+         WHERE check_started_at IS NOT NULL",
+    )
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Changes one source's check interval; only that source's next due time moves, to its last
+/// check (or creation) plus the new interval.
+pub async fn set_check_interval(
+    pool: &PgPool,
+    subscription_id: Uuid,
+    seconds: u64,
+) -> anyhow::Result<()> {
+    validate_check_interval(seconds)?;
+    sqlx::query(
+        "UPDATE corpus_subscriptions
+         SET check_interval_seconds = $2,
+             next_check_at = coalesce(last_checked_at, created_at) + $2 * interval '1 second',
+             updated_at = now()
+         WHERE id = $1",
+    )
+    .bind(subscription_id)
+    .bind(seconds as i64)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 async fn check_subscription(
     pool: &PgPool,
     database_url: &str,
     subscription: &Subscription,
     dispatch: CheckDispatch,
+    lister: &dyn SourceLister,
 ) -> anyhow::Result<SubscriptionCheckReport> {
     // Until the initial history snapshot is recorded, every listed video would look new, so a
     // routine check must not sweep excluded history into analysis (Atlas 1.10, 1.18).
     if crate::backfill::history_discovery_pending(pool, subscription.id).await? {
         return Ok(SubscriptionCheckReport {
-            subscription: SubscriptionSummary::from(subscription),
-            status: "waiting_for_history".to_string(),
-            videos_discovered: 0,
-            new_videos: 0,
-            videos_indexed: 0,
-            segments_indexed: 0,
-            awaiting_review: 0,
-            queued: 0,
-            ingest: None,
             message: Some(
                 "The source's history is still being listed; checks for new uploads resume once it is recorded."
                     .to_string(),
             ),
+            ..empty_report(subscription, "waiting_for_history")
         });
     }
-    let discovered = crate::youtube::discover_collection(
-        &subscription.source_url,
-        subscription.max_items,
-        &subscription.yt_dlp,
-    )
-    .await?;
+    let discovered = lister.list(subscription).await?;
     let mut new_items = Vec::new();
     let mut new_videos = 0;
     for item in &discovered {
@@ -460,8 +638,6 @@ async fn check_subscription(
         update_ingested_items(pool, subscription.id, &report).await?;
         ingest = Some(report);
     }
-    mark_checked(pool, subscription.id, ingest.is_some()).await?;
-
     Ok(SubscriptionCheckReport {
         subscription: SubscriptionSummary::from(subscription),
         status: "completed".to_string(),
@@ -525,7 +701,8 @@ fn subscription_select_sql(where_clause: &'static str) -> String {
         "SELECT id, source_kind, source_url, name, enabled, work_dir, caption, asr_enabled,
           yt_dlp, transcriber_command, transcriber_args, transcriber_timeout_seconds,
           max_items, title_contains, title_excludes,
-          duration_min, duration_max, processing_policy, last_checked_at, last_ingested_at, created_at, updated_at
+          duration_min, duration_max, processing_policy, check_interval_seconds,
+          next_check_at, check_started_at, last_checked_at, last_ingested_at, created_at, updated_at
          FROM corpus_subscriptions
          {where_clause}
          ORDER BY created_at, source_url"
@@ -561,6 +738,9 @@ fn subscription_from_row(row: PgRow) -> anyhow::Result<Subscription> {
         processing_policy: ProcessingPolicy::parse(
             &row.try_get::<String, _>("processing_policy")?,
         )?,
+        check_interval_seconds: row.try_get::<i64, _>("check_interval_seconds")? as u64,
+        next_check_at: row.try_get("next_check_at")?,
+        check_started_at: row.try_get("check_started_at")?,
         last_checked_at: row.try_get("last_checked_at")?,
         last_ingested_at: row.try_get("last_ingested_at")?,
         created_at: row.try_get("created_at")?,
@@ -875,18 +1055,4 @@ pub(crate) fn item_from_row(row: PgRow) -> anyhow::Result<VideoItem> {
             .unwrap_or_default(),
         local_video_path: None,
     })
-}
-
-async fn mark_checked(pool: &PgPool, subscription_id: Uuid, ingested: bool) -> anyhow::Result<()> {
-    let sql = if ingested {
-        "UPDATE corpus_subscriptions
-         SET last_checked_at = now(), last_ingested_at = now(), updated_at = now()
-         WHERE id = $1"
-    } else {
-        "UPDATE corpus_subscriptions
-         SET last_checked_at = now(), updated_at = now()
-         WHERE id = $1"
-    };
-    sqlx::query(sql).bind(subscription_id).execute(pool).await?;
-    Ok(())
 }

@@ -31,3 +31,4 @@ cargo test --test person_names_db -- --ignored
 cargo test --test review_first_db -- --ignored
 cargo test --test translated_text_db -- --ignored --skip native_opus_mt
 cargo test --test backfill_db -- --ignored
+cargo test --test source_monitor_db -- --ignored

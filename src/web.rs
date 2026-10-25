@@ -34,6 +34,7 @@ pub async fn serve_with_research(config: WebServerConfig) -> anyhow::Result<()> 
 
     if let Some(database_url) = &database_url {
         crate::backfill::spawn_background(database_url.clone());
+        crate::source_monitor::spawn_scheduler(database_url.clone());
     }
     let state = AppState::new(database_url, config.yt_dlp);
     let address = SocketAddr::from((config.host, config.port));
