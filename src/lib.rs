@@ -31,6 +31,7 @@ pub mod sponsorblock;
 pub mod status;
 pub mod subscriptions;
 pub mod transcript_quality;
+pub mod translation;
 pub mod video_analysis_web;
 pub mod visual_processing;
 pub mod visual_timeline;

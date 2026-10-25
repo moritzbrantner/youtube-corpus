@@ -17,6 +17,23 @@ export interface SearchResult {
   ftsScore: number;
   semanticScore: number;
   ocrEvidence: OcrEvidence | null;
+  /** Present when the hit is generated translated text derived from original evidence. */
+  translation?: TranslationEvidence | null;
+}
+
+export interface TranslationEvidence {
+  modality: "spoken" | "visible_text";
+  sourceSegmentId: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  originalText: string;
+  provider: string;
+  producerRevision: string;
+  plan: {
+    provenance?: { kind: string; pivot?: string };
+    legs?: { source: string; target: string; modelId: string }[];
+  };
+  config: Record<string, unknown>;
 }
 
 export interface OcrEvidence {

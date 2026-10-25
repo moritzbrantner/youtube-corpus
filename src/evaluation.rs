@@ -547,6 +547,7 @@ mod tests {
             fts_score: 1.0,
             semantic_score: 0.0,
             ocr_evidence: None,
+            translation: None,
         }
     }
 

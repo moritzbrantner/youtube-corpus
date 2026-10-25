@@ -106,9 +106,10 @@ export function CorpusSearch({
         mode: filters.mode,
         topK: searchInput.topK,
         videoId: result.videoId,
-        // The transcript FK cannot hold an OCR track; keep its identity separately.
-        segmentId: result.sourceKind === "visual_ocr" ? null : result.segmentId,
-        visualTextTrackId: result.sourceKind === "visual_ocr" ? result.segmentId : null,
+        // The transcript FK cannot hold an OCR track; keep its identity separately. A translated
+        // hit is judged on the original evidence it was derived from.
+        segmentId: result.sourceKind === "visual_ocr" ? null : evidenceId(result),
+        visualTextTrackId: result.sourceKind === "visual_ocr" ? evidenceId(result) : null,
         sourceUrl: result.sourceUrl,
         startSeconds: result.startSeconds,
         endSeconds: result.endSeconds,
@@ -328,6 +329,7 @@ export function CorpusSearch({
               const judgmentSaved =
                 judgmentMutation.isSuccess &&
                 judgmentMutation.variables?.segmentId === result.segmentId;
+              const evidence = evidenceId(result);
               return (
                 <article
                   key={result.segmentId}
@@ -346,9 +348,18 @@ export function CorpusSearch({
                     <Badge variant="outline">
                       {result.sourceKind === "visual_ocr" ? "Visible text" : "Spoken"}
                     </Badge>
+                    {result.translation ? (
+                      <Badge>
+                        Translated {result.translation.sourceLanguage} →{" "}
+                        {result.translation.targetLanguage}
+                      </Badge>
+                    ) : null}
                     <Badge variant="outline">{result.score.toFixed(3)}</Badge>
                   </div>
                   <p className="text-sm leading-6">{result.text}</p>
+                  {result.translation ? (
+                    <TranslationDetails translation={result.translation} />
+                  ) : null}
                   {result.ocrEvidence ? <OcrEvidenceDetails evidence={result.ocrEvidence} /> : null}
                   <div className="flex flex-wrap gap-2">
                     <Button asChild variant="outline" size="sm">
@@ -362,12 +373,10 @@ export function CorpusSearch({
                     </Button>
                     <Button
                       type="button"
-                      variant={selectedSegmentId === result.segmentId ? "default" : "ghost"}
+                      variant={selectedSegmentId === evidence ? "default" : "ghost"}
                       size="sm"
                       onClick={() =>
-                        onSelectSegment(
-                          selectedSegmentId === result.segmentId ? null : result.segmentId,
-                        )
+                        onSelectSegment(selectedSegmentId === evidence ? null : evidence)
                       }
                     >
                       {result.sourceKind === "visual_ocr" ? "Visual context" : "Transcript context"}
@@ -518,6 +527,35 @@ function sourceLabel(kind: string) {
     default:
       return kind;
   }
+}
+
+/** Original evidence a hit links to: itself, or the span a translation was derived from. */
+function evidenceId(result: SearchResult): string {
+  return result.translation?.sourceSegmentId ?? result.segmentId;
+}
+
+function TranslationDetails({
+  translation,
+}: {
+  translation: NonNullable<SearchResult["translation"]>;
+}) {
+  const models = translation.plan.legs?.map((leg) => leg.modelId).join(" → ");
+  return (
+    <div className="grid gap-1 rounded-md bg-muted px-3 py-2 text-xs">
+      <p>
+        <span className="font-medium">
+          Original {translation.modality === "visible_text" ? "on-screen text" : "speech"} (
+          {translation.sourceLanguage}):
+        </span>{" "}
+        {translation.originalText}
+      </p>
+      <p className="text-muted-foreground">
+        Generated translation · {translation.provider}
+        {models ? ` · ${models}` : ""}
+        {translation.plan.provenance?.kind === "pivotTranslation" ? " (pivot via en)" : ""}
+      </p>
+    </div>
+  );
 }
 
 function OcrEvidenceDetails({ evidence }: { evidence: SearchResult["ocrEvidence"] }) {
