@@ -31,6 +31,8 @@ pub struct DetectorInfo {
     pub takes_languages: bool,
 }
 
+const TRANSLATION_NOTE: &str = "Translates between en, de, fr, es, it, pt, nl and pl (other pairs pivot through English); other languages are reported unavailable. Pinned free OPUS-MT models download on first run.";
+
 pub const DETECTORS: &[DetectorInfo] = &[
     DetectorInfo {
         id: "captions",
@@ -85,17 +87,17 @@ pub const DETECTORS: &[DetectorInfo] = &[
     DetectorInfo {
         id: "translate_spoken",
         label: "Translate spoken transcript",
-        producer: "translation (#69)",
-        available: false,
-        note: Some("Translation generation is not implemented yet (#69)."),
+        producer: "native-whisperx OPUS-MT (Marian, Candle)",
+        available: true,
+        note: Some(TRANSLATION_NOTE),
         takes_languages: true,
     },
     DetectorInfo {
         id: "translate_ocr",
         label: "Translate on-screen text",
-        producer: "translation (#69)",
-        available: false,
-        note: Some("Translation generation is not implemented yet (#69)."),
+        producer: "native-whisperx OPUS-MT (Marian, Candle)",
+        available: true,
+        note: Some(TRANSLATION_NOTE),
         takes_languages: true,
     },
 ];
@@ -532,6 +534,9 @@ pub struct PlanRunRequest {
     pub refresh: bool,
     /// Retry only these enabled detectors; None runs the entire effective plan.
     pub detectors: Option<Vec<String>>,
+    /// Translation provider; None uses the native OPUS-MT provider with models under
+    /// `model_dir/translation`.
+    pub translation_provider: Option<crate::translation::TranslationProviderFactory>,
 }
 
 /// Runs every enabled detector of a video's effective plan, reusing existing output of the
@@ -707,6 +712,8 @@ async fn existing_output(
         }
         "faces" => crate::face_processing::has_current_face_output(pool, request.video_id).await,
         "voices" => crate::voice_processing::has_current_voice_output(pool, request.video_id).await,
+        // The translation stage reuses unchanged translations per span and target itself.
+        "translate_spoken" | "translate_ocr" => Ok(false),
         "entities" => {
             let identity = stage_identity(pool, request.video_id, detector).await?;
             Ok(sqlx::query_scalar(
@@ -834,6 +841,11 @@ async fn stage_identity(
         return Ok(serde_json::json!({ "detector": detector, "input": input,
             "producerRevision": crate::visual_processing::VISUAL_ANALYSIS_SCENE_REVISION,
             "model": "scenedetect-core:content", "threshold": 27.0, "minSceneLen": 15 }));
+    }
+    if let Some(modality) = crate::translation::TranslationModality::from_detector(detector) {
+        let input = crate::translation::source_identity(pool, video, modality).await?;
+        return Ok(serde_json::json!({ "detector": detector, "input": input,
+            "producerRevision": crate::translation::NATIVE_WHISPERX_REVISION }));
     }
     let stream = crate::entities::transcript_stream_for(pool, video).await?;
     // Include source IDs, alignment and language, not just row counts/text. Replacing rows
@@ -993,6 +1005,68 @@ async fn run_stage_inner(
                 StageOutcome::Completed,
                 Some(format!("{} mentions", report.mentions)),
             ))
+        }
+        "translate_spoken" | "translate_ocr" => {
+            let modality = crate::translation::TranslationModality::from_detector(detector)
+                .expect("translation detector");
+            let plan = video_plan(pool, request.corpus_id, request.video_id).await?;
+            let targets = plan
+                .detectors
+                .iter()
+                .find(|planned| planned.detector == detector)
+                .map(|planned| planned.target_languages.clone())
+                .unwrap_or_default();
+            if targets.is_empty() {
+                return Ok((
+                    StageOutcome::Skipped,
+                    Some("Select at least one target language for this translation.".into()),
+                ));
+            }
+            let report = crate::translation::translate_video_modality(
+                pool,
+                request.video_id,
+                modality,
+                &targets,
+                match &request.translation_provider {
+                    Some(factory) => (factory.0)(),
+                    None => {
+                        crate::translation::native_provider(request.model_dir.join("translation"))
+                    }
+                },
+                request.refresh,
+            )
+            .await?;
+            let summary = report
+                .targets
+                .iter()
+                .map(|target| {
+                    format!(
+                        "{}: {}{}",
+                        target.target_language,
+                        target.state,
+                        target
+                            .message
+                            .as_deref()
+                            .map(|m| format!(" ({m})"))
+                            .unwrap_or_default()
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            let any = |state: &str| report.targets.iter().any(|t| t.state == state);
+            if any("failed") {
+                anyhow::bail!("{summary}");
+            }
+            let outcome = if any("completed") {
+                StageOutcome::Completed
+            } else if any("reused") {
+                StageOutcome::Reused
+            } else if report.targets.iter().all(|t| t.state == "unavailable") {
+                StageOutcome::Unavailable
+            } else {
+                StageOutcome::Skipped
+            };
+            Ok((outcome, Some(summary)))
         }
         _ => anyhow::bail!("detector {detector} has no runner"),
     }

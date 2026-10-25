@@ -123,6 +123,26 @@ pub struct SearchResult {
     pub fts_score: f64,
     pub semantic_score: f64,
     pub ocr_evidence: Option<OcrEvidence>,
+    /// Present when this hit is generated translated text rather than original evidence.
+    #[serde(default)]
+    pub translation: Option<TranslationEvidence>,
+}
+
+/// Provenance of a translated hit and the original-language evidence it was derived from.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslationEvidence {
+    /// `spoken` (transcript) or `visible_text` (OCR).
+    pub modality: String,
+    /// Original transcript segment or OCR track the translation was derived from.
+    pub source_segment_id: Uuid,
+    pub source_language: String,
+    pub target_language: String,
+    pub original_text: String,
+    pub provider: String,
+    pub producer_revision: String,
+    pub plan: serde_json::Value,
+    pub config: serde_json::Value,
 }
 
 pub async fn search_corpus(request: SearchRequest) -> anyhow::Result<SearchReport> {
@@ -132,6 +152,7 @@ pub async fn search_corpus(request: SearchRequest) -> anyhow::Result<SearchRepor
         SearchMode::Semantic => semantic_search(&pool, &request).await?,
         SearchMode::Hybrid => hybrid_search(&pool, &request).await?,
     };
+    attach_translation_evidence(&pool, &mut results).await?;
     attach_ocr_evidence(&pool, &mut results).await?;
     Ok(SearchReport {
         query: request.query,
@@ -431,8 +452,55 @@ fn rows_to_results(rows: Vec<sqlx::postgres::PgRow>) -> anyhow::Result<Vec<Searc
             fts_score: row.get("fts_score"),
             semantic_score: row.get("semantic_score"),
             ocr_evidence: None,
+            translation: None,
         })
         .collect())
+}
+
+/// Marks generated translations and links them to their original evidence.
+pub(crate) async fn attach_translation_evidence(
+    pool: &PgPool,
+    results: &mut [SearchResult],
+) -> anyhow::Result<()> {
+    let ids: Vec<Uuid> = results.iter().map(|result| result.segment_id).collect();
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let rows = sqlx::query(
+        "SELECT tr.id, tr.modality, coalesce(tr.transcript_segment_id, tr.visual_text_track_id) AS source_id,
+                tr.source_language, tr.target_language, coalesce(s.text, t.text) AS original_text,
+                tr.provider, tr.producer_revision, tr.plan, tr.config
+         FROM translated_segments tr
+         LEFT JOIN transcript_segments s ON s.id = tr.transcript_segment_id
+         LEFT JOIN visual_text_tracks t ON t.id = tr.visual_text_track_id
+         WHERE tr.id = ANY($1::uuid[])",
+    )
+    .bind(&ids)
+    .fetch_all(pool)
+    .await?;
+    let mut by_id = HashMap::new();
+    for row in rows {
+        by_id.insert(
+            row.try_get::<Uuid, _>("id")?,
+            TranslationEvidence {
+                modality: row.try_get("modality")?,
+                source_segment_id: row.try_get("source_id")?,
+                source_language: row.try_get("source_language")?,
+                target_language: row.try_get("target_language")?,
+                original_text: row
+                    .try_get::<Option<String>, _>("original_text")?
+                    .unwrap_or_default(),
+                provider: row.try_get("provider")?,
+                producer_revision: row.try_get("producer_revision")?,
+                plan: row.try_get("plan")?,
+                config: row.try_get("config")?,
+            },
+        );
+    }
+    for result in results {
+        result.translation = by_id.remove(&result.segment_id);
+    }
+    Ok(())
 }
 
 /// Enrich already-ranked track hits from canonical OCR evidence. Observations are not
@@ -441,10 +509,19 @@ pub(crate) async fn attach_ocr_evidence(
     pool: &PgPool,
     results: &mut [SearchResult],
 ) -> anyhow::Result<()> {
+    // A translated OCR hit carries the provenance of the OCR track it was derived from.
+    let evidence_id = |result: &SearchResult| {
+        result
+            .translation
+            .as_ref()
+            .map_or(result.segment_id, |translation| {
+                translation.source_segment_id
+            })
+    };
     let ids: Vec<Uuid> = results
         .iter()
         .filter(|result| result.source_kind == "visual_ocr")
-        .map(|result| result.segment_id)
+        .map(evidence_id)
         .collect();
     if ids.is_empty() {
         return Ok(());
@@ -508,7 +585,7 @@ pub(crate) async fn attach_ocr_evidence(
         );
     }
     for result in results {
-        result.ocr_evidence = by_id.remove(&result.segment_id);
+        result.ocr_evidence = by_id.get(&evidence_id(result)).cloned();
     }
     Ok(())
 }

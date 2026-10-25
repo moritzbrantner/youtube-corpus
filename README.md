@@ -205,7 +205,7 @@ The corpus workspace's Detectors panel sets which analyses run: a corpus default
 on/off overrides, and per-video overrides that apply only inside that corpus. A video tracked
 through several sources gets every detector any of them requests. Pick a video to see its
 effective plan and who requested each detector, then **Run plan**: existing output is reused,
-and detectors without an integrated producer (OCR, translation) are reported as unavailable.
+and detectors without an integrated producer (OCR) are reported as unavailable.
 
 In **Videos**, expand **Processing stages** to inspect the effective per-detector state,
 retained output and source languages. Translation reports each requested target separately.
@@ -220,6 +220,22 @@ older binary have no attempt history; only their retained evidence can be report
 The status API is `GET /api/corpora/{corpusId}/videos/{videoId}/processing-status`.
 `POST …/detector-plan/run` accepts `{"detectors":["asr"],"refresh":false}` to target
 one enabled stage; omitting `detectors` runs the enabled plan.
+
+## Translated text
+
+Translation is opt-in per detector profile, separately for **spoken transcripts**
+(`translate_spoken`) and **on-screen text** (`translate_ocr`), with one or more target languages
+per corpus default, source and video override. Running the stage translates the video's
+preferred transcript stream or its OCR tracks with the native-whisperx planner and its
+Marian/OPUS-MT provider (en, de, fr, es, it, pt, nl, pl; other pairs pivot through English).
+The pinned free models download into `use-case-output/models/translation` on first use.
+
+Translations are stored beside the original spans with source/target language, modality,
+timestamps and provider/model/configuration provenance, and are indexed for corpus search: a
+translated hit is marked **Translated** with its languages and original text, and links to the
+original time in the video. Unchanged translations are reused per span and target; adding a
+target generates only that language. Unsupported languages, missing source evidence and failed
+targets are reported per target and never appear translated. Search does not translate queries.
 
 ## Faces
 

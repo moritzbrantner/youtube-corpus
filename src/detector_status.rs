@@ -116,7 +116,14 @@ pub(crate) async fn output_count(
         "entities" => "SELECT count(*) FROM entity_mentions WHERE video_id = $1",
         "faces" => "SELECT count(*) FROM face_observations WHERE video_id = $1",
         "voices" => "SELECT count(*) FROM voice_observations WHERE video_id = $1",
-        _ => return Ok(0),
+        _ => {
+            return match crate::translation::TranslationModality::from_detector(detector) {
+                Some(modality) => {
+                    crate::translation::current_count(pool, video, modality, None).await
+                }
+                None => Ok(0),
+            }
+        }
     };
     Ok(sqlx::query_scalar(sql).bind(video).fetch_one(pool).await?)
 }
@@ -224,17 +231,44 @@ async fn status_for_plan(
                     .transpose()?
                     .flatten(),
             };
-            if planned.enabled && planned.detector.starts_with("translate_") {
-                let source = if planned.detector == "translate_spoken" {
-                    output_count(pool, plan.video_id, "captions").await?
-                        + output_count(pool, plan.video_id, "asr").await?
+            if let Some(modality) =
+                crate::translation::TranslationModality::from_detector(&planned.detector)
+            {
+                // Each target language reports its own retained output and state, so one
+                // translated target or modality never makes another look translated.
+                if let Some(target) = &entry.target_language {
+                    entry.output_count = crate::translation::current_count(
+                        pool,
+                        plan.video_id,
+                        modality,
+                        Some(target),
+                    )
+                    .await?;
+                }
+                let settled = !planned.enabled
+                    || matches!(
+                        entry.state,
+                        StageState::AwaitingReview | StageState::Running
+                    );
+                if settled {
+                    // Disabled, held for review or running: the general state stands.
+                } else if let Some(target) = &entry.target_language {
+                    let status =
+                        crate::translation::target_status(pool, plan.video_id, modality, target)
+                            .await?;
+                    entry.state = match status.state {
+                        "completed" => StageState::Completed,
+                        "failed" => StageState::Failed,
+                        "unavailable" => StageState::Unavailable,
+                        "skipped" => StageState::Skipped,
+                        "missing_source" => StageState::MissingSource,
+                        _ => StageState::Missing,
+                    };
+                    entry.message = status.message;
                 } else {
-                    output_count(pool, plan.video_id, "ocr").await?
-                };
-                if source == 0 && !awaiting_review {
-                    entry.state = StageState::MissingSource;
+                    entry.state = StageState::Unavailable;
                     entry.message =
-                        Some("No source evidence is available to translate.".to_string());
+                        Some("Select at least one target language for this translation.".into());
                 }
             }
             stages.push(entry);

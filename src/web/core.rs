@@ -368,6 +368,7 @@ async fn transcript_context(
             .try_get::<f64, _>("semantic_score")
             .map_err(ApiError::internal)?,
         ocr_evidence: None,
+        translation: None,
     };
 
     let context_rows = sqlx::query(
@@ -497,6 +498,7 @@ async fn visual_text_context(
         fts_score: 0.0,
         semantic_score: 0.0,
         ocr_evidence: None,
+        translation: None,
     };
     // Same producer/run/observation/scene provenance as the search response.
     crate::search::attach_ocr_evidence(pool, std::slice::from_mut(&mut match_segment))

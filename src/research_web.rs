@@ -799,6 +799,7 @@ async fn run_video_plan(
         model_dir: PathBuf::from(crate::entities::DEFAULT_MODEL_DIR),
         refresh: input.refresh.unwrap_or(false),
         detectors: input.detectors,
+        translation_provider: None,
     })
     .await
     .map(Json)

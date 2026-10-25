@@ -430,7 +430,8 @@ async fn running_a_plan_reuses_existing_output_and_reports_unavailable_detectors
         [
             ("captions".to_string(), "reused".to_string()),
             ("ocr".to_string(), "unavailable".to_string()),
-            ("translate_ocr".to_string(), "unavailable".to_string()),
+            // No OCR evidence exists, so nothing is translated or reported translated.
+            ("translate_ocr".to_string(), "skipped".to_string()),
         ]
     );
     assert!(report["stages"][1]["message"]
@@ -499,7 +500,8 @@ async fn status_tracks_effective_selection_failures_review_and_each_translation_
     assert_eq!(translations.len(), 2);
     assert_eq!(translations[0]["targetLanguage"], "de");
     assert_eq!(translations[1]["targetLanguage"], "es");
-    assert!(translations.iter().all(|s| s["state"] == "unavailable"));
+    // Translation is available but has not run for either target yet.
+    assert!(translations.iter().all(|s| s["state"] == "missing"));
     assert_eq!(stage(&status, "translate_ocr")["state"], "missing_source");
 
     // A failed new attempt must not hide retained evidence or be masked by it.
@@ -706,6 +708,7 @@ out.mkdir(parents=True, exist_ok=True)
             model_dir: files.path().join("models"),
             refresh,
             detectors: Some(vec!["asr".to_string()]),
+            translation_provider: None,
         })
     };
     let calls = || {
@@ -839,6 +842,7 @@ async fn faces_reuses_empty_completed_runs_and_preserves_them_after_failed_refre
             model_dir: seed._files.path().join("models"),
             refresh,
             detectors: Some(vec!["faces".into()]),
+            translation_provider: None,
         })
     };
     assert!(matches!(
@@ -1000,6 +1004,7 @@ async fn native_voices_store_model_observations_tracks_and_survive_failed_refres
         model_dir: models.clone().into(),
         refresh,
         detectors: Some(vec!["voices".into()]),
+        translation_provider: None,
     };
     let first = run_video_plan(request(false)).await.unwrap();
     assert!(
