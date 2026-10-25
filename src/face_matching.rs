@@ -301,87 +301,50 @@ fn plan_matches(tracks: Vec<FaceEvidence>, mut groups: Vec<FacePersonGroup>) -> 
         new_people: Vec::new(),
         assignments: Vec::new(),
     };
+    // Extend existing people only with a unique, well-separated best match.
+    let mut pending = Vec::new();
     for track in &eligible {
         if assigned.contains(&track.track_id) {
             continue;
         }
         let scores = ranked_groups(track, &groups);
-        if let Some(&(index, score)) = scores.first().filter(|(_, s)| *s >= MIN_SIMILARITY) {
-            if scores
-                .get(1)
-                .is_some_and(|(_, other)| score - other < MIN_MARGIN)
-            {
-                continue;
-            }
-            let person = groups[index].person_id;
-            plan.assignments.push(Assignment {
-                track: track.track_id,
-                person,
-                score,
-            });
-            groups[index].tracks.push(track.clone());
-            assigned.insert(track.track_id);
-            continue;
-        }
-        let mut peers = vec![track.clone()];
-        loop {
-            let before = peers.len();
-            for other in &eligible {
-                if assigned.contains(&other.track_id)
-                    || peers.iter().any(|p| p.track_id == other.track_id)
+        match scores.first() {
+            Some(&(index, score)) if score >= MIN_SIMILARITY => {
+                if scores
+                    .get(1)
+                    .is_some_and(|(_, other)| score - other < MIN_MARGIN)
                 {
-                    continue;
+                    continue; // competing existing identities: unresolved
                 }
-                if peers.iter().any(|peer| {
-                    similarity(peer, other).is_some_and(|score| score >= MIN_SIMILARITY)
-                }) {
-                    peers.push(other.clone());
-                }
+                plan.assignments.push(Assignment {
+                    track: track.track_id,
+                    person: groups[index].person_id,
+                    score,
+                });
+                groups[index].tracks.push(track.clone());
+                assigned.insert(track.track_id);
             }
-            if peers.len() == before {
-                break;
-            }
+            _ => pending.push(track),
         }
-        if peers.len() < 2
-            || peers
-                .iter()
-                .map(|p| p.video_id)
-                .collect::<BTreeSet<_>>()
-                .len()
-                < 2
-        {
+    }
+    for cluster in agglomerate(&pending, &groups) {
+        let videos: BTreeSet<_> = cluster.iter().map(|&i| pending[i].video_id).collect();
+        if videos.len() < 2 {
             continue;
         }
-        // Competing, mutually inconsistent lookalikes stay unresolved. A chain of
-        // pairwise similarities never silently joins incompatible endpoints.
         let mut minimum = 1.0_f32;
-        let mut compatible = true;
-        for (index, left) in peers.iter().enumerate() {
-            if ranked_groups(left, &groups)
-                .first()
-                .is_some_and(|(_, s)| *s >= MIN_SIMILARITY)
-            {
-                compatible = false;
-                break;
-            }
-            for right in peers.iter().skip(index + 1) {
-                if let Some(score) = similarity(left, right).filter(|s| *s >= MIN_SIMILARITY) {
+        for (n, &left) in cluster.iter().enumerate() {
+            for &right in &cluster[n + 1..] {
+                if let Some(score) = similarity(pending[left], pending[right]) {
                     minimum = minimum.min(score);
-                } else {
-                    compatible = false;
-                    break;
                 }
             }
-        }
-        if !compatible {
-            continue;
         }
         let person = Uuid::new_v4();
         plan.new_people.push(person);
-        for peer in &peers {
-            assigned.insert(peer.track_id);
+        for &index in &cluster {
             plan.assignments.push(Assignment {
-                track: peer.track_id,
+                track: pending[index].track_id,
                 person,
                 score: minimum,
             });
@@ -390,10 +353,100 @@ fn plan_matches(tracks: Vec<FaceEvidence>, mut groups: Vec<FacePersonGroup>) -> 
             person_id: person,
             label: String::new(),
             identity_source: None,
-            tracks: peers,
+            tracks: cluster.iter().map(|&i| pending[i].clone()).collect(),
         });
     }
     plan
+}
+
+/// Complete-link agglomeration that only merges a pair when neither side has a competing
+/// candidate (another cluster or an existing person) within `MIN_MARGIN`. Ambiguous or
+/// contradictory evidence stays unmerged without blocking clearly separated matches elsewhere,
+/// and a chain of pairwise similarities never joins incompatible endpoints.
+fn agglomerate(tracks: &[&FaceEvidence], groups: &[FacePersonGroup]) -> Vec<Vec<usize>> {
+    let floor = MIN_SIMILARITY - MIN_MARGIN;
+    // Sparse complete-link scores between active clusters, keyed by (smaller, larger) id.
+    let mut near: BTreeMap<(usize, usize), f32> = BTreeMap::new();
+    for i in 0..tracks.len() {
+        for j in i + 1..tracks.len() {
+            if let Some(score) = similarity(tracks[i], tracks[j]).filter(|s| *s >= floor) {
+                near.insert((i, j), score);
+            }
+        }
+    }
+    let mut members: Vec<Vec<usize>> = (0..tracks.len()).map(|i| vec![i]).collect();
+    let existing = |cluster: &[usize]| -> f32 {
+        groups
+            .iter()
+            .filter_map(|group| {
+                cluster
+                    .iter()
+                    .map(|&m| group_score(tracks[m], group))
+                    .try_fold(1.0_f32, |score, next| next.map(|v| score.min(v)))
+            })
+            .fold(f32::NEG_INFINITY, f32::max)
+    };
+    loop {
+        let mut candidates: Vec<_> = near
+            .iter()
+            .filter(|(_, s)| **s >= MIN_SIMILARITY)
+            .map(|(&(a, b), &s)| (s, a, b))
+            .collect();
+        candidates.sort_by(|x, y| {
+            y.0.total_cmp(&x.0).then_with(|| {
+                (tracks[x.1].track_id, tracks[x.2].track_id)
+                    .cmp(&(tracks[y.1].track_id, tracks[y.2].track_id))
+            })
+        });
+        // A third cluster competes with a merge when it is nearly as close to one side but cannot
+        // consistently join both; one that fits both is simply a further member of the person.
+        let key = |x: usize, y: usize| (x.min(y), x.max(y));
+        let competitor = |cluster: usize, partner: usize| -> f32 {
+            near.iter()
+                .filter_map(|(&(x, y), &s)| {
+                    let other = match (x == cluster, y == cluster) {
+                        (true, _) => y,
+                        (_, true) => x,
+                        _ => return None,
+                    };
+                    let joins_both = near
+                        .get(&key(partner, other))
+                        .is_some_and(|p| p.min(s) >= MIN_SIMILARITY);
+                    (other != partner && !joins_both).then_some(s)
+                })
+                .fold(existing(&members[cluster]), f32::max)
+        };
+        let Some(&(_, a, b)) = candidates.iter().find(|(score, a, b)| {
+            competitor(*a, *b) < score - MIN_MARGIN && competitor(*b, *a) < score - MIN_MARGIN
+        }) else {
+            break;
+        };
+        // Merge b into a; the merged link to c is the minimum, kept only if both existed.
+        let others: BTreeSet<usize> = near
+            .keys()
+            .flat_map(|&(x, y)| [x, y])
+            .filter(|&c| c != a && c != b)
+            .collect();
+        for c in others {
+            let merged = near
+                .get(&key(a, c))
+                .zip(near.get(&key(b, c)))
+                .map(|(x, y)| x.min(*y));
+            near.remove(&key(b, c));
+            match merged {
+                Some(score) => {
+                    near.insert(key(a, c), score);
+                }
+                None => {
+                    near.remove(&key(a, c));
+                }
+            }
+        }
+        near.remove(&key(a, b));
+        let moved = std::mem::take(&mut members[b]);
+        members[a].extend(moved);
+    }
+    members.into_iter().filter(|m| m.len() > 1).collect()
 }
 
 async fn lock_corpus(tx: &mut Transaction<'_, Postgres>, corpus: Uuid) -> anyhow::Result<()> {

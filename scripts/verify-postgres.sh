@@ -26,4 +26,5 @@ cargo test --test user_labels_db -- --ignored
 cargo test --test entity_explorer_db -- --ignored
 cargo test --test detector_profiles_db -- --ignored
 cargo test --test face_matching_db -- --ignored
+cargo test --test face_matching_acceptance_db -- --ignored
 cargo test --test review_first_db -- --ignored
