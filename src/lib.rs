@@ -20,6 +20,7 @@ pub mod face_processing;
 pub mod ingest;
 pub mod media_evidence;
 pub mod multimodal;
+pub mod person_names;
 pub mod provenance;
 pub mod reprocessing;
 pub mod research_quality_web;

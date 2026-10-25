@@ -366,7 +366,9 @@ export function renameCorpusLabel(corpusId: string, labelId: string, name: strin
 }
 
 export function deleteCorpusLabel(corpusId: string, labelId: string) {
-  return apiFetch<void>(`/api/corpora/${corpusId}/labels/${labelId}`, { method: "DELETE" });
+  return apiFetch<void>(`/api/corpora/${corpusId}/labels/${labelId}`, {
+    method: "DELETE",
+  });
 }
 
 function labelAssignment(
@@ -465,6 +467,9 @@ export type PersonSummary = {
   label: string;
   identitySource: string | null;
   identityConfidence: number | null;
+  /** Evidence-grounded name (#65); `label` stays the placeholder identity label. */
+  name: string | null;
+  nameStatus: PersonNameStatus | null;
   shownTracks: number;
   heardTracks: number;
   videoCount: number;
@@ -767,6 +772,64 @@ export function runFaceMatches(corpusId: string) {
 }
 export function correctFaceMatches(corpusId: string, correction: FaceCorrection) {
   return apiFetch<FaceMatchReview>(`/api/corpora/${corpusId}/face-matches/corrections`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(correction),
+  });
+}
+
+export type PersonNameStatus = "inferred" | "confirmed" | "user_provided";
+export type NameEvidence = {
+  videoId: string;
+  title: string | null;
+  sourceUrl: string;
+  modality: "visible_text";
+  startSeconds: number;
+  endSeconds: number;
+  surfaceText: string;
+  sourceText: string;
+  byteStart: number;
+  byteEnd: number;
+  confidence: number | null;
+  entityMentionId: string;
+  visualTextTrackId: string;
+  faceTrackId: string;
+  provenance: unknown;
+};
+export type PersonNameReview = {
+  personId: string;
+  label: string;
+  name: {
+    name: string;
+    status: PersonNameStatus;
+    confidence: number | null;
+    algorithm: string;
+    algorithmVersion: string;
+    configuration: unknown;
+    evidence: NameEvidence[];
+  } | null;
+  unresolved: { reason: string; candidates: string[] } | null;
+  rejectedNames: string[];
+};
+export type PersonNamesReport = {
+  configuration: unknown;
+  people: PersonNameReview[];
+};
+export type PersonNameCorrection = {
+  personId: string;
+  action: "confirm" | "reject" | "replace";
+  name?: string;
+};
+export function getPersonNames(corpusId: string) {
+  return apiFetch<PersonNamesReport>(`/api/corpora/${corpusId}/person-names`);
+}
+export function runPersonNames(corpusId: string) {
+  return apiFetch<PersonNamesReport>(`/api/corpora/${corpusId}/person-names/run`, {
+    method: "POST",
+  });
+}
+export function correctPersonName(corpusId: string, correction: PersonNameCorrection) {
+  return apiFetch<PersonNamesReport>(`/api/corpora/${corpusId}/person-names/corrections`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(correction),

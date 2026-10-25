@@ -33,6 +33,7 @@ import { errorMessage } from "./CorpusLabels";
 import { timestampUrl } from "./CorpusSearch";
 import { corpusKeys } from "./query-keys";
 import { FaceMatchingReview } from "./FaceMatchingReview";
+import { nameStatusLabel, PersonNamesReview } from "./PersonNamesReview";
 
 type Selection =
   | { kind: "entity"; entityType: string; entityKey: string; name: string }
@@ -51,7 +52,10 @@ export function CorpusEntities({ corpusId }: { corpusId: string }) {
   });
   const extractMutation = useMutation({
     mutationFn: () => extractCorpusEntities(corpusId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "entities"] }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: ["corpora", corpusId, "entities"],
+      }),
   });
 
   function submit(event: React.FormEvent) {
@@ -73,6 +77,12 @@ export function CorpusEntities({ corpusId }: { corpusId: string }) {
       </SurfaceHeader>
       <SurfaceContent className="grid gap-4">
         <FaceMatchingReview
+          corpusId={corpusId}
+          onSelectPerson={(personId, label) => {
+            setSelection({ kind: "person", personId, name: label });
+          }}
+        />
+        <PersonNamesReview
           corpusId={corpusId}
           onSelectPerson={(personId, label) => {
             setSelection({ kind: "person", personId, name: label });
@@ -171,7 +181,11 @@ export function CorpusEntities({ corpusId }: { corpusId: string }) {
                   person={person}
                   selected={selection?.kind === "person" && selection.personId === person.personId}
                   onSelect={() =>
-                    setSelection({ kind: "person", personId: person.personId, name: person.label })
+                    setSelection({
+                      kind: "person",
+                      personId: person.personId,
+                      name: person.name ?? person.label,
+                    })
                   }
                 />
               ))}
@@ -254,7 +268,13 @@ function PersonRow({
 }) {
   return (
     <li className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2">
-      <span className="font-medium">{person.label}</span>
+      <span className="font-medium">{person.name ?? person.label}</span>
+      {person.name ? <span className="text-sm text-muted-foreground">{person.label}</span> : null}
+      {person.nameStatus ? (
+        <Badge variant={person.nameStatus === "inferred" ? "outline" : "secondary"}>
+          {nameStatusLabel(person.nameStatus)}
+        </Badge>
+      ) : null}
       <Badge variant="outline">{identityLabel(person)}</Badge>
       {person.identityConfidence !== null ? (
         <Badge variant="outline">confidence {person.identityConfidence.toFixed(2)}</Badge>
@@ -364,7 +384,9 @@ function PersonOccurrences({ corpusId, personId }: { corpusId: string; personId:
       ) : null}
       {report ? (
         <h3 className="text-sm font-semibold">
-          Where “{report.person.label}” is shown or heard ({identityLabel(report.person)})
+          Where “{report.person.name ?? report.person.label}” is shown or heard (
+          {identityLabel(report.person)}
+          {report.person.nameStatus ? `; ${nameStatusLabel(report.person.nameStatus)}` : ""})
         </h3>
       ) : null}
       {report?.videos.length === 0 ? (

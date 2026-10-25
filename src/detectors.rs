@@ -955,6 +955,13 @@ async fn run_stage_inner(
             .await?;
             crate::face_matching::match_corpus_faces(pool,request.corpus_id).await
                 .map_err(|error|anyhow::anyhow!("face observations are retained, but automatic corpus matching failed: {error:#}"))?;
+            crate::person_names::infer_person_names(pool, request.corpus_id)
+                .await
+                .map_err(|error| {
+                    anyhow::anyhow!(
+                        "face matches are retained, but person name inference failed: {error:#}"
+                    )
+                })?;
             Ok((
                 if report.reused {
                     StageOutcome::Reused
@@ -975,6 +982,13 @@ async fn run_stage_inner(
                 true,
             )
             .await?;
+            crate::person_names::infer_person_names(pool, request.corpus_id)
+                .await
+                .map_err(|error| {
+                    anyhow::anyhow!(
+                        "entity mentions are retained, but person name inference failed: {error:#}"
+                    )
+                })?;
             Ok((
                 StageOutcome::Completed,
                 Some(format!("{} mentions", report.mentions)),

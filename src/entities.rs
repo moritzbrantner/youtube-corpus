@@ -512,6 +512,10 @@ pub struct PersonSummary {
     pub label: String,
     pub identity_source: Option<String>,
     pub identity_confidence: Option<f64>,
+    /// Evidence-grounded name (#65), kept separate from the placeholder label.
+    pub name: Option<String>,
+    /// `inferred`, `confirmed` or `user_provided` when `name` is set.
+    pub name_status: Option<String>,
     pub shown_tracks: i64,
     pub heard_tracks: i64,
     pub video_count: i64,
@@ -590,15 +594,18 @@ pub async fn lookup_entities(
            WHERE vt.video_id = ANY($1)
          )
          SELECT p.id, p.label, p.identity_source, p.identity_confidence,
+                n.name, n.status AS name_status,
                 count(DISTINCT t.track_id) FILTER (WHERE t.kind = 'shown') AS shown,
                 count(DISTINCT t.track_id) FILTER (WHERE t.kind = 'heard') AS heard,
                 count(DISTINCT t.video_id) AS videos
          FROM people p
+         LEFT JOIN person_name_attributions n ON n.person_id = p.id
          LEFT JOIN tracks t ON t.person_id = p.id
-         WHERE p.corpus_id = $2 AND p.label IS NOT NULL
-           AND ($3 = '' OR strpos(lower(p.label), $3) > 0)
-         GROUP BY p.id
-         ORDER BY count(DISTINCT t.track_id) DESC, p.label, p.id
+         WHERE p.corpus_id = $2 AND (p.label IS NOT NULL OR n.name IS NOT NULL)
+           AND ($3 = '' OR strpos(lower(coalesce(p.label, '')), $3) > 0
+                OR strpos(coalesce(n.name_key, ''), $3) > 0)
+         GROUP BY p.id, n.person_id
+         ORDER BY (n.name IS NULL), count(DISTINCT t.track_id) DESC, p.label, p.id
          LIMIT $4",
     )
     .bind(&video_ids)
@@ -614,6 +621,8 @@ pub async fn lookup_entities(
             label: row.try_get("label")?,
             identity_source: row.try_get("identity_source")?,
             identity_confidence: row.try_get("identity_confidence")?,
+            name: row.try_get("name")?,
+            name_status: row.try_get("name_status")?,
             shown_tracks: row.try_get("shown")?,
             heard_tracks: row.try_get("heard")?,
             video_count: row.try_get("videos")?,
@@ -827,8 +836,10 @@ pub async fn person_occurrences(
 ) -> anyhow::Result<PersonOccurrencesReport> {
     let video_ids = corpus_video_list(pool, corpus_id).await?;
     let person = sqlx::query(
-        "SELECT id, label, identity_source, identity_confidence FROM people
-         WHERE id = $1 AND corpus_id = $2",
+        "SELECT p.id, p.label, p.identity_source, p.identity_confidence, n.name,
+                n.status AS name_status
+         FROM people p LEFT JOIN person_name_attributions n ON n.person_id = p.id
+         WHERE p.id = $1 AND p.corpus_id = $2",
     )
     .bind(person_id)
     .bind(corpus_id)
@@ -927,6 +938,8 @@ pub async fn person_occurrences(
             .unwrap_or_default(),
         identity_source: person.try_get("identity_source")?,
         identity_confidence: person.try_get("identity_confidence")?,
+        name: person.try_get("name")?,
+        name_status: person.try_get("name_status")?,
         shown_tracks: videos.iter().map(|v| v.shown_tracks as i64).sum(),
         heard_tracks: videos.iter().map(|v| v.heard_tracks as i64).sum(),
         video_count: videos.len() as i64,

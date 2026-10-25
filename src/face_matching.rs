@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use sqlx::{PgConnection, PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
-const ALGORITHM: &str = "youtube-corpus/face-complete-link-v1";
+pub const ALGORITHM: &str = "youtube-corpus/face-complete-link-v1";
 const MIN_SIMILARITY: f32 = 0.75;
 const MIN_MARGIN: f32 = 0.10;
 
