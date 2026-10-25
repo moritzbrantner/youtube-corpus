@@ -125,6 +125,18 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
             "/api/corpora/{corpus_id}/face-matches/corrections",
             post(correct_face_matches),
         )
+        .route(
+            "/api/corpora/{corpus_id}/person-names",
+            get(get_person_names),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/person-names/run",
+            post(run_person_names),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/person-names/corrections",
+            post(correct_person_name),
+        )
         .route("/api/corpora/{corpus_id}/entities", get(lookup_entities))
         .route(
             "/api/corpora/{corpus_id}/entities/extract",
@@ -846,10 +858,51 @@ async fn run_face_matches(
     AxumPath(corpus): AxumPath<Uuid>,
 ) -> Result<Json<crate::face_matching::FaceMatchReview>, ResearchError> {
     let pool = pool(&state).await?;
-    crate::face_matching::match_corpus_faces(&pool, corpus)
+    let report = crate::face_matching::match_corpus_faces(&pool, corpus)
+        .await
+        .map_err(map_corpus_error)?;
+    crate::person_names::infer_person_names(&pool, corpus)
+        .await
+        .map_err(map_corpus_error)?;
+    Ok(Json(report))
+}
+
+async fn get_person_names(
+    State(state): State<ResearchState>,
+    AxumPath(corpus): AxumPath<Uuid>,
+) -> Result<Json<crate::person_names::PersonNamesReport>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::person_names::review_person_names(&pool, corpus)
         .await
         .map(Json)
         .map_err(map_corpus_error)
+}
+async fn run_person_names(
+    State(state): State<ResearchState>,
+    AxumPath(corpus): AxumPath<Uuid>,
+) -> Result<Json<crate::person_names::PersonNamesReport>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::person_names::infer_person_names(&pool, corpus)
+        .await
+        .map(Json)
+        .map_err(map_corpus_error)
+}
+async fn correct_person_name(
+    State(state): State<ResearchState>,
+    AxumPath(corpus): AxumPath<Uuid>,
+    Json(input): Json<crate::person_names::NameCorrectionRequest>,
+) -> Result<Json<crate::person_names::PersonNamesReport>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::person_names::correct_person_name(&pool, corpus, input)
+        .await
+        .map(Json)
+        .map_err(|error| {
+            if error.is::<crate::person_names::NameCorrectionInputError>() {
+                ResearchError::bad_request(error.to_string())
+            } else {
+                map_corpus_error(error)
+            }
+        })
 }
 async fn correct_face_matches(
     State(state): State<ResearchState>,
@@ -899,15 +952,18 @@ async fn extract_entities(
             .model_dir
             .unwrap_or_else(|| crate::entities::DEFAULT_MODEL_DIR.to_string()),
     );
-    crate::entities::extract_corpus_entities(
+    let report = crate::entities::extract_corpus_entities(
         &pool,
         corpus_id,
         model_dir,
         input.allow_download.unwrap_or(true),
     )
     .await
-    .map(Json)
-    .map_err(map_corpus_error)
+    .map_err(map_corpus_error)?;
+    crate::person_names::infer_person_names(&pool, corpus_id)
+        .await
+        .map_err(map_corpus_error)?;
+    Ok(Json(report))
 }
 
 async fn reprocess_video(

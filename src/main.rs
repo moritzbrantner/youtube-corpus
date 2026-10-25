@@ -176,6 +176,7 @@ async fn run_command(
                     !args.no_download,
                 )
                 .await?;
+                youtube_corpus::person_names::infer_person_names(&pool, corpus.id).await?;
                 println!("{}", serde_json::to_string_pretty(&report)?);
             }
         },
