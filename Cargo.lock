@@ -1969,20 +1969,6 @@ dependencies = [
 [[package]]
 name = "moenarch-audio-analysis-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/audio-analysis?rev=1733abb72cdeef96b01000cd2064c068c9128c25#1733abb72cdeef96b01000cd2064c068c9128c25"
-dependencies = [
- "moenarch-audio-contracts",
- "moenarch-math-signal-core",
- "moenarch-runtime-core",
- "moenarch-tensor-data",
- "rustfft",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "moenarch-audio-analysis-core"
-version = "0.1.0"
 source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1#ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1"
 dependencies = [
  "moenarch-audio-contracts",
@@ -1997,10 +1983,10 @@ dependencies = [
 [[package]]
 name = "moenarch-audio-analysis-io"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/audio-analysis?rev=1733abb72cdeef96b01000cd2064c068c9128c25#1733abb72cdeef96b01000cd2064c068c9128c25"
+source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1#ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1"
 dependencies = [
  "hound",
- "moenarch-audio-analysis-core 0.1.0 (git+https://github.com/moritzbrantner/audio-analysis?rev=1733abb72cdeef96b01000cd2064c068c9128c25)",
+ "moenarch-audio-analysis-core",
  "moenarch-audio-contracts",
  "moenarch-runtime-core",
  "serde_json",
@@ -2010,9 +1996,9 @@ dependencies = [
 [[package]]
 name = "moenarch-audio-analysis-processing"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/audio-analysis?rev=1733abb72cdeef96b01000cd2064c068c9128c25#1733abb72cdeef96b01000cd2064c068c9128c25"
+source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1#ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1"
 dependencies = [
- "moenarch-audio-analysis-core 0.1.0 (git+https://github.com/moritzbrantner/audio-analysis?rev=1733abb72cdeef96b01000cd2064c068c9128c25)",
+ "moenarch-audio-analysis-core",
  "moenarch-audio-analysis-io",
  "moenarch-audio-contracts",
  "moenarch-math-signal-core",
@@ -2024,23 +2010,9 @@ dependencies = [
 [[package]]
 name = "moenarch-audio-analysis-recognition"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/audio-analysis?rev=1733abb72cdeef96b01000cd2064c068c9128c25#1733abb72cdeef96b01000cd2064c068c9128c25"
-dependencies = [
- "moenarch-audio-analysis-core 0.1.0 (git+https://github.com/moritzbrantner/audio-analysis?rev=1733abb72cdeef96b01000cd2064c068c9128c25)",
- "moenarch-audio-contracts",
- "moenarch-media-core",
- "moenarch-model-runtime",
- "moenarch-runtime-core",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "moenarch-audio-analysis-recognition"
-version = "0.1.0"
 source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1#ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1"
 dependencies = [
- "moenarch-audio-analysis-core 0.1.0 (git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1)",
+ "moenarch-audio-analysis-core",
  "moenarch-audio-contracts",
  "moenarch-media-core",
  "moenarch-model-runtime",
@@ -2052,27 +2024,14 @@ dependencies = [
 [[package]]
 name = "moenarch-audio-analysis-speakers"
 version = "0.1.4"
-source = "git+https://github.com/moritzbrantner/audio-analysis?rev=1733abb72cdeef96b01000cd2064c068c9128c25#1733abb72cdeef96b01000cd2064c068c9128c25"
+source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1#ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1"
 dependencies = [
- "moenarch-audio-analysis-core 0.1.0 (git+https://github.com/moritzbrantner/audio-analysis?rev=1733abb72cdeef96b01000cd2064c068c9128c25)",
- "moenarch-audio-analysis-recognition 0.1.0 (git+https://github.com/moritzbrantner/audio-analysis?rev=1733abb72cdeef96b01000cd2064c068c9128c25)",
+ "moenarch-audio-analysis-core",
+ "moenarch-audio-analysis-recognition",
  "moenarch-audio-contracts",
  "moenarch-model-runtime",
  "moenarch-runtime-core",
  "moenarch-runtime-onnx",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "moenarch-audio-analysis-speakers"
-version = "0.1.4"
-source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1#ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1"
-dependencies = [
- "moenarch-audio-analysis-core 0.1.0 (git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1)",
- "moenarch-audio-analysis-recognition 0.1.0 (git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1)",
- "moenarch-audio-contracts",
- "moenarch-runtime-core",
  "serde",
  "serde_json",
 ]
@@ -2084,7 +2043,7 @@ source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a
 dependencies = [
  "cmake",
  "hound",
- "moenarch-audio-analysis-speakers 0.1.4 (git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1)",
+ "moenarch-audio-analysis-speakers",
  "moenarch-media-core",
  "moenarch-runtime-core",
  "serde",
@@ -2383,7 +2342,7 @@ dependencies = [
  "moenarch-runtime-onnx",
  "moenarch-text-core",
  "moenarch-text-lexical",
- "moenarch-text-model-runtime 0.1.1 (git+https://github.com/moritzbrantner/nlp-stack?rev=50dd68521e425d2ce734d1f2df1d8c818a659f12)",
+ "moenarch-text-model-runtime",
  "moenarch-vector-analysis-core",
  "moenarch-vector-analysis-index",
  "serde",
@@ -2414,23 +2373,10 @@ dependencies = [
  "moenarch-runtime-core",
  "moenarch-text-core",
  "moenarch-text-lexical",
- "moenarch-text-model-runtime 0.1.1 (git+https://github.com/moritzbrantner/nlp-stack?rev=50dd68521e425d2ce734d1f2df1d8c818a659f12)",
+ "moenarch-text-model-runtime",
  "serde",
  "serde_json",
  "tokenizers",
-]
-
-[[package]]
-name = "moenarch-text-model-runtime"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "775331a30c53b67e5499c254dc04553b7ced0bee41ef0afe3eb25338a1e50d51"
-dependencies = [
- "moenarch-media-core",
- "moenarch-runtime-core",
- "moenarch-runtime-onnx",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -2593,12 +2539,12 @@ dependencies = [
  "candle-nn 0.11.0",
  "candle-transformers 0.11.0",
  "dirs 7.0.0",
- "moenarch-audio-analysis-speakers 0.1.4 (git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1)",
+ "moenarch-audio-analysis-speakers",
  "moenarch-audio-analysis-transcription",
  "moenarch-media-core",
  "moenarch-model-runtime",
  "moenarch-runtime-core",
- "moenarch-text-model-runtime 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "moenarch-text-model-runtime",
  "sentencepiece-rs",
  "serde",
  "serde_json",
@@ -4673,10 +4619,10 @@ dependencies = [
  "chrono",
  "clap",
  "mime_guess",
- "moenarch-audio-analysis-core 0.1.0 (git+https://github.com/moritzbrantner/audio-analysis?rev=1733abb72cdeef96b01000cd2064c068c9128c25)",
+ "moenarch-audio-analysis-core",
  "moenarch-audio-analysis-io",
  "moenarch-audio-analysis-processing",
- "moenarch-audio-analysis-speakers 0.1.4 (git+https://github.com/moritzbrantner/audio-analysis?rev=1733abb72cdeef96b01000cd2064c068c9128c25)",
+ "moenarch-audio-analysis-speakers",
  "moenarch-audio-contracts",
  "moenarch-corpus-core",
  "moenarch-image-analysis-core",
