@@ -51,6 +51,7 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
 
 - **1.10 Configure the initial historical backfill when tracking a source.**  
   Status: adopted 2026-10-13. Answers 1.9 (option C).  
+  Built scope: add-source history choice of none, recent days, first N videos in the source's displayed order (owner answer youtube-corpus#67.Q1) or full history; the discovery snapshot and its order are recorded per backfill (#67).  
   When registering a channel or playlist, users can choose which already-published videos to backfill: **none**, a **recent-history** selection, a **limited number** of videos, or the **entire available history**. Show the requested scope before starting historical discovery/analysis and keep that initial backfill choice distinct from ongoing checks for newly published videos. Videos selected for backfill obey the source's automatic or review-first processing policy (1.6), automatic precedence for shared videos (1.8), and effective detector profiles (2.6 and 2.8); previously known videos and unchanged results must not be duplicated (2.2). The initial scope must not silently truncate the user's requested full-history selection or trigger an unselected full backfill. The initial selection defaults to full history under 1.12.
 
 - **1.11** [question] **What initial backfill option should be preselected?**  
@@ -59,6 +60,7 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
 
 - **1.12 Full available history is the preselected initial backfill.**  
   Status: adopted 2026-10-13. Answers 1.11 (option C).  
+  Built scope: the corpus source form preselects full history; nothing is listed or processed until the source is added (#67).  
   The channel/playlist setup initially selects **all available historical videos** rather than none or a limited recent selection. The full-history scope is plainly visible and can be changed to any alternative from 1.10 **before the user adds the source**. Adding the source explicitly with this selected scope starts the requested historical discovery/backfill; merely opening the app must not trigger it. Do not silently impose the ordinary per-check item limit as a cap on full history. Respect the selected source's automatic or review-first processing policy (1.6), shared-video precedence (1.8), deduplication and per-stage reuse (2.2). Show the scope and progress truthfully, including provider restrictions or partially available history; never silently report an incomplete backfill as complete. Background execution and controls for extensive backfills follow 1.14 (Answers 1.13).
 
 - **1.13** [question] **How should extensive initial backfills execute and be controlled?**  
@@ -67,6 +69,7 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
 
 - **1.14 Run initial backfills progressively in the background, with user controls.**  
   Status: adopted 2026-10-13. Answers 1.13 (option A).  
+  Built scope: server-owned background listing and processing with persisted progress, pause/resume/cancel and requeue of interrupted work on restart (#67).  
   Once a user adds a source with historical backfill selected (1.10 and 1.12), work advances **progressively in the background** rather than blocking the current page or requiring manually launched batches. Users can inspect honest per-backfill progress, including how much was discovered, queued, analyzed, completed, or failed, and can **pause, resume, or cancel** the backfill. Pausing prevents further backfill work until resumed; canceling stops the remaining requested work rather than deleting already-produced evidence or source memberships. Completed work and persistent progress remain available after leaving and reopening the page, and a resumed run reuses existing outputs without duplicate processing (2.2). The implementation should remain bounded and should report a partial or interrupted backfill rather than falsely labeling it complete. A full-history request must not be silently converted into a fixed-size sample. This preserves automatic versus review-first processing (1.6), automatic precedence (1.8), and producer boundaries.
 
 - **1.15** [question] **How should new uploads compete with a long-running historical backfill?**  
@@ -75,6 +78,7 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
 
 - **1.16 Fairly interleave new uploads and historical backfill.**  
   Status: adopted 2026-10-13. Answers 1.15 (option B).  
+  Built scope: one dispatcher alternates queued new uploads and running backfill videos; paused or canceled backfills contribute no work (#67).  
   When newly published videos arrive while a historical backfill is still running, the corpus **interleaves both classes of eligible work** so new uploads are handled promptly without waiting for the whole backfill, and the backfill continues to advance even while more new videos arrive. Neither category may be permanently starved by the other. Display enough per-source/backfill status to distinguish newly discovered, pending, running, and completed items. Respect each source's automatic/review-first policy (1.6), shared-video automatic precedence (1.8), pause/resume/cancel for backfills (1.14), and reuse/deduplication of unchanged evidence (2.2). A paused or canceled historical backfill does not itself pause checking or processing new uploads. This is a product-level fairness choice; no particular ratio, deadline, or extra scheduling service is approved here.
 
 - **1.17** [question] **How should monitored channels and playlists be checked for new uploads?**  

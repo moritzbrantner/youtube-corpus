@@ -2,6 +2,7 @@ pub mod annotations;
 pub mod api_surface;
 pub mod api_types;
 pub mod asr;
+pub mod backfill;
 pub mod benchmark;
 pub mod captions;
 pub mod cli;

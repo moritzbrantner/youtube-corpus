@@ -66,6 +66,7 @@ pub struct MediaProbeMetadata {
 #[derive(Debug, Deserialize)]
 struct YtDlpCollectionJson {
     entries: Option<Vec<Option<YtDlpEntryJson>>>,
+    playlist_count: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -147,6 +148,33 @@ pub async fn discover_collection(
     let client = YtDlpClient::new(yt_dlp.clone());
     let (stdout, _) = client.discover_collection_json(url, max_items).await?;
     parse_collection_json(&stdout, max_items)
+}
+
+/// The full listing of a channel/playlist in the source's displayed order, plus the item count
+/// the provider reported for it (when it reports one), for an initial history backfill.
+#[derive(Debug, Clone)]
+pub struct CollectionSnapshot {
+    pub items: Vec<VideoItem>,
+    pub reported_count: Option<u64>,
+}
+
+pub async fn discover_collection_snapshot(
+    url: &str,
+    yt_dlp: &YtDlpConfig,
+) -> anyhow::Result<CollectionSnapshot> {
+    let client = YtDlpClient::new(yt_dlp.clone());
+    let (stdout, _) = client.discover_collection_json(url, None).await?;
+    parse_collection_snapshot(&stdout)
+}
+
+pub fn parse_collection_snapshot(bytes: &[u8]) -> anyhow::Result<CollectionSnapshot> {
+    let parsed: YtDlpCollectionJson = serde_json::from_slice(bytes)?;
+    let mut items = Vec::new();
+    collect_video_items(parsed.entries.unwrap_or_default(), usize::MAX, &mut items);
+    Ok(CollectionSnapshot {
+        items,
+        reported_count: parsed.playlist_count,
+    })
 }
 
 fn parse_collection_json(bytes: &[u8], max_items: Option<u64>) -> anyhow::Result<Vec<VideoItem>> {

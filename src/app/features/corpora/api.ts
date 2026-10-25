@@ -38,7 +38,95 @@ export type CorpusSource = {
   itemsAwaitingReview: number;
   /** User labels assigned to this tracked source. */
   labels: CorpusLabel[];
+  /** Background work of this source: newly published uploads vs history (Atlas 1.16). */
+  queue: SourceQueueActivity;
+  /** Most recent initial-history backfill (Atlas 1.10, 1.14). */
+  backfill: BackfillProgress | null;
 };
+
+export type SourceQueueActivity = {
+  newQueued: number;
+  newRunning: number;
+  historyQueued: number;
+  historyRunning: number;
+};
+
+/** Which already-published videos to process when a source is added (Atlas 1.10, 1.12). */
+export type HistoryScopeKind = "none" | "recent" | "limited" | "full";
+
+export type HistoryScopeInput = {
+  scope: HistoryScopeKind;
+  recentDays?: number | null;
+  limitCount?: number | null;
+};
+
+export type BackfillState =
+  | "discovering"
+  | "running"
+  | "paused"
+  | "canceled"
+  | "awaiting_review"
+  | "completed"
+  | "partial"
+  | "failed";
+
+export type BackfillProgress = {
+  id: string;
+  subscriptionId: string;
+  corpusId: string | null;
+  scope: HistoryScopeKind;
+  recentDays: number | null;
+  limitCount: number | null;
+  state: BackfillState;
+  /** Videos listed by the source; null until the listing finished. */
+  discoveredCount: number | null;
+  reportedCount: number | null;
+  discoveryMessage: string | null;
+  selected: number;
+  notSelected: { reason: string; count: number }[];
+  queued: number;
+  running: number;
+  indexed: number;
+  skipped: number;
+  failed: number;
+  awaitingReview: number;
+  filtered: number;
+  canceled: number;
+  createdAt: string;
+  discoveredAt: string | null;
+  finishedAt: string | null;
+};
+
+export type BackfillEntry = {
+  position: number;
+  sourceUrl: string;
+  youtubeId: string | null;
+  title: string | null;
+  uploadDate: string | null;
+  selected: boolean;
+  reason: string | null;
+  status: string | null;
+};
+
+export type BackfillAction = "pause" | "resume" | "cancel";
+
+export function controlBackfill(
+  corpusId: string,
+  sourceId: string,
+  backfillId: string,
+  action: BackfillAction,
+) {
+  return jsonPost<BackfillProgress>(
+    `/api/corpora/${corpusId}/sources/${sourceId}/backfills/${backfillId}/${action}`,
+    {},
+  );
+}
+
+export function listBackfillEntries(corpusId: string, sourceId: string, backfillId: string) {
+  return apiFetch<BackfillEntry[]>(
+    `/api/corpora/${corpusId}/sources/${sourceId}/backfills/${backfillId}/entries`,
+  );
+}
 
 /** A user-defined label owned by one corpus; distinct from YouTube categories/tags. */
 export type CorpusLabel = {
@@ -215,6 +303,8 @@ export type AddCorpusSourceInput = {
   transcriberTimeoutSeconds?: number | null;
   maxItems?: number | null;
   processingPolicy?: ProcessingPolicy;
+  /** Initial history of a monitored source; the server applies full history when omitted. */
+  history?: HistoryScopeInput;
 };
 
 /** Whether newly discovered videos are analyzed automatically or held for review (Atlas 1.6). */
@@ -262,6 +352,9 @@ export type SubscriptionCheckItem = {
   newVideos: number;
   videosIndexed: number;
   segmentsIndexed: number;
+  awaitingReview?: number;
+  /** Newly queued for background processing by this check. */
+  queued?: number;
   ingest: IngestReport | null;
   message: string | null;
 };
@@ -280,6 +373,7 @@ export type AddCorpusSourceReport = {
   source: CorpusSource | null;
   ingest: IngestReport | null;
   check: SubscriptionCheckReport | null;
+  backfill: BackfillProgress | null;
 };
 
 export type ReprocessStage = "metadata" | "captions" | "asr" | "segments" | "embeddings" | "all";

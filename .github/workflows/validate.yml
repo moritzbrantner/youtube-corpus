@@ -105,6 +105,8 @@ jobs:
             cargo test --locked --test face_matching_db -- --ignored
           DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus \
             cargo test --locked --test review_first_db -- --ignored
+          DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus \
+            cargo test --locked --test backfill_db -- --ignored
 
       - name: Shut down test Postgres
         if: always()

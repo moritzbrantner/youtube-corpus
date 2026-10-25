@@ -50,6 +50,19 @@ pub struct CorpusSourceSummary {
     pub items_awaiting_review: u64,
     /// User labels assigned to this tracked source (Atlas 1.3).
     pub labels: Vec<CorpusLabel>,
+    /// Background work of this source by class (Atlas 1.16): newly published uploads vs history.
+    pub queue: SourceQueueActivity,
+    /// The most recent initial-history backfill of this source (Atlas 1.10, 1.14).
+    pub backfill: Option<crate::backfill::BackfillProgress>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceQueueActivity {
+    pub new_queued: u64,
+    pub new_running: u64,
+    pub history_queued: u64,
+    pub history_running: u64,
 }
 
 /// A user-defined label owned by one corpus. Distinct from YouTube categories/tags.
@@ -340,6 +353,10 @@ pub async fn list_corpus_sources(
                 count(i.id) FILTER (WHERE i.status = 'indexed')::bigint AS items_indexed,
                 count(i.id) FILTER (WHERE i.status = 'failed')::bigint AS items_failed,
                 count(i.id) FILTER (WHERE i.status = 'awaiting_review')::bigint AS items_awaiting_review,
+                count(i.id) FILTER (WHERE i.status = 'queued' AND i.origin = 'new')::bigint AS new_queued,
+                count(i.id) FILTER (WHERE i.status = 'running' AND i.origin = 'new')::bigint AS new_running,
+                count(i.id) FILTER (WHERE i.status = 'queued' AND i.origin = 'history')::bigint AS history_queued,
+                count(i.id) FILTER (WHERE i.status = 'running' AND i.origin = 'history')::bigint AS history_running,
                 s.processing_policy,
                 coalesce(
                   (SELECT jsonb_agg(jsonb_build_object('id', l.id, 'name', l.name)
@@ -362,7 +379,8 @@ pub async fn list_corpus_sources(
     .fetch_all(pool)
     .await?;
 
-    rows.into_iter()
+    let mut sources = rows
+        .into_iter()
         .map(|row| {
             Ok(CorpusSourceSummary {
                 id: row.try_get("id")?,
@@ -380,9 +398,23 @@ pub async fn list_corpus_sources(
                 processing_policy: row.try_get("processing_policy")?,
                 items_awaiting_review: row_count(&row, "items_awaiting_review")?,
                 labels: row.try_get::<Json<Vec<CorpusLabel>>, _>("labels")?.0,
+                queue: SourceQueueActivity {
+                    new_queued: row_count(&row, "new_queued")?,
+                    new_running: row_count(&row, "new_running")?,
+                    history_queued: row_count(&row, "history_queued")?,
+                    history_running: row_count(&row, "history_running")?,
+                },
+                backfill: None,
             })
         })
-        .collect()
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    for source in &mut sources {
+        source.backfill = crate::backfill::list_backfills(pool, source.id)
+            .await?
+            .into_iter()
+            .next();
+    }
+    Ok(sources)
 }
 
 pub async fn list_corpus_videos(
