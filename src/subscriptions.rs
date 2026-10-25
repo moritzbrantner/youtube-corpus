@@ -94,6 +94,18 @@ pub struct CheckSubscriptionsRequest {
     pub id: Option<Uuid>,
     pub include_disabled: bool,
     pub migrate: bool,
+    pub dispatch: CheckDispatch,
+}
+
+/// How a check hands admitted new uploads to processing.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum CheckDispatch {
+    /// Ingest admitted videos before the check returns (CLI checks without a server).
+    #[default]
+    Inline,
+    /// Queue admitted videos as new-upload work for the server's corpus dispatcher, which
+    /// interleaves them fairly with historical backfill (Atlas 1.16).
+    Enqueue,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,6 +159,9 @@ pub struct SubscriptionCheckReport {
     /// Newly held for review by this check (review-first sources).
     #[serde(default)]
     pub awaiting_review: u64,
+    /// Newly queued for background processing by this check (server checks).
+    #[serde(default)]
+    pub queued: u64,
     pub ingest: Option<IngestReport>,
     pub message: Option<String>,
 }
@@ -172,7 +187,7 @@ impl From<&Subscription> for SubscriptionSummary {
 }
 
 impl Subscription {
-    fn to_ingest_request(&self, database_url: String) -> crate::ingest::IngestRequest {
+    pub(crate) fn to_ingest_request(&self, database_url: String) -> crate::ingest::IngestRequest {
         crate::ingest::IngestRequest {
             database_url,
             run_id: None,
@@ -297,7 +312,14 @@ pub async fn check_subscriptions(
     let mut segments_indexed = 0;
 
     for subscription in subscriptions {
-        let item = match check_subscription(&pool, &request.database_url, &subscription).await {
+        let item = match check_subscription(
+            &pool,
+            &request.database_url,
+            &subscription,
+            request.dispatch,
+        )
+        .await
+        {
             Ok(report) => report,
             Err(error) => {
                 mark_checked(&pool, subscription.id, false).await?;
@@ -309,6 +331,7 @@ pub async fn check_subscriptions(
                     videos_indexed: 0,
                     segments_indexed: 0,
                     awaiting_review: 0,
+                    queued: 0,
                     ingest: None,
                     message: Some(error.to_string()),
                 }
@@ -336,7 +359,27 @@ async fn check_subscription(
     pool: &PgPool,
     database_url: &str,
     subscription: &Subscription,
+    dispatch: CheckDispatch,
 ) -> anyhow::Result<SubscriptionCheckReport> {
+    // Until the initial history snapshot is recorded, every listed video would look new, so a
+    // routine check must not sweep excluded history into analysis (Atlas 1.10, 1.18).
+    if crate::backfill::history_discovery_pending(pool, subscription.id).await? {
+        return Ok(SubscriptionCheckReport {
+            subscription: SubscriptionSummary::from(subscription),
+            status: "waiting_for_history".to_string(),
+            videos_discovered: 0,
+            new_videos: 0,
+            videos_indexed: 0,
+            segments_indexed: 0,
+            awaiting_review: 0,
+            queued: 0,
+            ingest: None,
+            message: Some(
+                "The source's history is still being listed; checks for new uploads resume once it is recorded."
+                    .to_string(),
+            ),
+        });
+    }
     let discovered = crate::youtube::discover_collection(
         &subscription.source_url,
         subscription.max_items,
@@ -370,7 +413,7 @@ async fn check_subscription(
         }
     }
 
-    let mut admitted = Vec::new();
+    let mut admitted: Vec<VideoItem> = Vec::new();
     let mut awaiting_review = 0;
     for item in new_items {
         match admit_item(pool, subscription, &item).await? {
@@ -395,6 +438,17 @@ async fn check_subscription(
     let mut ingest = None;
     let mut videos_indexed = 0;
     let mut segments_indexed = 0;
+    let mut queued = 0;
+    if dispatch == CheckDispatch::Enqueue {
+        for item in &admitted {
+            crate::backfill::enqueue_new_upload(pool, subscription.id, &item.source_url).await?;
+            queued += 1;
+        }
+        if queued > 0 {
+            crate::backfill::wake();
+        }
+        admitted.clear();
+    }
     if !admitted.is_empty() {
         let report = ingest_video_items(
             subscription.to_ingest_request(database_url.to_string()),
@@ -416,6 +470,7 @@ async fn check_subscription(
         videos_indexed,
         segments_indexed,
         awaiting_review,
+        queued,
         ingest,
         message: None,
     })
@@ -517,11 +572,11 @@ fn parse_source_kind(value: &str) -> anyhow::Result<SubscriptionSourceKind> {
     SubscriptionSourceKind::parse(value)
 }
 
-fn should_ingest_status(status: Option<&str>) -> bool {
+pub(crate) fn should_ingest_status(status: Option<&str>) -> bool {
     matches!(status, None | Some("discovered" | "failed"))
 }
 
-async fn subscription_item_status(
+pub(crate) async fn subscription_item_status(
     pool: &PgPool,
     subscription_id: Uuid,
     item: &VideoItem,
@@ -541,7 +596,7 @@ async fn subscription_item_status(
     Ok(status)
 }
 
-async fn upsert_subscription_item(
+pub(crate) async fn upsert_subscription_item(
     pool: &PgPool,
     subscription_id: Uuid,
     item: &VideoItem,
@@ -587,7 +642,7 @@ async fn upsert_subscription_item(
     Ok(())
 }
 
-async fn mark_subscription_item_status(
+pub(crate) async fn mark_subscription_item_status(
     pool: &PgPool,
     subscription_id: Uuid,
     source_url: &str,
@@ -606,7 +661,7 @@ async fn mark_subscription_item_status(
     Ok(())
 }
 
-async fn update_ingested_items(
+pub(crate) async fn update_ingested_items(
     pool: &PgPool,
     subscription_id: Uuid,
     report: &IngestReport,
@@ -788,29 +843,38 @@ pub async fn approve_pending_items(
     if rows.len() != source_urls.len() {
         anyhow::bail!("some videos are not awaiting review for this source");
     }
-    let mut items = Vec::new();
-    for row in rows {
-        let source_url: String = row.try_get("source_url")?;
-        let youtube_id: Option<String> = row.try_get("youtube_id")?;
-        let metadata: serde_json::Value = row.try_get("metadata")?;
-        items.push(VideoItem {
-            item_id: crate::youtube::sanitize_id(youtube_id.as_deref().unwrap_or(&source_url)),
-            youtube_id,
-            title: row.try_get("title")?,
-            source_url,
-            duration_seconds: row.try_get("duration_seconds")?,
-            upload_date: row.try_get("upload_date")?,
-            metadata: serde_json::from_value(metadata).unwrap_or_default(),
-            local_video_path: None,
-        });
-    }
+    let items = rows
+        .into_iter()
+        .map(item_from_row)
+        .collect::<anyhow::Result<Vec<_>>>()?;
     let report = ingest_video_items(
         subscription.to_ingest_request(database_url.to_string()),
         items,
     )
     .await?;
     update_ingested_items(&pool, subscription_id, &report).await?;
+    crate::backfill::refresh_for_subscription(&pool, subscription_id).await?;
     Ok(report)
+}
+
+/// Rebuilds a discovered video from its `corpus_subscription_items` row (`source_url`,
+/// `youtube_id`, `title`, `duration_seconds`, `upload_date`, `metadata`).
+pub(crate) fn item_from_row(row: PgRow) -> anyhow::Result<VideoItem> {
+    let source_url: String = row.try_get("source_url")?;
+    let youtube_id: Option<String> = row.try_get("youtube_id")?;
+    let metadata: Option<serde_json::Value> = row.try_get("metadata")?;
+    Ok(VideoItem {
+        item_id: crate::youtube::sanitize_id(youtube_id.as_deref().unwrap_or(&source_url)),
+        youtube_id,
+        title: row.try_get("title")?,
+        source_url,
+        duration_seconds: row.try_get("duration_seconds")?,
+        upload_date: row.try_get("upload_date")?,
+        metadata: metadata
+            .and_then(|value| serde_json::from_value(value).ok())
+            .unwrap_or_default(),
+        local_video_path: None,
+    })
 }
 
 async fn mark_checked(pool: &PgPool, subscription_id: Uuid, ingested: bool) -> anyhow::Result<()> {

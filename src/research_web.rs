@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::api_types::SearchTranscriptsInput;
+use crate::backfill::{
+    BackfillAction, BackfillControlError, BackfillEntry, BackfillProgress, HistoryScope,
+    HistoryScopeInput,
+};
 use crate::config::{CaptionConfig, CorpusSource, YtDlpConfig};
 use crate::corpora::{
     Corpus, CorpusLabel, CorpusSourceSummary, CorpusVideoSummary, CreateCorpusRequest, LabelError,
@@ -25,8 +29,9 @@ use crate::ingest::{ingest_corpus, IngestReport, IngestRequest};
 use crate::reprocessing::{ReprocessReport, ReprocessRequest, ReprocessStage};
 use crate::search::{SearchReport, SearchRequest};
 use crate::subscriptions::{
-    add_subscription, check_subscriptions, AddSubscriptionRequest, CheckSubscriptionsReport,
-    CheckSubscriptionsRequest, PendingItem, ProcessingPolicy, SubscriptionSourceKind,
+    add_subscription, check_subscriptions, AddSubscriptionRequest, CheckDispatch,
+    CheckSubscriptionsReport, CheckSubscriptionsRequest, PendingItem, ProcessingPolicy,
+    SubscriptionSourceKind,
 };
 
 #[derive(Clone)]
@@ -62,6 +67,18 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
         .route(
             "/api/corpora/{corpus_id}/sources/{source_id}/pending",
             get(list_source_pending),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/sources/{source_id}/backfills",
+            get(list_source_backfills),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/sources/{source_id}/backfills/{backfill_id}/entries",
+            get(list_source_backfill_entries),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/sources/{source_id}/backfills/{backfill_id}/{action}",
+            post(control_source_backfill),
         )
         .route(
             "/api/corpora/{corpus_id}/sources/{source_id}/pending/approve",
@@ -182,6 +199,8 @@ struct AddCorpusSourceInput {
     transcriber_timeout_seconds: Option<u64>,
     max_items: Option<u64>,
     processing_policy: Option<ProcessingPolicy>,
+    /// Initial history to backfill for a monitored source; full history when omitted (1.12).
+    history: Option<HistoryScopeInput>,
 }
 
 #[derive(Debug, Serialize)]
@@ -190,6 +209,7 @@ struct AddCorpusSourceReport {
     source: Option<CorpusSourceSummary>,
     ingest: Option<IngestReport>,
     check: Option<CheckSubscriptionsReport>,
+    backfill: Option<BackfillProgress>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -363,6 +383,10 @@ async fn add_source(
 
     let monitor = input.monitor.unwrap_or(true);
     let ingest_now = input.ingest_now.unwrap_or(true);
+    let history = match input.history {
+        Some(history) => history.into_scope().map_err(ResearchError::bad_request)?,
+        None => HistoryScope::Full,
+    };
     if !monitor && !ingest_now {
         return Err(ResearchError::bad_request(
             "A non-monitored source must be ingested now so it can belong to the corpus.",
@@ -411,20 +435,12 @@ async fn add_source(
             .await
             .map_err(map_corpus_error)?;
 
-        let check = if ingest_now {
-            let report = check_subscriptions(CheckSubscriptionsRequest {
-                database_url,
-                id: Some(subscription.id),
-                include_disabled: true,
-                migrate: false,
-            })
-            .await
-            .map_err(ResearchError::internal)?;
-            persist_check_outcome(&pool, subscription.id, &report).await?;
-            Some(report)
-        } else {
-            None
-        };
+        // The chosen history scope is applied in the background (1.10, 1.14); a `none` scope
+        // still records the existing videos so monitoring only picks up later uploads.
+        let backfill =
+            crate::backfill::start_backfill(&pool, subscription.id, Some(corpus_id), history)
+                .await
+                .map_err(ResearchError::internal)?;
         let source = crate::corpora::list_corpus_sources(&pool, corpus_id)
             .await
             .map_err(map_corpus_error)?
@@ -435,7 +451,8 @@ async fn add_source(
             Json(AddCorpusSourceReport {
                 source,
                 ingest: None,
-                check,
+                check: None,
+                backfill: Some(backfill),
             }),
         ));
     }
@@ -473,6 +490,7 @@ async fn add_source(
             source: None,
             ingest: Some(report),
             check: None,
+            backfill: None,
         }),
     ))
 }
@@ -495,6 +513,7 @@ async fn check_source(
         id: Some(source_id),
         include_disabled: true,
         migrate: false,
+        dispatch: CheckDispatch::Enqueue,
     })
     .await
     .map_err(ResearchError::internal)?;
@@ -547,6 +566,55 @@ async fn set_source_policy(
         .await
         .map_err(ResearchError::internal)?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn list_source_backfills(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, source_id)): AxumPath<(Uuid, Uuid)>,
+) -> Result<Json<Vec<BackfillProgress>>, ResearchError> {
+    let pool = pool(&state).await?;
+    require_source(&pool, corpus_id, source_id).await?;
+    crate::backfill::list_backfills(&pool, source_id)
+        .await
+        .map(Json)
+        .map_err(ResearchError::internal)
+}
+
+async fn list_source_backfill_entries(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, source_id, backfill_id)): AxumPath<(Uuid, Uuid, Uuid)>,
+) -> Result<Json<Vec<BackfillEntry>>, ResearchError> {
+    let pool = pool(&state).await?;
+    require_source(&pool, corpus_id, source_id).await?;
+    crate::backfill::list_backfill_entries(&pool, source_id, backfill_id)
+        .await
+        .map(Json)
+        .map_err(ResearchError::internal)
+}
+
+async fn control_source_backfill(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, source_id, backfill_id, action)): AxumPath<(Uuid, Uuid, Uuid, String)>,
+) -> Result<Json<BackfillProgress>, ResearchError> {
+    let action = match action.as_str() {
+        "pause" => BackfillAction::Pause,
+        "resume" => BackfillAction::Resume,
+        "cancel" => BackfillAction::Cancel,
+        _ => return Err(ResearchError::not_found("Unknown backfill action.")),
+    };
+    let pool = pool(&state).await?;
+    require_source(&pool, corpus_id, source_id).await?;
+    crate::backfill::control_backfill(&pool, source_id, backfill_id, action)
+        .await
+        .map(Json)
+        .map_err(|error| match error {
+            BackfillControlError::NotFound => ResearchError::not_found("Backfill not found."),
+            BackfillControlError::InvalidState { .. } => ResearchError {
+                status: StatusCode::CONFLICT,
+                message: error.to_string(),
+            },
+            BackfillControlError::Database(error) => ResearchError::internal(error),
+        })
 }
 
 async fn list_source_pending(
