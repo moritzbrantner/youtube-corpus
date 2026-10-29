@@ -361,6 +361,21 @@ cargo run -- search --query "semantic topic" --mode semantic
 Search results include the video id, stream id, transcript source, timestamps,
 source URL, title, snippet text, and scores.
 
+### Opt-in Tantivy literal search pilot
+
+Postgres stays the default. The pilot (#76) answers `--mode fts` queries with
+literal, case-folded substring terms from a local, rebuildable Tantivy index
+(no ranking; `planet` also matches `planetary`). See
+[docs/architecture.md](docs/architecture.md#opt-in-tantivy-literal-pilot-76)
+for semantics and measurements.
+
+```bash
+cargo run -- search-index sync --index-dir use-case-output/tantivy-index
+cargo run -- search --mode fts --query "free will" --tantivy-index-dir use-case-output/tantivy-index
+cargo run -- search-index compare --mode fts --query "free will" --tantivy-index-dir use-case-output/tantivy-index
+cargo run -- serve --tantivy-index-dir use-case-output/tantivy-index  # /api/search uses the pilot
+```
+
 ## Downstream Exports
 
 `export` writes a deterministic, versioned export of the corpus for downstream

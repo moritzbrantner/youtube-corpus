@@ -40,6 +40,7 @@ pub struct TantivySearch {
 #[serde(rename_all = "camelCase")]
 pub struct SyncReport {
     pub live_passages: usize,
+    pub videos: usize,
     pub upserted: usize,
     pub unchanged: usize,
     pub deleted: usize,
@@ -63,7 +64,14 @@ impl TantivySearch {
         let snapshot = load_snapshot(pool).await?;
         let mut index = self.index.lock().expect("search index lock poisoned");
         let mut report = SyncReport {
-            live_passages: snapshot.len(),
+            live_passages: snapshot
+                .iter()
+                .filter(|d| !d.id.starts_with("video:"))
+                .count(),
+            videos: snapshot
+                .iter()
+                .filter(|d| d.id.starts_with("video:"))
+                .count(),
             ..SyncReport::default()
         };
         let mut seen = BTreeSet::new();
@@ -145,6 +153,8 @@ impl TantivySearch {
 
 fn schema() -> Schema {
     Schema::new()
+        .field("kind", FieldType::Keyword)
+        .field("doc_id", FieldType::Keyword)
         .field("text", FieldType::Text)
         .field("video_id", FieldType::Keyword)
         .field("stream_id", FieldType::Keyword)
@@ -164,33 +174,64 @@ fn schema() -> Schema {
         .field("order", FieldType::Keyword)
 }
 
-async fn load_snapshot(pool: &PgPool) -> anyhow::Result<Vec<Document>> {
-    let rows = sqlx::query(
-        "SELECT s.id, s.video_id, s.stream_id, s.source_kind, s.language, s.start_seconds,
-                s.end_seconds, s.text, s.translated, v.source_url, v.title, v.channel,
-                v.channel_id, v.uploader, v.uploader_id, v.categories, v.tags, v.upload_date,
-                v.duration_seconds, v.view_count
-         FROM corpus_search_segments s
-         JOIN videos v ON v.id = s.video_id
-         ORDER BY s.id",
-    )
-    .fetch_all(pool)
-    .await?;
-    rows.into_iter().map(|row| project(&row)).collect()
+macro_rules! video_columns {
+    () => {
+        "v.source_url, v.title, v.channel, v.channel_id, v.uploader, v.uploader_id,
+         v.categories, v.tags, v.upload_date, v.duration_seconds, v.view_count"
+    };
 }
 
-fn project(row: &sqlx::postgres::PgRow) -> anyhow::Result<Document> {
+/// Passage documents (`kind = passage`) plus one `kind = video` document per video, so the OCR
+/// coverage scope of video-level filters never has to materialize every passage.
+async fn load_snapshot(pool: &PgPool) -> anyhow::Result<Vec<Document>> {
+    let passages = sqlx::query(concat!(
+        "SELECT s.id, s.video_id, s.stream_id, s.source_kind, s.language, s.start_seconds,
+                s.end_seconds, s.text, s.translated, ",
+        video_columns!(),
+        " FROM corpus_search_segments s
+          JOIN videos v ON v.id = s.video_id
+          ORDER BY s.id"
+    ))
+    .fetch_all(pool)
+    .await?;
+    let videos = sqlx::query(concat!(
+        "SELECT v.id, ",
+        video_columns!(),
+        " FROM videos v ORDER BY v.id"
+    ))
+    .fetch_all(pool)
+    .await?;
+    let mut documents = passages
+        .iter()
+        .map(project_passage)
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    for row in &videos {
+        let video_id: Uuid = row.try_get("id")?;
+        let id = format!("video:{video_id}");
+        let mut document = Document::new(id.clone(), 0)
+            .field("kind", Value::Keyword("video".into()))
+            .field("doc_id", Value::Keyword(id.clone()))
+            .field("video_id", Value::Keyword(video_id.to_string()))
+            .field("order", Value::Keyword(id));
+        project_video(row, &mut document)?;
+        documents.push(document);
+    }
+    Ok(documents)
+}
+
+fn project_passage(row: &sqlx::postgres::PgRow) -> anyhow::Result<Document> {
     let id: Uuid = row.try_get("id")?;
     let video_id: Uuid = row.try_get("video_id")?;
     let stream_id: Uuid = row.try_get("stream_id")?;
     let start_ms = row.try_get::<Option<f64>, _>("start_seconds")?.map(millis);
     let mut document = Document::new(id.to_string(), 0)
+        .field("kind", Value::Keyword("passage".into()))
+        .field("doc_id", Value::Keyword(id.to_string()))
         .field("text", Value::Text(row.try_get("text")?))
         .field("video_id", Value::Keyword(video_id.to_string()))
         .field("stream_id", Value::Keyword(stream_id.to_string()))
         .field("source_kind", Value::Keyword(row.try_get("source_kind")?))
         .field("translated", Value::Boolean(row.try_get("translated")?))
-        .field("source_url", Value::Keyword(row.try_get("source_url")?))
         .field(
             "order",
             Value::Keyword(format!(
@@ -198,23 +239,32 @@ fn project(row: &sqlx::postgres::PgRow) -> anyhow::Result<Document> {
                 start_ms.unwrap_or(0).max(0)
             )),
         );
-    let mut put = |name: &str, value: Option<Value>| {
-        if let Some(value) = value {
-            document.fields.insert(name.to_owned(), value);
-        }
-    };
+    put(&mut document, "start_ms", start_ms.map(Value::Integer));
     put(
+        &mut document,
         "language",
         row.try_get::<Option<String>, _>("language")?
             .map(Value::Keyword),
     );
-    put("start_ms", start_ms.map(Value::Integer));
     put(
+        &mut document,
         "end_ms",
         row.try_get::<Option<f64>, _>("end_seconds")?
             .map(|seconds| Value::Integer(millis(seconds))),
     );
+    project_video(row, &mut document)?;
+    Ok(document)
+}
+
+/// Video metadata facets shared by passage and video documents.
+fn project_video(row: &sqlx::postgres::PgRow, document: &mut Document) -> anyhow::Result<()> {
     put(
+        document,
+        "source_url",
+        Some(Value::Keyword(row.try_get("source_url")?)),
+    );
+    put(
+        document,
         "title",
         row.try_get::<Option<String>, _>("title")?.map(Value::Text),
     );
@@ -222,38 +272,43 @@ fn project(row: &sqlx::postgres::PgRow) -> anyhow::Result<Document> {
         .into_iter()
         .filter_map(|column| row.try_get::<Option<String>, _>(column).ok().flatten())
         .collect();
-    put("channel", joined(channel));
+    put(document, "channel", joined(channel));
+    for list in ["categories", "tags"] {
+        put(
+            document,
+            list,
+            joined(
+                row.try_get::<Option<Vec<String>>, _>(list)?
+                    .unwrap_or_default(),
+            ),
+        );
+    }
     put(
-        "categories",
-        joined(
-            row.try_get::<Option<Vec<String>>, _>("categories")?
-                .unwrap_or_default(),
-        ),
-    );
-    put(
-        "tags",
-        joined(
-            row.try_get::<Option<Vec<String>>, _>("tags")?
-                .unwrap_or_default(),
-        ),
-    );
-    put(
+        document,
         "upload_date",
         row.try_get::<Option<String>, _>("upload_date")?
             .and_then(|date| date.parse::<i64>().ok())
             .map(Value::Integer),
     );
     put(
+        document,
         "duration_ms",
         row.try_get::<Option<f64>, _>("duration_seconds")?
             .map(|seconds| Value::Integer(millis(seconds))),
     );
     put(
+        document,
         "view_count",
         row.try_get::<Option<i64>, _>("view_count")?
             .map(Value::Integer),
     );
-    Ok(document)
+    Ok(())
+}
+
+fn put(document: &mut Document, name: &str, value: Option<Value>) {
+    if let Some(value) = value {
+        document.fields.insert(name.to_owned(), value);
+    }
 }
 
 fn millis(seconds: f64) -> i64 {
@@ -265,18 +320,17 @@ fn joined(values: Vec<String>) -> Option<Value> {
     (!values.is_empty()).then(|| Value::Text(values.join(LIST_SEPARATOR)))
 }
 
+/// Every live document ID in one pass (paging `Predicate::All` would re-materialize the whole
+/// index per page).
 fn live_ids(index: &TantivyIndex) -> anyhow::Result<Vec<String>> {
-    let mut ids = Vec::with_capacity(index.len());
-    let mut offset = 0;
-    loop {
-        let page = index.search(&EngineRequest::new(Predicate::All).page(offset, PAGE))?;
-        let count = page.hits.len();
-        ids.extend(page.hits.into_iter().map(|hit| hit.id));
-        offset += count;
-        if count < PAGE || offset >= page.total {
-            return Ok(ids);
-        }
-    }
+    let all =
+        index.search_with_facets(&EngineRequest::new(Predicate::All).page(0, 0), &["doc_id"])?;
+    Ok(all
+        .facets
+        .get("doc_id")
+        .into_iter()
+        .flat_map(|ids| ids.keys().cloned())
+        .collect())
 }
 
 fn to_result(document: &Document) -> anyhow::Result<SearchResult> {
@@ -409,13 +463,14 @@ fn plan(request: &SearchRequest) -> anyhow::Result<Plan> {
         }
     }
 
-    let videos = Predicate::And(videos);
-    let mut query = terms;
+    let mut query = vec![keyword("kind", "passage".into())];
+    query.extend(terms);
     query.extend(filters);
-    query.push(videos.clone());
+    query.extend(videos.iter().cloned());
+    videos.push(keyword("kind", "video".into()));
     Ok(Plan {
         query: Predicate::And(query),
-        video_scope: videos,
+        video_scope: Predicate::And(videos),
         limit: usize::try_from(request.top_k.max(1))
             .unwrap_or(PAGE)
             .min(PAGE),
@@ -577,6 +632,8 @@ mod tests {
         let video = Uuid::new_v4();
         let passage = |id: Uuid, text: &str, kind: &str, start: i64| {
             Document::new(id.to_string(), 1)
+                .field("kind", Value::Keyword("passage".into()))
+                .field("doc_id", Value::Keyword(id.to_string()))
                 .field("text", Value::Text(text.into()))
                 .field("video_id", Value::Keyword(video.to_string()))
                 .field("stream_id", Value::Keyword(Uuid::new_v4().to_string()))

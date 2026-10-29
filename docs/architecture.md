@@ -166,11 +166,38 @@ pilot reuses [Search Engine](https://github.com/moritzbrantner/search-engine)'s
   Source kind, modality, video, language, timestamp, upload date, duration,
   view count, channel, title, category and tag filters are projected.
 - **Provenance.** Translation and OCR evidence are attached from Postgres, as
-  on the default path. `ocrCoverage` counts the videos in the video-level
-  filter scope; a video without an OCR run is `unprocessedVideos`, never a
-  visible-text negative.
+  on the default path. Each video also gets a small `kind = video` document,
+  so `ocrCoverage` counts the videos matching the video-level filters without
+  scanning passages; a video without an OCR run is `unprocessedVideos`, never
+  a visible-text negative.
 - **Comparison.** `search-index compare` runs one query on both providers and
   prints shared hits, provider-only hits and latency.
+
+#### Measurements (2026-10-29, copy of the local corpus)
+
+Single runs, release build, x86_64, 16 cores, local Docker Postgres 16;
+163 videos, 109,767 caption passages, no OCR tracks. Informational only.
+
+| Step | Result |
+| --- | --- |
+| First `search-index sync` | 9.4 s, 120 MB index, ~0.9 GB peak RSS |
+| Repeat sync, no changes | 13.0 s, 0 upserts |
+| Opening the index (each CLI `search`) | ~4 s (Search Engine loads every lifecycle record), vs 0.04 s for Postgres |
+| Query latency after open | 18–41 ms for selective terms; 155–254 ms for `god` (Postgres 11–61 ms) |
+
+| Query (`--mode fts`) | Postgres hits | Tantivy hits | Shared | Note |
+| --- | --- | --- | --- | --- |
+| `consciousness` | 268 | 268 | 268 | same set |
+| `free will` | 298 | 298 | 298 | same set |
+| `resurrection of jesus` | 19 | 19 | 19 | same set |
+| `wager` | 273 | 343 | 273 | +70 substring hits (`wagering`, `wagers`) |
+| `evolution` | 428 | 560 | 428 | +132 (`evolutionary`, `evolutionist`, …) |
+| `god` (top 1000) | 1000 | 1000 | 95 | both capped at 1000 of ~7,000; substring also matches `godless`, `gods`, `godhead` |
+
+Postgres never found a passage the pilot missed. The pilot's top 10 differ
+from the ranked top 10 because it has no ranking (0–6 of 10 shared). Missing
+OCR was reported as 163 unprocessed videos. No measured advantage yet, so
+Postgres stays the default (Decision Atlas 3.14).
 
 ## Migrations
 
