@@ -1986,7 +1986,11 @@ export default function App() {
                   id: "results",
                   label: "Results",
                   value: report ? String(resultCount) : "-",
-                  delta: report ? report.mode : "No query",
+                  delta: report
+                    ? report.provider === "tantivy_literal"
+                      ? "literal substring (Tantivy pilot, unranked)"
+                      : report.mode
+                    : "No query",
                 },
                 {
                   id: "top-score",

@@ -30,6 +30,7 @@ async fn main() -> anyhow::Result<()> {
                 open_browser,
                 migrate,
                 yt_dlp,
+                tantivy_index_dir: None,
             })
             .await?;
         }
@@ -41,6 +42,7 @@ async fn main() -> anyhow::Result<()> {
                 open_browser,
                 migrate: migrate || args.migrate,
                 yt_dlp,
+                tantivy_index_dir: args.tantivy_index_dir,
             })
             .await?;
         }
@@ -143,11 +145,39 @@ async fn run_command(
         }
         Command::Search(args) => {
             let config = AppConfig::from_env_and_cli(database_url)?;
+            let index_dir = args.tantivy_index_dir.clone();
             let request = args.try_into_request(&config)?;
-            let report = youtube_corpus::search_corpus(request)
-                .await
-                .context("search failed")?;
+            let report = match index_dir {
+                Some(dir) => {
+                    let index = youtube_corpus::search_index::TantivySearch::open(&dir)?;
+                    let pool = youtube_corpus::db::connect(&config.database_url).await?;
+                    index.search(&pool, &request).await
+                }
+                None => youtube_corpus::search_corpus(request).await,
+            }
+            .context("search failed")?;
             println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        Command::SearchIndex(args) => {
+            use youtube_corpus::cli::SearchIndexCommand;
+            use youtube_corpus::search_index::{compare, TantivySearch};
+            let config = AppConfig::from_env_and_cli(database_url)?;
+            let pool = youtube_corpus::db::connect(&config.database_url).await?;
+            match args.command {
+                SearchIndexCommand::Sync { index_dir } => {
+                    let report = TantivySearch::open(&index_dir)?.sync(&pool).await?;
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                }
+                SearchIndexCommand::Compare(args) => {
+                    let dir = args
+                        .tantivy_index_dir
+                        .clone()
+                        .context("search-index compare needs --tantivy-index-dir")?;
+                    let request = args.try_into_request(&config)?;
+                    let report = compare(&TantivySearch::open(&dir)?, &pool, request).await?;
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                }
+            }
         }
         Command::Diagnostics(args) => {
             let report =

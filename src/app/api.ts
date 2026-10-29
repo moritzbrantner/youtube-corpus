@@ -65,6 +65,8 @@ export interface OcrEvidence {
 export interface SearchReport {
   query: string;
   mode: SearchMode;
+  /** `tantivy_literal`: opt-in pilot (#76), unranked literal substring matches. */
+  provider?: "postgres" | "tantivy_literal";
   results: SearchResult[];
   ocrCoverage?: {
     indexedVideos: number;

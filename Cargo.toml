@@ -79,6 +79,9 @@ native-whisperx = { git = "https://github.com/moritzbrantner/native-whisperx", r
   "translation",
 ] }
 
+# Opt-in Tantivy lexical search pilot (#76); Postgres stays the default provider.
+search-engine = { git = "https://github.com/moritzbrantner/search-engine", rev = "3bde04c958fb2bba19e9e75584793518999bfb33" }
+
 audio-contracts = { package = "moenarch-audio-contracts", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "8255347717ca7b8943ede7c435d0c468e5a107c5" }
 
 [dev-dependencies]

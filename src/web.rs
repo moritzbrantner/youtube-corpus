@@ -36,7 +36,10 @@ pub async fn serve_with_research(config: WebServerConfig) -> anyhow::Result<()> 
         crate::backfill::spawn_background(database_url.clone());
         crate::source_monitor::spawn_scheduler(database_url.clone());
     }
-    let state = AppState::new(database_url, config.yt_dlp);
+    let search_index =
+        open_search_index(config.tantivy_index_dir.as_deref(), database_url.as_deref()).await?;
+    let mut state = AppState::new(database_url, config.yt_dlp);
+    state.search_index = search_index;
     let address = SocketAddr::from((config.host, config.port));
     let listener = tokio::net::TcpListener::bind(address).await?;
     let local_address = listener.local_addr()?;

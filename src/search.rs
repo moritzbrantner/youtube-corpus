@@ -101,9 +101,23 @@ pub struct OcrCoverage {
 pub struct SearchReport {
     pub query: String,
     pub mode: SearchMode,
+    /// Which provider answered. Only `postgres` ranks matches; the opt-in Tantivy pilot (#76)
+    /// returns literal substring matches in video/timestamp order with zero scores.
+    #[serde(default)]
+    pub provider: SearchProviderKind,
     pub results: Vec<SearchResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ocr_coverage: Option<OcrCoverage>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchProviderKind {
+    /// Default: Postgres FTS/semantic/hybrid ranking over `corpus_search_segments`.
+    #[default]
+    Postgres,
+    /// Opt-in pilot: literal case-folded substring terms over a local Tantivy projection.
+    TantivyLiteral,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,6 +171,7 @@ pub async fn search_corpus(request: SearchRequest) -> anyhow::Result<SearchRepor
     Ok(SearchReport {
         query: request.query,
         mode: request.mode,
+        provider: SearchProviderKind::Postgres,
         results,
         ocr_coverage: None,
     })
@@ -653,7 +668,9 @@ fn trim_filter(value: &Option<String>) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-fn normalize_upload_date_filter(value: &Option<String>) -> anyhow::Result<Option<String>> {
+pub(crate) fn normalize_upload_date_filter(
+    value: &Option<String>,
+) -> anyhow::Result<Option<String>> {
     let Some(value) = trim_filter(value) else {
         return Ok(None);
     };
