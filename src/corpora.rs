@@ -109,6 +109,9 @@ pub struct CorpusVideoSummary {
     pub source_url: String,
     pub title: Option<String>,
     pub channel: Option<String>,
+    /// YouTube channel id from the video metadata; `None` while that metadata is unknown.
+    pub channel_id: Option<String>,
+    pub channel_url: Option<String>,
     pub thumbnail_url: Option<String>,
     pub duration_seconds: Option<f64>,
     pub upload_date: Option<String>,
@@ -410,25 +413,33 @@ pub async fn list_corpus_sources(
     Ok(sources)
 }
 
+/// Narrows the corpus catalog; every set field must match.
+#[derive(Debug, Clone, Default)]
+pub struct CorpusVideoFilter {
+    /// A user label on the video or on one of its tracked sources (Atlas 3.3).
+    pub label_id: Option<Uuid>,
+    /// A tracked source of this corpus that discovered the video.
+    pub source_id: Option<Uuid>,
+    /// The YouTube channel id recorded in the video metadata.
+    pub channel_id: Option<String>,
+}
+
+/// Lists the corpus catalog, optionally narrowed by a [`CorpusVideoFilter`]. A label matches
+/// videos labeled directly and the videos of tracked sources carrying that label (Atlas 3.3).
 pub async fn list_corpus_videos(
     pool: &PgPool,
     corpus_id: Uuid,
     limit: i64,
-) -> anyhow::Result<Vec<CorpusVideoSummary>> {
-    list_corpus_videos_filtered(pool, corpus_id, limit, None).await
-}
-
-/// Lists the corpus catalog, optionally narrowed to one user label. A label matches videos
-/// labeled directly and the videos of tracked sources carrying that label (Atlas 3.3).
-pub async fn list_corpus_videos_filtered(
-    pool: &PgPool,
-    corpus_id: Uuid,
-    limit: i64,
-    label_id: Option<Uuid>,
+    filter: &CorpusVideoFilter,
 ) -> anyhow::Result<Vec<CorpusVideoSummary>> {
     require_corpus(pool, corpus_id).await?;
-    if let Some(label_id) = label_id {
+    if let Some(label_id) = filter.label_id {
         require_label(pool, corpus_id, label_id).await?;
+    }
+    if let Some(source_id) = filter.source_id {
+        if !source_belongs_to_corpus(pool, corpus_id, source_id).await? {
+            anyhow::bail!("source not found");
+        }
     }
     let rows = sqlx::query(
         "WITH source_video_ids AS (
@@ -450,7 +461,7 @@ pub async fn list_corpus_videos_filtered(
          filtered_video_ids AS (
            SELECT scoped.video_id
            FROM scoped_video_ids scoped
-           WHERE $3::uuid IS NULL
+           WHERE ($3::uuid IS NULL
               OR EXISTS (
                    SELECT 1 FROM corpus_video_labels vl
                    WHERE vl.corpus_id = $1 AND vl.label_id = $3 AND vl.video_id = scoped.video_id)
@@ -459,9 +470,18 @@ pub async fn list_corpus_videos_filtered(
                    FROM source_video_ids sv
                    JOIN corpus_source_labels sl
                      ON sl.corpus_id = $1 AND sl.subscription_id = sv.subscription_id
-                   WHERE sl.label_id = $3 AND sv.video_id = scoped.video_id)
+                   WHERE sl.label_id = $3 AND sv.video_id = scoped.video_id))
+             AND ($4::uuid IS NULL
+              OR EXISTS (
+                   SELECT 1 FROM source_video_ids sv
+                   WHERE sv.subscription_id = $4 AND sv.video_id = scoped.video_id))
+             AND ($5::text IS NULL
+              OR EXISTS (
+                   SELECT 1 FROM videos cv
+                   WHERE cv.id = scoped.video_id AND cv.channel_id = $5))
          )
-         SELECT v.id, v.youtube_id, v.source_url, v.title, v.channel, v.thumbnail_url,
+         SELECT v.id, v.youtube_id, v.source_url, v.title, v.channel, v.channel_id,
+                v.channel_url, v.thumbnail_url,
                 v.duration_seconds, v.upload_date, v.updated_at, v.categories, v.tags,
                 count(DISTINCT st.id)::bigint AS transcript_streams,
                 count(DISTINCT ts.id)::bigint AS transcript_segments,
@@ -496,14 +516,17 @@ pub async fn list_corpus_videos_filtered(
          JOIN videos v ON v.id = scoped.video_id
          LEFT JOIN transcript_streams st ON st.video_id = v.id
          LEFT JOIN transcript_segments ts ON ts.stream_id = st.id
-         GROUP BY v.id, v.youtube_id, v.source_url, v.title, v.channel, v.thumbnail_url,
-                  v.duration_seconds, v.upload_date, v.updated_at, v.categories, v.tags
+         GROUP BY v.id, v.youtube_id, v.source_url, v.title, v.channel, v.channel_id,
+                  v.channel_url, v.thumbnail_url, v.duration_seconds, v.upload_date,
+                  v.updated_at, v.categories, v.tags
          ORDER BY v.updated_at DESC, v.source_url
          LIMIT $2",
     )
     .bind(corpus_id)
     .bind(limit.clamp(1, 500))
-    .bind(label_id)
+    .bind(filter.label_id)
+    .bind(filter.source_id)
+    .bind(filter.channel_id.as_deref())
     .fetch_all(pool)
     .await?;
 
@@ -517,6 +540,8 @@ pub async fn list_corpus_videos_filtered(
                 source_url: row.try_get("source_url")?,
                 title: row.try_get("title")?,
                 channel: row.try_get("channel")?,
+                channel_id: row.try_get("channel_id")?,
+                channel_url: row.try_get("channel_url")?,
                 thumbnail_url: row.try_get("thumbnail_url")?,
                 duration_seconds: row.try_get("duration_seconds")?,
                 upload_date: row.try_get("upload_date")?,
@@ -534,6 +559,130 @@ pub async fn list_corpus_videos_filtered(
             })
         })
         .collect()
+}
+
+/// A YouTube channel recognized from the metadata of corpus videos. The channel identity is
+/// YouTube's own channel id; tracked sources are listed separately so a recognized channel is
+/// never presented as monitored unless a tracked source actually discovered its videos.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CorpusChannel {
+    pub channel_id: String,
+    pub name: Option<String>,
+    pub channel_url: Option<String>,
+    pub video_count: u64,
+    pub latest_upload_date: Option<String>,
+    /// Tracked sources of this corpus that discovered at least one video of the channel.
+    pub sources: Vec<CorpusVideoSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CorpusChannelDirectory {
+    pub channels: Vec<CorpusChannel>,
+    /// Corpus videos whose metadata names no channel id yet.
+    pub videos_without_channel: u64,
+}
+
+/// Groups the corpus catalog by the YouTube channel id of each video (Atlas 5.1).
+pub async fn list_corpus_channels(
+    pool: &PgPool,
+    corpus_id: Uuid,
+) -> anyhow::Result<CorpusChannelDirectory> {
+    require_corpus(pool, corpus_id).await?;
+    macro_rules! scoped_videos {
+        ($select:literal) => {
+            concat!(
+                "WITH source_video_ids AS (
+           SELECT DISTINCT sm.subscription_id, v.id AS video_id
+           FROM corpus_source_memberships sm
+           JOIN corpus_subscription_items i ON i.subscription_id = sm.subscription_id
+           JOIN videos v
+             ON v.source_url = i.source_url
+             OR (v.youtube_id IS NOT NULL AND i.youtube_id = v.youtube_id)
+           WHERE sm.corpus_id = $1
+         ),
+         scoped_video_ids AS (
+           SELECT vm.video_id
+           FROM corpus_video_memberships vm
+           WHERE vm.corpus_id = $1
+           UNION
+           SELECT video_id FROM source_video_ids
+         ) ",
+                $select
+            )
+        };
+    }
+    let rows = sqlx::query(scoped_videos!(
+        "SELECT v.channel_id,
+                (array_agg(v.channel ORDER BY v.updated_at DESC)
+                   FILTER (WHERE v.channel IS NOT NULL))[1] AS name,
+                (array_agg(v.channel_url ORDER BY v.updated_at DESC)
+                   FILTER (WHERE v.channel_url IS NOT NULL))[1] AS channel_url,
+                count(*)::bigint AS video_count,
+                max(v.upload_date) AS latest_upload_date,
+                coalesce(
+                  (SELECT jsonb_agg(DISTINCT jsonb_build_object(
+                             'id', s.id, 'sourceKind', s.source_kind, 'name', s.name))
+                   FROM source_video_ids sv
+                   JOIN videos sv_video ON sv_video.id = sv.video_id
+                   JOIN corpus_subscriptions s ON s.id = sv.subscription_id
+                   WHERE sv_video.channel_id = v.channel_id),
+                  '[]'::jsonb
+                ) AS sources
+         FROM scoped_video_ids scoped
+         JOIN videos v ON v.id = scoped.video_id
+         WHERE v.channel_id IS NOT NULL
+         GROUP BY v.channel_id"
+    ))
+    .bind(corpus_id)
+    .fetch_all(pool)
+    .await?;
+    let mut channels = rows
+        .into_iter()
+        .map(|row| {
+            let mut sources = row.try_get::<Json<Vec<CorpusVideoSource>>, _>("sources")?.0;
+            sources.sort_by(|a, b| {
+                a.name
+                    .as_deref()
+                    .unwrap_or_default()
+                    .to_lowercase()
+                    .cmp(&b.name.as_deref().unwrap_or_default().to_lowercase())
+                    .then(a.id.cmp(&b.id))
+            });
+            Ok(CorpusChannel {
+                channel_id: row.try_get("channel_id")?,
+                name: row.try_get("name")?,
+                channel_url: row.try_get("channel_url")?,
+                video_count: row_count(&row, "video_count")?,
+                latest_upload_date: row.try_get("latest_upload_date")?,
+                sources,
+            })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    channels.sort_by(|a, b| {
+        let name = |channel: &CorpusChannel| {
+            channel
+                .name
+                .as_deref()
+                .unwrap_or(&channel.channel_id)
+                .to_lowercase()
+        };
+        name(a).cmp(&name(b)).then(a.channel_id.cmp(&b.channel_id))
+    });
+    let videos_without_channel = sqlx::query_scalar::<_, i64>(scoped_videos!(
+        "SELECT count(*)::bigint
+         FROM scoped_video_ids scoped
+         JOIN videos v ON v.id = scoped.video_id
+         WHERE v.channel_id IS NULL"
+    ))
+    .bind(corpus_id)
+    .fetch_one(pool)
+    .await?;
+    Ok(CorpusChannelDirectory {
+        channels,
+        videos_without_channel: videos_without_channel.max(0) as u64,
+    })
 }
 
 pub async fn list_labels(pool: &PgPool, corpus_id: Uuid) -> Result<Vec<CorpusLabel>, LabelError> {

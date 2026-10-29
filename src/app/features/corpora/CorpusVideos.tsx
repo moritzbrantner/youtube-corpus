@@ -39,12 +39,17 @@ import {
 } from "./api";
 import { VideoProcessing } from "./VideoProcessing";
 import { corpusKeys } from "./query-keys";
+import { directoryUrl, navigateInApp } from "./url-state";
 
 type CorpusVideosProps = {
   corpusId: string;
+  /** Narrows the list to one tracked source or one YouTube channel. */
+  filter?: { sourceId?: string; channelId?: string };
+  title?: string;
 };
 
-export function CorpusVideos({ corpusId }: CorpusVideosProps) {
+export function CorpusVideos({ corpusId, filter = {}, title = "Videos" }: CorpusVideosProps) {
+  const scoped = Boolean(filter.sourceId || filter.channelId);
   const queryClient = useQueryClient();
   const [labelFilter, setLabelFilter] = React.useState<string | null>(null);
   const labelsQuery = useCorpusLabels(corpusId);
@@ -57,8 +62,8 @@ export function CorpusVideos({ corpusId }: CorpusVideosProps) {
     }
   }, [activeLabel, labelFilter, labelsQuery.data]);
   const videosQuery = useQuery({
-    queryKey: corpusKeys.videos(corpusId, 100, labelFilter),
-    queryFn: () => listCorpusVideos(corpusId, 100, { labelId: labelFilter }),
+    queryKey: corpusKeys.videos(corpusId, 100, { ...filter, labelId: labelFilter }),
+    queryFn: () => listCorpusVideos(corpusId, 100, { ...filter, labelId: labelFilter }),
   });
   const qualityQuery = useQuery({
     queryKey: corpusKeys.quality(corpusId),
@@ -86,7 +91,7 @@ export function CorpusVideos({ corpusId }: CorpusVideosProps) {
   return (
     <Surface>
       <SurfaceHeader>
-        <SurfaceTitle>Videos</SurfaceTitle>
+        <SurfaceTitle>{title}</SurfaceTitle>
         <SurfaceDescription>
           Browse corpus contents, inspect the selected research transcript, and selectively
           reprocess metadata, transcripts, ASR, or embeddings.
@@ -155,8 +160,14 @@ export function CorpusVideos({ corpusId }: CorpusVideosProps) {
         ) : null}
         {videosQuery.data?.length === 0 && !activeLabel ? (
           <StateView variant="empty">
-            <StateViewTitle>No videos in this corpus</StateViewTitle>
-            <StateViewDescription>Add a channel or playlist to begin.</StateViewDescription>
+            <StateViewTitle>
+              {scoped ? "No corpus videos here yet" : "No videos in this corpus"}
+            </StateViewTitle>
+            <StateViewDescription>
+              {scoped
+                ? "Videos appear once a check discovers and ingests them."
+                : "Add a channel or playlist to begin."}
+            </StateViewDescription>
           </StateView>
         ) : null}
         {videosQuery.data?.map((video) => (
@@ -215,7 +226,19 @@ function CorpusVideoRow({ corpusId, video, labels, quality }: CorpusVideoRowProp
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-sm font-semibold">{video.title ?? video.sourceUrl}</h3>
           <p className="mt-1 truncate text-xs text-muted-foreground">
-            {video.channel ?? video.sourceUrl}
+            {video.channelId ? (
+              <a
+                className="underline-offset-4 hover:underline"
+                href={
+                  directoryUrl(new URL(window.location.href), { channelId: video.channelId }).href
+                }
+                onClick={navigateInApp}
+              >
+                {video.channel ?? video.channelId}
+              </a>
+            ) : (
+              (video.channel ?? "Channel unknown")
+            )}
           </p>
         </div>
         <Button asChild variant="ghost" size="sm">
@@ -226,11 +249,26 @@ function CorpusVideoRow({ corpusId, video, labels, quality }: CorpusVideoRowProp
       </div>
 
       <p className="text-xs text-muted-foreground">
-        {video.sources.length > 0
-          ? `Tracked sources: ${video.sources
-              .map((source) => `${source.name ?? source.sourceKind} (${source.sourceKind})`)
-              .join(", ")}`
-          : "No tracked source"}
+        {video.sources.length > 0 ? (
+          <>
+            Tracked sources:{" "}
+            {video.sources.map((source, index) => (
+              <React.Fragment key={source.id}>
+                {index > 0 ? ", " : null}
+                <a
+                  className="underline-offset-4 hover:underline"
+                  href={directoryUrl(new URL(window.location.href), { sourceId: source.id }).href}
+                  onClick={navigateInApp}
+                >
+                  {source.name ?? source.sourceKind}
+                </a>{" "}
+                ({source.sourceKind})
+              </React.Fragment>
+            ))}
+          </>
+        ) : (
+          "No tracked source"
+        )}
         {video.addedDirectly ? " · Added directly" : ""}
       </p>
 

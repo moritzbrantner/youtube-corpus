@@ -1,10 +1,24 @@
 import type { SearchTranscriptsInput } from "../../api";
 
+import type { CorpusVideoFilter } from "./api";
+
 export const corpusKeys = {
   all: ["corpora"] as const,
   sources: (corpusId: string) => ["corpora", corpusId, "sources"] as const,
-  videos: (corpusId: string, limit: number, labelId: string | null = null) =>
-    ["corpora", corpusId, "videos", { limit, labelId }] as const,
+  videos: (corpusId: string, limit: number, filter: CorpusVideoFilter = {}) =>
+    [
+      "corpora",
+      corpusId,
+      "videos",
+      {
+        limit,
+        labelId: filter.labelId ?? null,
+        sourceId: filter.sourceId ?? null,
+        channelId: filter.channelId ?? null,
+      },
+    ] as const,
+  /** Channels are derived from video metadata, so they live under the videos key. */
+  channels: (corpusId: string) => ["corpora", corpusId, "videos", "channels"] as const,
   labels: (corpusId: string) => ["corpora", corpusId, "labels"] as const,
   quality: (corpusId: string) => ["corpora", corpusId, "transcript-quality"] as const,
   annotations: (corpusId: string) => ["corpora", corpusId, "annotations"] as const,

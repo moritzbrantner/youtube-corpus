@@ -27,12 +27,18 @@ import { CorpusEvaluation } from "./CorpusEvaluation";
 import { CorpusLabels } from "./CorpusLabels";
 import { CorpusPicker } from "./CorpusPicker";
 import { CorpusSearch } from "./CorpusSearch";
-import { CorpusSources } from "./CorpusSources";
+import { CorpusSourcesPage } from "./CorpusSourcesPage";
 import { CorpusVideos } from "./CorpusVideos";
 import { corpusKeys } from "./query-keys";
-import { corpusPageUrl, useCorpusUrlState } from "./url-state";
+import { corpusPageUrl, directoryUrl, type CorpusPage, useCorpusUrlState } from "./url-state";
 
-export function CorpusWorkspace({ page }: { page: "corpora" | "search" }) {
+const pageTitles: Record<CorpusPage, string> = {
+  corpora: "Corpora",
+  search: "Search",
+  sources: "Channels & Sources",
+};
+
+export function CorpusWorkspace({ page }: { page: CorpusPage }) {
   const { state, update } = useCorpusUrlState();
   const corporaQuery = useQuery({
     queryKey: corpusKeys.all,
@@ -69,6 +75,11 @@ export function CorpusWorkspace({ page }: { page: "corpora" | "search" }) {
                 label: "Search",
                 href: corpusPageUrl(new URL(window.location.href), "search").href,
               },
+              {
+                id: "sources",
+                label: "Channels & Sources",
+                href: directoryUrl(new URL(window.location.href)).href,
+              },
               { id: "analyzer", label: "Analyze video", href: "/" },
             ],
           },
@@ -78,7 +89,7 @@ export function CorpusWorkspace({ page }: { page: "corpora" | "search" }) {
       />
       <PageHeader>
         <div className="grid min-w-0 gap-2">
-          <PageTitle>{page === "search" ? "Search" : "Corpora"}</PageTitle>
+          <PageTitle>{pageTitles[page]}</PageTitle>
         </div>
         <PageActions>
           <label className="grid gap-1 text-sm">
@@ -127,7 +138,7 @@ export function CorpusWorkspace({ page }: { page: "corpora" | "search" }) {
               </StateViewDescription>
             </ErrorState>
           ) : null}
-          {page === "search" && !state.corpusId && corporaQuery.data.length === 0 ? (
+          {page !== "corpora" && !state.corpusId && corporaQuery.data.length === 0 ? (
             <StateView variant="empty">
               <StateViewTitle>No corpora yet</StateViewTitle>
               <Button asChild>
@@ -144,7 +155,20 @@ export function CorpusWorkspace({ page }: { page: "corpora" | "search" }) {
                 selectedCorpusId={selectedCorpus?.id ?? null}
                 onSelect={(corpusId) => update({ corpusId })}
               />
-              {selectedCorpus ? <CorpusSources corpusId={selectedCorpus.id} /> : null}
+              {selectedCorpus ? (
+                <div className="flex flex-wrap content-start gap-2">
+                  <Button asChild>
+                    <a href={corpusPageUrl(new URL(window.location.href), "search").href}>
+                      Search corpus
+                    </a>
+                  </Button>
+                  <Button asChild variant="outline">
+                    <a href={directoryUrl(new URL(window.location.href)).href}>
+                      Channels & Sources
+                    </a>
+                  </Button>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -173,13 +197,16 @@ export function CorpusWorkspace({ page }: { page: "corpora" | "search" }) {
                   onSelectSegment={(segmentId) => update({ segmentId })}
                 />
               ) : null}
+              {page === "sources" ? (
+                <CorpusSourcesPage
+                  key={selectedCorpus.id}
+                  corpusId={selectedCorpus.id}
+                  sourceId={state.sourceId}
+                  channelId={state.channelId}
+                />
+              ) : null}
               {page === "corpora" ? (
                 <>
-                  <Button asChild>
-                    <a href={corpusPageUrl(new URL(window.location.href), "search").href}>
-                      Search corpus
-                    </a>
-                  </Button>
                   <CorpusDetectors
                     key={`detectors:${selectedCorpus.id}`}
                     corpusId={selectedCorpus.id}
