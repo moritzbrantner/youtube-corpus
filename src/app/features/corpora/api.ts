@@ -146,12 +146,32 @@ export type CorpusVideoSource = {
   name: string | null;
 };
 
+/** A YouTube channel recognized from corpus video metadata (its YouTube channel id). */
+export type CorpusChannel = {
+  channelId: string;
+  name: string | null;
+  channelUrl: string | null;
+  videoCount: number;
+  latestUploadDate: string | null;
+  /** Tracked sources of this corpus that discovered the channel's videos; empty = untracked. */
+  sources: CorpusVideoSource[];
+};
+
+export type CorpusChannelDirectory = {
+  channels: CorpusChannel[];
+  /** Corpus videos whose metadata names no channel yet. */
+  videosWithoutChannel: number;
+};
+
 export type CorpusVideo = {
   id: string;
   youtubeId: string | null;
   sourceUrl: string;
   title: string | null;
   channel: string | null;
+  /** YouTube channel id; null while the channel metadata is unknown. */
+  channelId: string | null;
+  channelUrl: string | null;
   thumbnailUrl: string | null;
   durationSeconds: number | null;
   uploadDate: string | null;
@@ -449,16 +469,25 @@ export function setCorpusSourceEnabled(corpusId: string, sourceId: string, enabl
   return jsonPost<void>(`/api/corpora/${corpusId}/sources/${sourceId}/enabled`, { enabled });
 }
 
-export function listCorpusVideos(
-  corpusId: string,
-  limit = 100,
-  filter: { labelId?: string | null } = {},
-) {
+export type CorpusVideoFilter = {
+  labelId?: string | null;
+  sourceId?: string | null;
+  channelId?: string | null;
+};
+
+export function listCorpusVideos(corpusId: string, limit = 100, filter: CorpusVideoFilter = {}) {
   const query = new URLSearchParams({ limit: String(limit) });
-  if (filter.labelId) {
-    query.set("labelId", filter.labelId);
+  for (const key of ["labelId", "sourceId", "channelId"] as const) {
+    const value = filter[key];
+    if (value) {
+      query.set(key, value);
+    }
   }
   return apiFetch<CorpusVideo[]>(`/api/corpora/${corpusId}/videos?${query}`);
+}
+
+export function listCorpusChannels(corpusId: string) {
+  return apiFetch<CorpusChannelDirectory>(`/api/corpora/${corpusId}/channels`);
 }
 
 export function listCorpusLabels(corpusId: string) {

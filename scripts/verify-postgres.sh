@@ -24,6 +24,7 @@ cargo test --test unified_evidence_search_db -- --ignored
 cargo test --test tantivy_search_pilot_db -- --ignored
 cargo test --test review_regressions_db -- --ignored
 cargo test --test user_labels_db -- --ignored
+cargo test --test channel_directory_db -- --ignored
 cargo test --test entity_explorer_db -- --ignored
 cargo test --test detector_profiles_db -- --ignored
 cargo test --test face_matching_db -- --ignored

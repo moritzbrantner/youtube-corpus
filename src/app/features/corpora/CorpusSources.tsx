@@ -8,18 +8,10 @@ import {
   Input,
   LoadingState,
   NativeSelect,
-  StateView,
   StateViewDescription,
   StateViewTitle,
   Switch,
 } from "@moritzbrantner/ui";
-import {
-  Surface,
-  SurfaceContent,
-  SurfaceDescription,
-  SurfaceHeader,
-  SurfaceTitle,
-} from "@moritzbrantner/ui/shell";
 
 import { LabelAssignments, useCorpusLabels, useInvalidateLabels } from "./CorpusLabels";
 import {
@@ -45,15 +37,42 @@ import {
 } from "./api";
 import { corpusKeys } from "./query-keys";
 
-type CorpusSourcesProps = {
+/** Tracked sources of one corpus; refreshes quickly while background work is active. */
+export function useCorpusSources(corpusId: string) {
+  return useQuery({
+    queryKey: corpusKeys.sources(corpusId),
+    queryFn: () => listCorpusSources(corpusId),
+    // Background work and scheduled checks continue server-side; refresh their progress
+    // quickly while any is active and slowly otherwise, so scheduled check results appear.
+    refetchInterval: (query) => (query.state.data?.some(hasActiveWork) ? 3000 : 30000),
+  });
+}
+
+function useInvalidateCorpus(corpusId: string) {
+  const queryClient = useQueryClient();
+  return React.useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: corpusKeys.all }),
+      queryClient.invalidateQueries({ queryKey: corpusKeys.sources(corpusId) }),
+      queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "videos"] }),
+      queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "search"] }),
+    ]);
+  }, [corpusId, queryClient]);
+}
+
+type AddSourceFormProps = {
   corpusId: string;
+  /** Prefill for tracking a recognized channel. */
+  initialUrl?: string;
+  initialName?: string;
 };
 
-export function CorpusSources({ corpusId }: CorpusSourcesProps) {
-  const queryClient = useQueryClient();
+/** Adds a channel or playlist once or as a monitored source. */
+export function AddSourceForm({ corpusId, initialUrl = "", initialName = "" }: AddSourceFormProps) {
+  const invalidateCorpus = useInvalidateCorpus(corpusId);
   const [sourceKind, setSourceKind] = React.useState<"channel" | "playlist">("channel");
-  const [sourceUrl, setSourceUrl] = React.useState("");
-  const [name, setName] = React.useState("");
+  const [sourceUrl, setSourceUrl] = React.useState(initialUrl);
+  const [name, setName] = React.useState(initialName);
   const [languages, setLanguages] = React.useState("en");
   const [maxItems, setMaxItems] = React.useState("20");
   const [monitor, setMonitor] = React.useState(true);
@@ -67,66 +86,12 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
     intervalValue(DEFAULT_CHECK_INTERVAL_SECONDS),
   );
 
-  const sourcesQuery = useQuery({
-    queryKey: corpusKeys.sources(corpusId),
-    queryFn: () => listCorpusSources(corpusId),
-    // Background work and scheduled checks continue server-side; refresh their progress
-    // quickly while any is active and slowly otherwise, so scheduled check results appear.
-    refetchInterval: (query) => (query.state.data?.some(hasActiveWork) ? 3000 : 30000),
-  });
-  const labelsQuery = useCorpusLabels(corpusId);
-  const invalidateLabels = useInvalidateLabels(corpusId);
-  const labelMutation = useMutation({
-    mutationFn: ({
-      sourceId,
-      labelId,
-      assigned,
-    }: {
-      sourceId: string;
-      labelId: string;
-      assigned: boolean;
-    }) =>
-      assigned
-        ? assignSourceLabel(corpusId, sourceId, labelId)
-        : removeSourceLabel(corpusId, sourceId, labelId),
-    onSettled: invalidateLabels,
-  });
-
-  async function invalidateCorpus() {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: corpusKeys.all }),
-      queryClient.invalidateQueries({ queryKey: corpusKeys.sources(corpusId) }),
-      queryClient.invalidateQueries({
-        queryKey: ["corpora", corpusId, "videos"],
-      }),
-      queryClient.invalidateQueries({
-        queryKey: ["corpora", corpusId, "search"],
-      }),
-    ]);
-  }
-
   const addMutation = useMutation({
     mutationFn: (input: AddCorpusSourceInput) => addCorpusSource(corpusId, input),
     onSuccess: async () => {
       setSourceUrl("");
       setName("");
       await invalidateCorpus();
-    },
-  });
-  const checkMutation = useMutation({
-    mutationFn: (sourceId: string) => checkCorpusSource(corpusId, sourceId),
-    onSuccess: invalidateCorpus,
-  });
-  const enabledMutation = useMutation({
-    mutationFn: ({ sourceId, enabled }: { sourceId: string; enabled: boolean }) =>
-      setCorpusSourceEnabled(corpusId, sourceId, enabled),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: corpusKeys.all }),
-        queryClient.invalidateQueries({
-          queryKey: corpusKeys.sources(corpusId),
-        }),
-      ]);
     },
   });
 
@@ -160,258 +125,263 @@ export function CorpusSources({ corpusId }: CorpusSourcesProps) {
   }
 
   return (
-    <Surface>
-      <SurfaceHeader>
-        <SurfaceTitle>Sources</SurfaceTitle>
-        <SurfaceDescription>
-          Add a channel or playlist once, or monitor it so the running server checks it for newly
-          published videos on its own schedule.
-        </SurfaceDescription>
-      </SurfaceHeader>
-      <SurfaceContent className="grid gap-6">
-        <form className="grid gap-4" onSubmit={submit}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="grid gap-2">
-              <span className="text-sm font-medium">Source type</span>
-              <NativeSelect
-                value={sourceKind}
-                onChange={(event) => setSourceKind(event.target.value as "channel" | "playlist")}
-              >
-                <option value="channel">Channel</option>
-                <option value="playlist">Playlist</option>
-              </NativeSelect>
-            </label>
-            <label className="grid gap-2">
-              <span className="text-sm font-medium">
-                {monitor ? "Max new videos per check" : "Max videos to ingest"}
-              </span>
-              <Input
-                inputMode="numeric"
-                value={maxItems}
-                onChange={(event) => setMaxItems(event.target.value)}
-              />
-            </label>
-          </div>
-          <label className="grid gap-2">
-            <span className="text-sm font-medium">YouTube URL</span>
-            <Input
-              value={sourceUrl}
-              onChange={(event) => setSourceUrl(event.target.value)}
-              placeholder="https://www.youtube.com/@channel/videos"
-              spellCheck={false}
-            />
-          </label>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="grid gap-2">
-              <span className="text-sm font-medium">Display name</span>
-              <Input value={name} onChange={(event) => setName(event.target.value)} />
-            </label>
-            <label className="grid gap-2">
-              <span className="text-sm font-medium">Caption languages</span>
-              <Input
-                value={languages}
-                onChange={(event) => setLanguages(event.target.value)}
-                placeholder="en, de"
-                spellCheck={false}
-              />
-            </label>
-          </div>
-          <div className="grid gap-3 rounded-md border border-border px-4 py-3">
-            <label className="flex items-center justify-between gap-3">
-              <span className="text-sm font-medium">Monitor for new videos</span>
-              <Switch checked={monitor} onCheckedChange={setMonitor} />
-            </label>
-            <label className="flex items-center justify-between gap-3">
-              <span className="text-sm font-medium">New videos</span>
-              <NativeSelect
-                aria-label="New video processing"
-                value={policy}
-                onChange={(event) => setPolicy(event.target.value as ProcessingPolicy)}
-              >
-                <option value="automatic">Analyze automatically</option>
-                <option value="review_first">Hold for review first</option>
-              </NativeSelect>
-            </label>
-            <label className="flex items-center justify-between gap-3">
-              <span className="text-sm font-medium">Run ASR fallback</span>
-              <Switch checked={asrEnabled} onCheckedChange={setAsrEnabled} />
-            </label>
-          </div>
-          {monitor ? (
-            <label className="grid gap-2">
-              <span className="text-sm font-medium">Check for new videos every</span>
-              <IntervalInput
-                label="New source check interval"
-                value={checkInterval}
-                onChange={setCheckInterval}
-              />
-              {intervalSeconds === null ? (
-                <span className="text-xs text-destructive">
-                  Choose an interval between 1 minute and 90 days.
-                </span>
-              ) : (
-                <span className="text-xs text-muted-foreground">
-                  The running server checks this source automatically; Check now stays available.
-                </span>
-              )}
-            </label>
-          ) : null}
-          {monitor ? (
-            <HistoryScopeFields
-              sourceKind={sourceKind}
-              scope={historyScope}
-              onScopeChange={setHistoryScope}
-              recentDays={recentDays}
-              onRecentDaysChange={setRecentDays}
-              limitCount={limitCount}
-              onLimitCountChange={setLimitCount}
-              valid={history !== null}
-            />
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Ingests up to the maximum number of listed videos once, without monitoring.
-            </p>
-          )}
-          {addMutation.error ? (
-            <p className="text-sm text-destructive">{String(addMutation.error)}</p>
-          ) : null}
-          <Button
-            type="submit"
-            disabled={
-              !sourceUrl.trim() ||
-              (monitor && (!history || intervalSeconds === null)) ||
-              addMutation.isPending
-            }
+    <form className="grid gap-4" onSubmit={submit} aria-label="Add source">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="grid gap-2">
+          <span className="text-sm font-medium">Source type</span>
+          <NativeSelect
+            value={sourceKind}
+            onChange={(event) => setSourceKind(event.target.value as "channel" | "playlist")}
           >
-            {addMutation.isPending
-              ? "Adding source..."
-              : monitor
-                ? "Add monitored source"
-                : "Ingest once"}
-          </Button>
-        </form>
-
-        <div className="grid gap-3 border-t border-border pt-5">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold">Monitored sources</h2>
-            <Badge variant="outline">{sourcesQuery.data?.length ?? 0}</Badge>
-          </div>
-          {sourcesQuery.isPending ? <LoadingState label="Loading sources" /> : null}
-          {sourcesQuery.error ? (
-            <ErrorState>
-              <StateViewTitle>Sources unavailable</StateViewTitle>
-              <StateViewDescription>{String(sourcesQuery.error)}</StateViewDescription>
-            </ErrorState>
-          ) : null}
-          {sourcesQuery.data?.length === 0 ? (
-            <StateView variant="empty">
-              <StateViewTitle>No monitored sources</StateViewTitle>
-              <StateViewDescription>
-                You can still use one-time ingestion without creating a subscription.
-              </StateViewDescription>
-            </StateView>
-          ) : null}
-          {sourcesQuery.data?.map((source) => (
-            <article
-              key={source.id}
-              className="grid gap-3 rounded-md border border-border px-4 py-4"
-            >
-              <div className="flex min-w-0 flex-wrap items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-sm font-semibold">
-                    {source.name ?? source.sourceUrl}
-                  </h3>
-                  <p className="mt-1 truncate text-xs text-muted-foreground">{source.sourceUrl}</p>
-                </div>
-                <Badge variant={source.lastCheckStatus === "failed" ? "destructive" : "outline"}>
-                  {source.checkInProgress ? "checking" : (source.lastCheckStatus ?? "not checked")}
-                </Badge>
-              </div>
-              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span>{source.itemsSeen} seen</span>
-                <span>{source.itemsIndexed} indexed</span>
-                {source.itemsFailed > 0 ? <span>{source.itemsFailed} failed</span> : null}
-                {source.itemsAwaitingReview > 0 ? (
-                  <span>{source.itemsAwaitingReview} awaiting review</span>
-                ) : null}
-                {source.lastCheckedAt ? (
-                  <span>checked {formatDate(source.lastCheckedAt)}</span>
-                ) : null}
-              </div>
-              {source.lastCheckMessage ? (
-                <p className="text-sm text-destructive">{source.lastCheckMessage}</p>
-              ) : null}
-              <SourceSchedule corpusId={corpusId} source={source} onChanged={invalidateCorpus} />
-              <QueueActivity source={source} />
-              {source.backfill ? (
-                <BackfillPanel
-                  corpusId={corpusId}
-                  sourceId={source.id}
-                  backfill={source.backfill}
-                  onChanged={invalidateCorpus}
-                />
-              ) : null}
-              <LabelAssignments
-                itemName={source.name ?? source.sourceUrl}
-                assigned={source.labels}
-                available={labelsQuery.data ?? []}
-                pending={labelMutation.isPending}
-                error={labelMutation.variables?.sourceId === source.id ? labelMutation.error : null}
-                onAssign={(labelId) =>
-                  labelMutation.mutate({
-                    sourceId: source.id,
-                    labelId,
-                    assigned: true,
-                  })
-                }
-                onRemove={(labelId) =>
-                  labelMutation.mutate({
-                    sourceId: source.id,
-                    labelId,
-                    assigned: false,
-                  })
-                }
-              />
-              <SourceReview
-                corpusId={corpusId}
-                sourceId={source.id}
-                policy={source.processingPolicy}
-                awaiting={source.itemsAwaitingReview}
-                onChanged={invalidateCorpus}
-              />
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <label className="flex items-center gap-2 text-sm">
-                  <Switch
-                    checked={source.enabled}
-                    disabled={enabledMutation.isPending}
-                    onCheckedChange={(enabled) =>
-                      enabledMutation.mutate({ sourceId: source.id, enabled })
-                    }
-                  />
-                  Enabled
-                </label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={checkMutation.isPending || source.checkInProgress}
-                  onClick={() => checkMutation.mutate(source.id)}
-                >
-                  {source.checkInProgress ||
-                  (checkMutation.isPending && checkMutation.variables === source.id)
-                    ? "Checking..."
-                    : "Check now"}
-                </Button>
-              </div>
-            </article>
-          ))}
-          {checkMutation.error ? (
-            <p className="text-sm text-destructive">{String(checkMutation.error)}</p>
-          ) : null}
-        </div>
-      </SurfaceContent>
-    </Surface>
+            <option value="channel">Channel</option>
+            <option value="playlist">Playlist</option>
+          </NativeSelect>
+        </label>
+        <label className="grid gap-2">
+          <span className="text-sm font-medium">
+            {monitor ? "Max new videos per check" : "Max videos to ingest"}
+          </span>
+          <Input
+            inputMode="numeric"
+            value={maxItems}
+            onChange={(event) => setMaxItems(event.target.value)}
+          />
+        </label>
+      </div>
+      <label className="grid gap-2">
+        <span className="text-sm font-medium">YouTube URL</span>
+        <Input
+          value={sourceUrl}
+          onChange={(event) => setSourceUrl(event.target.value)}
+          placeholder="https://www.youtube.com/@channel/videos"
+          spellCheck={false}
+        />
+      </label>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="grid gap-2">
+          <span className="text-sm font-medium">Display name</span>
+          <Input value={name} onChange={(event) => setName(event.target.value)} />
+        </label>
+        <label className="grid gap-2">
+          <span className="text-sm font-medium">Caption languages</span>
+          <Input
+            value={languages}
+            onChange={(event) => setLanguages(event.target.value)}
+            placeholder="en, de"
+            spellCheck={false}
+          />
+        </label>
+      </div>
+      <div className="grid gap-3 rounded-md border border-border px-4 py-3">
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium">Monitor for new videos</span>
+          <Switch checked={monitor} onCheckedChange={setMonitor} />
+        </label>
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium">New videos</span>
+          <NativeSelect
+            aria-label="New video processing"
+            value={policy}
+            onChange={(event) => setPolicy(event.target.value as ProcessingPolicy)}
+          >
+            <option value="automatic">Analyze automatically</option>
+            <option value="review_first">Hold for review first</option>
+          </NativeSelect>
+        </label>
+        <label className="flex items-center justify-between gap-3">
+          <span className="text-sm font-medium">Run ASR fallback</span>
+          <Switch checked={asrEnabled} onCheckedChange={setAsrEnabled} />
+        </label>
+      </div>
+      {monitor ? (
+        <label className="grid gap-2">
+          <span className="text-sm font-medium">Check for new videos every</span>
+          <IntervalInput
+            label="New source check interval"
+            value={checkInterval}
+            onChange={setCheckInterval}
+          />
+          {intervalSeconds === null ? (
+            <span className="text-xs text-destructive">
+              Choose an interval between 1 minute and 90 days.
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              The running server checks this source automatically; Check now stays available.
+            </span>
+          )}
+        </label>
+      ) : null}
+      {monitor ? (
+        <HistoryScopeFields
+          sourceKind={sourceKind}
+          scope={historyScope}
+          onScopeChange={setHistoryScope}
+          recentDays={recentDays}
+          onRecentDaysChange={setRecentDays}
+          limitCount={limitCount}
+          onLimitCountChange={setLimitCount}
+          valid={history !== null}
+        />
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          Ingests up to the maximum number of listed videos once, without monitoring.
+        </p>
+      )}
+      {addMutation.error ? (
+        <p className="text-sm text-destructive">{String(addMutation.error)}</p>
+      ) : null}
+      {addMutation.isSuccess ? (
+        <p className="text-sm text-muted-foreground" role="status">
+          Source added. It appears under Tracked sources.
+        </p>
+      ) : null}
+      <Button
+        type="submit"
+        disabled={
+          !sourceUrl.trim() ||
+          (monitor && (!history || intervalSeconds === null)) ||
+          addMutation.isPending
+        }
+      >
+        {addMutation.isPending
+          ? "Adding source..."
+          : monitor
+            ? "Add monitored source"
+            : "Ingest once"}
+      </Button>
+    </form>
   );
+}
+
+/** Check status of a tracked source; never claims a check that has not happened. */
+export function SourceStatusBadge({ source }: { source: CorpusSource }) {
+  return (
+    <Badge variant={source.lastCheckStatus === "failed" ? "destructive" : "outline"}>
+      {source.checkInProgress ? "checking" : (source.lastCheckStatus ?? "not checked")}
+    </Badge>
+  );
+}
+
+/** Counts, schedule, backfill, labels, review queue and check/enable actions of one source. */
+export function SourceControls({ corpusId, source }: { corpusId: string; source: CorpusSource }) {
+  const queryClient = useQueryClient();
+  const invalidateCorpus = useInvalidateCorpus(corpusId);
+  const labelsQuery = useCorpusLabels(corpusId);
+  const invalidateLabels = useInvalidateLabels(corpusId);
+  const labelMutation = useMutation({
+    mutationFn: ({ labelId, assigned }: { labelId: string; assigned: boolean }) =>
+      assigned
+        ? assignSourceLabel(corpusId, source.id, labelId)
+        : removeSourceLabel(corpusId, source.id, labelId),
+    onSettled: invalidateLabels,
+  });
+  const checkMutation = useMutation({
+    mutationFn: () => checkCorpusSource(corpusId, source.id),
+    onSuccess: invalidateCorpus,
+  });
+  const enabledMutation = useMutation({
+    mutationFn: (enabled: boolean) => setCorpusSourceEnabled(corpusId, source.id, enabled),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: corpusKeys.all }),
+        queryClient.invalidateQueries({ queryKey: corpusKeys.sources(corpusId) }),
+      ]);
+    },
+  });
+
+  return (
+    <div className="grid gap-3">
+      <SourceCounts source={source} />
+      {source.lastCheckMessage ? (
+        <p className="text-sm text-destructive">{source.lastCheckMessage}</p>
+      ) : null}
+      <SourceSchedule corpusId={corpusId} source={source} onChanged={invalidateCorpus} />
+      <QueueActivity source={source} />
+      {source.backfill ? (
+        <BackfillPanel
+          corpusId={corpusId}
+          sourceId={source.id}
+          backfill={source.backfill}
+          onChanged={invalidateCorpus}
+        />
+      ) : null}
+      <LabelAssignments
+        itemName={source.name ?? source.sourceUrl}
+        assigned={source.labels}
+        available={labelsQuery.data ?? []}
+        pending={labelMutation.isPending}
+        error={labelMutation.error}
+        onAssign={(labelId) => labelMutation.mutate({ labelId, assigned: true })}
+        onRemove={(labelId) => labelMutation.mutate({ labelId, assigned: false })}
+      />
+      <SourceReview
+        corpusId={corpusId}
+        sourceId={source.id}
+        policy={source.processingPolicy}
+        awaiting={source.itemsAwaitingReview}
+        onChanged={invalidateCorpus}
+      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <Switch
+            checked={source.enabled}
+            disabled={enabledMutation.isPending}
+            onCheckedChange={(enabled) => enabledMutation.mutate(enabled)}
+          />
+          Enabled
+        </label>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={checkMutation.isPending || source.checkInProgress}
+          onClick={() => checkMutation.mutate()}
+        >
+          {source.checkInProgress || checkMutation.isPending ? "Checking..." : "Check now"}
+        </Button>
+      </div>
+      {checkMutation.error ? (
+        <p className="text-sm text-destructive">{String(checkMutation.error)}</p>
+      ) : null}
+      {enabledMutation.error ? (
+        <p className="text-sm text-destructive">{String(enabledMutation.error)}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Discovery and processing counts of a source, as recorded by its checks. */
+export function SourceCounts({ source }: { source: CorpusSource }) {
+  return (
+    <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+      <span>{source.itemsSeen} seen</span>
+      <span>{source.itemsIndexed} indexed</span>
+      {source.itemsFailed > 0 ? <span>{source.itemsFailed} failed</span> : null}
+      {source.itemsAwaitingReview > 0 ? (
+        <span>{source.itemsAwaitingReview} awaiting review</span>
+      ) : null}
+      {source.lastCheckedAt ? (
+        <span>checked {formatDate(source.lastCheckedAt)}</span>
+      ) : (
+        <span>never checked</span>
+      )}
+      {source.enabled ? null : <span>disabled</span>}
+    </div>
+  );
+}
+
+export function SourcesUnavailable({ error }: { error: unknown }) {
+  return (
+    <ErrorState>
+      <StateViewTitle>Sources unavailable</StateViewTitle>
+      <StateViewDescription>{String(error)}</StateViewDescription>
+    </ErrorState>
+  );
+}
+
+export function SourcesLoading() {
+  return <LoadingState label="Loading sources" />;
 }
 
 /** Automatic / review-first policy and the approval queue of one source (Atlas 1.6, 1.8). */

@@ -2,9 +2,40 @@ import { describe, expect, test } from "bun:test";
 
 import {
   corpusPageUrl,
+  directoryUrl,
   patchCorpusUrl,
   readUrlState,
 } from "../../src/app/features/corpora/url-state";
+
+describe("channels and sources navigation", () => {
+  const search = new URL(
+    "http://localhost/search?corpus=one&q=helios&segment=moment&mode=fts&channel=Source",
+  );
+
+  test("opening a source or channel keeps the search and its selected moment", () => {
+    const source = directoryUrl(search, { sourceId: "src" });
+    expect(source.pathname).toBe("/sources");
+    expect(readUrlState(source)).toEqual({ ...readUrlState(search), sourceId: "src" });
+
+    const channel = directoryUrl(source, { channelId: "UC1" });
+    expect(readUrlState(channel)).toMatchObject({ sourceId: null, channelId: "UC1" });
+    expect(readUrlState(channel).segmentId).toBe("moment");
+
+    const back = corpusPageUrl(directoryUrl(channel), "search");
+    expect(readUrlState(back)).toEqual(readUrlState(search));
+  });
+
+  test("switching corpus drops source and channel selections", () => {
+    const detail = directoryUrl(search, { sourceId: "src" });
+    const switched = patchCorpusUrl(detail, { corpusId: "two" });
+    expect(readUrlState(switched)).toMatchObject({
+      corpusId: "two",
+      sourceId: null,
+      channelId: null,
+    });
+    expect(readUrlState(patchCorpusUrl(detail, { corpusId: "one" })).sourceId).toBe("src");
+  });
+});
 
 describe("corpus navigation state", () => {
   test("page changes preserve query, all facets and selected original evidence", () => {

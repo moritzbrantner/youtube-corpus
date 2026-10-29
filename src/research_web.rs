@@ -105,6 +105,7 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
             put(assign_video_label).delete(remove_video_label),
         )
         .route("/api/corpora/{corpus_id}/videos", get(list_videos))
+        .route("/api/corpora/{corpus_id}/channels", get(list_channels))
         .route("/api/corpora/{corpus_id}/search", post(search_corpus))
         .route(
             "/api/corpora/{corpus_id}/detector-profiles",
@@ -229,6 +230,8 @@ struct SetSourceEnabledInput {
 struct ListCorpusVideosInput {
     limit: Option<i64>,
     label_id: Option<Uuid>,
+    source_id: Option<Uuid>,
+    channel_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -363,6 +366,17 @@ async fn list_sources(
 ) -> Result<Json<Vec<CorpusSourceSummary>>, ResearchError> {
     let pool = pool(&state).await?;
     crate::corpora::list_corpus_sources(&pool, corpus_id)
+        .await
+        .map(Json)
+        .map_err(map_corpus_error)
+}
+
+async fn list_channels(
+    State(state): State<ResearchState>,
+    AxumPath(corpus_id): AxumPath<Uuid>,
+) -> Result<Json<crate::corpora::CorpusChannelDirectory>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::corpora::list_corpus_channels(&pool, corpus_id)
         .await
         .map(Json)
         .map_err(map_corpus_error)
@@ -697,15 +711,15 @@ async fn list_videos(
     Query(input): Query<ListCorpusVideosInput>,
 ) -> Result<Json<Vec<CorpusVideoSummary>>, ResearchError> {
     let pool = pool(&state).await?;
-    crate::corpora::list_corpus_videos_filtered(
-        &pool,
-        corpus_id,
-        input.limit.unwrap_or(100),
-        input.label_id,
-    )
-    .await
-    .map(Json)
-    .map_err(map_corpus_error)
+    let filter = crate::corpora::CorpusVideoFilter {
+        label_id: input.label_id,
+        source_id: input.source_id,
+        channel_id: input.channel_id.filter(|value| !value.trim().is_empty()),
+    };
+    crate::corpora::list_corpus_videos(&pool, corpus_id, input.limit.unwrap_or(100), &filter)
+        .await
+        .map(Json)
+        .map_err(map_corpus_error)
 }
 
 async fn search_corpus(
