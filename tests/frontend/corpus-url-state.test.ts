@@ -3,8 +3,12 @@ import { describe, expect, test } from "bun:test";
 import {
   corpusPageUrl,
   directoryUrl,
+  momentModality,
   patchCorpusUrl,
   readUrlState,
+  readVideoRoute,
+  searchMomentUrl,
+  videoUrl,
 } from "../../src/app/features/corpora/url-state";
 
 describe("channels and sources navigation", () => {
@@ -87,5 +91,42 @@ describe("corpus navigation state", () => {
         ),
       ),
     ).toMatchObject({ corpusId: "deleted", mode: "hybrid", modality: "all", sourceKind: "all" });
+  });
+});
+
+describe("video and moment pages", () => {
+  const search = new URL(
+    "http://localhost/search?corpus=one&q=helios&mode=fts&modality=visible&channel=Source",
+  );
+
+  test("a search result opens its moment and returns to the same search", () => {
+    const moment = searchMomentUrl(search, {
+      videoId: "video-1",
+      modality: "visible",
+      evidenceId: "track-9",
+    });
+    expect(moment.pathname).toBe("/videos/video-1/moments/visible/track-9");
+    expect(readVideoRoute(moment)).toEqual({
+      videoId: "video-1",
+      moment: { videoId: "video-1", modality: "visible", evidenceId: "track-9" },
+    });
+    expect(readUrlState(moment)).toEqual({ ...readUrlState(search), segmentId: "track-9" });
+
+    // Moment → whole video → another moment keeps the originating search and its selection.
+    const video = videoUrl(moment, "video-1");
+    expect(readVideoRoute(video)).toEqual({ videoId: "video-1", moment: null });
+    const other = videoUrl(video, "video-1", { modality: "spoken", evidenceId: "seg-2" });
+    const back = corpusPageUrl(other, "search");
+    expect(back.pathname).toBe("/search");
+    expect(readUrlState(back)).toEqual({ ...readUrlState(search), segmentId: "track-9" });
+  });
+
+  test("only well-formed video paths are video routes", () => {
+    expect(readVideoRoute(new URL("http://localhost/videos"))).toBeNull();
+    expect(readVideoRoute(new URL("http://localhost/videos/v/moments/heard/x"))).toBeNull();
+    expect(readVideoRoute(new URL("http://localhost/videos/v/moments/spoken"))).toBeNull();
+    expect(readVideoRoute(new URL("http://localhost/search"))).toBeNull();
+    expect(momentModality("visual_ocr")).toBe("visible");
+    expect(momentModality("caption_auto")).toBe("spoken");
   });
 });

@@ -105,6 +105,10 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
             put(assign_video_label).delete(remove_video_label),
         )
         .route("/api/corpora/{corpus_id}/videos", get(list_videos))
+        .route(
+            "/api/corpora/{corpus_id}/videos/{video_id}",
+            get(inspect_video),
+        )
         .route("/api/corpora/{corpus_id}/channels", get(list_channels))
         .route("/api/corpora/{corpus_id}/search", post(search_corpus))
         .route(
@@ -715,11 +719,24 @@ async fn list_videos(
         label_id: input.label_id,
         source_id: input.source_id,
         channel_id: input.channel_id.filter(|value| !value.trim().is_empty()),
+        video_id: None,
     };
     crate::corpora::list_corpus_videos(&pool, corpus_id, input.limit.unwrap_or(100), &filter)
         .await
         .map(Json)
         .map_err(map_corpus_error)
+}
+
+async fn inspect_video(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, video_id)): AxumPath<(Uuid, Uuid)>,
+) -> Result<Json<crate::video_inspection::VideoInspection>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::video_inspection::inspect_video(&pool, corpus_id, video_id)
+        .await
+        .map_err(map_corpus_error)?
+        .map(Json)
+        .ok_or_else(|| ResearchError::not_found("video is not part of this corpus"))
 }
 
 async fn search_corpus(

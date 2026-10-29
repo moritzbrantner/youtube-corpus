@@ -30,7 +30,7 @@ import {
   type PersonSummary,
 } from "./api";
 import { errorMessage } from "./CorpusLabels";
-import { timestampUrl } from "./CorpusSearch";
+import { timestampUrl } from "./evidence";
 import { corpusKeys } from "./query-keys";
 import { FaceMatchingReview } from "./FaceMatchingReview";
 import { nameStatusLabel, PersonNamesReview } from "./PersonNamesReview";

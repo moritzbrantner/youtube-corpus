@@ -28,18 +28,27 @@ import { CorpusLabels } from "./CorpusLabels";
 import { CorpusPicker } from "./CorpusPicker";
 import { CorpusSearch } from "./CorpusSearch";
 import { CorpusSourcesPage } from "./CorpusSourcesPage";
+import { CorpusVideoPage } from "./CorpusVideoPage";
 import { CorpusVideos } from "./CorpusVideos";
 import { corpusKeys } from "./query-keys";
-import { corpusPageUrl, directoryUrl, type CorpusPage, useCorpusUrlState } from "./url-state";
+import {
+  corpusPageUrl,
+  directoryUrl,
+  type CorpusPage,
+  readVideoRoute,
+  useCorpusUrlState,
+} from "./url-state";
 
 const pageTitles: Record<CorpusPage, string> = {
   corpora: "Corpora",
   search: "Search",
   sources: "Channels & Sources",
+  videos: "Videos",
 };
 
 export function CorpusWorkspace({ page }: { page: CorpusPage }) {
   const { state, update } = useCorpusUrlState();
+  const videoRoute = page === "videos" ? readVideoRoute(new URL(window.location.href)) : null;
   const corporaQuery = useQuery({
     queryKey: corpusKeys.all,
     queryFn: listCorpora,
@@ -79,6 +88,11 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
                 id: "sources",
                 label: "Channels & Sources",
                 href: directoryUrl(new URL(window.location.href)).href,
+              },
+              {
+                id: "videos",
+                label: "Videos",
+                href: corpusPageUrl(new URL(window.location.href), "videos").href,
               },
               { id: "analyzer", label: "Analyze video", href: "/" },
             ],
@@ -167,6 +181,9 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
                       Channels & Sources
                     </a>
                   </Button>
+                  <Button asChild variant="outline">
+                    <a href={corpusPageUrl(new URL(window.location.href), "videos").href}>Videos</a>
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -205,6 +222,17 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
                   channelId={state.channelId}
                 />
               ) : null}
+              {page === "videos" ? (
+                videoRoute ? (
+                  <CorpusVideoPage
+                    key={`${selectedCorpus.id}:${videoRoute.videoId}`}
+                    corpusId={selectedCorpus.id}
+                    route={videoRoute}
+                  />
+                ) : (
+                  <CorpusVideos key={selectedCorpus.id} corpusId={selectedCorpus.id} />
+                )
+              ) : null}
               {page === "corpora" ? (
                 <>
                   <CorpusDetectors
@@ -217,7 +245,6 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
                     <CorpusAnnotations corpusId={selectedCorpus.id} />
                   </div>
                   <CorpusLabels corpusId={selectedCorpus.id} />
-                  <CorpusVideos corpusId={selectedCorpus.id} />
                 </>
               ) : null}
             </>

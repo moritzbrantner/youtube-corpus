@@ -17,6 +17,8 @@ export const corpusKeys = {
         channelId: filter.channelId ?? null,
       },
     ] as const,
+  video: (corpusId: string, videoId: string) =>
+    ["corpora", corpusId, "videos", "detail", videoId] as const,
   /** Channels are derived from video metadata, so they live under the videos key. */
   channels: (corpusId: string) => ["corpora", corpusId, "videos", "channels"] as const,
   labels: (corpusId: string) => ["corpora", corpusId, "labels"] as const,

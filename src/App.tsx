@@ -9,11 +9,14 @@ import {
 import { YouTubeAnalyzer } from "./app/features/analyzer/YouTubeAnalyzer";
 import { CorpusWorkspace } from "./app/features/corpora/CorpusWorkspace";
 
-type AppRoute = "analyzer" | "corpora" | "search" | "sources" | "legacy";
+type AppRoute = "analyzer" | "corpora" | "search" | "sources" | "videos" | "legacy";
 
 function routeFromLocation(): AppRoute {
   if (typeof window === "undefined") {
     return "analyzer";
+  }
+  if (window.location.pathname === "/videos" || window.location.pathname.startsWith("/videos/")) {
+    return "videos";
   }
   if (window.location.pathname === "/sources") {
     return "sources";
@@ -44,12 +47,12 @@ export default function App() {
   }, []);
 
   if (shouldUseDirectBrowserAnalyzer()) {
-    if (route === "corpora" || route === "search" || route === "sources") {
+    if (route === "corpora" || route === "search" || route === "sources" || route === "videos") {
       return (
         <ErrorState>
           <StateViewTitle>Local corpus app required</StateViewTitle>
           <StateViewDescription>
-            Corpora, Search and Channels & Sources need the local app and its database.
+            Corpora, Search, Videos and Channels & Sources need the local app and its database.
           </StateViewDescription>
           <Button asChild>
             <a href="./?mode=browser">Open browser analyzer</a>
@@ -60,7 +63,7 @@ export default function App() {
     return <DirectBrowserYouTubeAnalyzer />;
   }
 
-  if (route === "corpora" || route === "search" || route === "sources") {
+  if (route === "corpora" || route === "search" || route === "sources" || route === "videos") {
     return <CorpusWorkspace page={route} />;
   }
 

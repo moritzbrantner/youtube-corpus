@@ -3,6 +3,7 @@ import {
   type IngestReport,
   type SearchMode,
   type SearchReport,
+  type SearchResult,
   type SearchTranscriptsInput,
   type SourceKind,
   type TranscriptContextReport,
@@ -484,6 +485,40 @@ export function listCorpusVideos(corpusId: string, limit = 100, filter: CorpusVi
     }
   }
   return apiFetch<CorpusVideo[]>(`/api/corpora/${corpusId}/videos?${query}`);
+}
+
+/** One retained transcript stream of a video with all its timed segments. */
+export type TranscriptStreamEvidence = {
+  streamId: string;
+  sourceKind: SourceKind;
+  language: string | null;
+  status: string;
+  isPreferred: boolean;
+  processor: string;
+  processorVersion: string;
+  retrievedAt: string;
+  processingRevision: number;
+  segments: {
+    segmentId: string;
+    segmentIndex: number;
+    startSeconds: number | null;
+    endSeconds: number | null;
+    text: string;
+  }[];
+};
+
+/** A video's own page: catalog metadata plus separate speech and on-screen text evidence. */
+export type VideoInspection = {
+  video: CorpusVideo;
+  description: string | null;
+  transcriptStreams: TranscriptStreamEvidence[];
+  ocrStatus: "unprocessed" | "attempted_without_tracks" | "indexed";
+  /** OCR tracks in time order with producer/run/observation provenance. */
+  visualText: SearchResult[];
+};
+
+export function getVideoInspection(corpusId: string, videoId: string) {
+  return apiFetch<VideoInspection>(`/api/corpora/${corpusId}/videos/${videoId}`);
 }
 
 export function listCorpusChannels(corpusId: string) {
