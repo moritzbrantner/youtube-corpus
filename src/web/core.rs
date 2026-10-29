@@ -881,6 +881,15 @@ async fn static_asset(uri: Uri) -> Response {
     if let Some(asset) = WebAssets::get(asset_path) {
         return asset_response(asset_path, asset.data.into_owned());
     }
+    // The bundle uses relative asset URLs (`base: "./"`), which resolve below nested app routes
+    // such as `/videos/<id>/moments/...`; serve those from the bundle root.
+    let mut rest = asset_path;
+    while let Some((_, tail)) = rest.split_once('/') {
+        if let Some(asset) = WebAssets::get(tail) {
+            return asset_response(tail, asset.data.into_owned());
+        }
+        rest = tail;
+    }
 
     if let Some(asset) = WebAssets::get("index.html") {
         return asset_response("index.html", asset.data.into_owned());

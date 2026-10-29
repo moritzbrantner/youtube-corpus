@@ -422,6 +422,8 @@ pub struct CorpusVideoFilter {
     pub source_id: Option<Uuid>,
     /// The YouTube channel id recorded in the video metadata.
     pub channel_id: Option<String>,
+    /// One corpus video, for its detail page.
+    pub video_id: Option<Uuid>,
 }
 
 /// Lists the corpus catalog, optionally narrowed by a [`CorpusVideoFilter`]. A label matches
@@ -479,6 +481,7 @@ pub async fn list_corpus_videos(
               OR EXISTS (
                    SELECT 1 FROM videos cv
                    WHERE cv.id = scoped.video_id AND cv.channel_id = $5))
+             AND ($6::uuid IS NULL OR scoped.video_id = $6)
          )
          SELECT v.id, v.youtube_id, v.source_url, v.title, v.channel, v.channel_id,
                 v.channel_url, v.thumbnail_url,
@@ -527,6 +530,7 @@ pub async fn list_corpus_videos(
     .bind(filter.label_id)
     .bind(filter.source_id)
     .bind(filter.channel_id.as_deref())
+    .bind(filter.video_id)
     .fetch_all(pool)
     .await?;
 

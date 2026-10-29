@@ -157,13 +157,78 @@ export function patchCorpusUrl(current: URL, patch: CorpusUrlPatch): URL {
 
 const directoryFields = new Set(["segmentId", "sourceId", "channelId"]);
 
-export type CorpusPage = "corpora" | "search" | "sources";
+export type CorpusPage = "corpora" | "search" | "sources" | "videos";
 
 export function corpusPageUrl(current: URL, page: CorpusPage): URL {
   const url = new URL(current);
   url.pathname = `/${page}`;
   url.hash = "";
   return url;
+}
+
+/** Speech (transcript segment) or on-screen text (OCR track) evidence. */
+export type MomentModality = "spoken" | "visible";
+
+/**
+ * A source-grounded moment: the modality and stable id of one evidence record in one video. Its
+ * time interval belongs to the evidence record, so the URL never carries a second copy of it.
+ */
+export type MomentLocator = {
+  videoId: string;
+  modality: MomentModality;
+  evidenceId: string;
+};
+
+export type VideoRoute = { videoId: string; moment: MomentLocator | null };
+
+/** Parses `/videos/:videoId` and `/videos/:videoId/moments/:modality/:evidenceId`. */
+export function readVideoRoute(url: URL): VideoRoute | null {
+  const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (parts[0] !== "videos" || !parts[1]) {
+    return null;
+  }
+  const videoId = parts[1];
+  if (parts.length === 2) {
+    return { videoId, moment: null };
+  }
+  const [, , kind, modality, evidenceId, ...rest] = parts;
+  if (
+    kind !== "moments" ||
+    (modality !== "spoken" && modality !== "visible") ||
+    !evidenceId ||
+    rest.length > 0
+  ) {
+    return null;
+  }
+  return { videoId, moment: { videoId, modality, evidenceId } };
+}
+
+/**
+ * A video's page, or one of its moments. Keeps the search query, filters and selected search
+ * result so returning to Search restores the originating results.
+ */
+export function videoUrl(
+  current: URL,
+  videoId: string,
+  moment?: Omit<MomentLocator, "videoId">,
+): URL {
+  const url = corpusPageUrl(current, "videos");
+  url.pathname = moment
+    ? `/videos/${encodeURIComponent(videoId)}/moments/${moment.modality}/${encodeURIComponent(moment.evidenceId)}`
+    : `/videos/${encodeURIComponent(videoId)}`;
+  return url;
+}
+
+/** Opens a search result's moment and marks it selected for the way back to Search. */
+export function searchMomentUrl(current: URL, locator: MomentLocator): URL {
+  return videoUrl(patchCorpusUrl(current, { segmentId: locator.evidenceId }), locator.videoId, {
+    modality: locator.modality,
+    evidenceId: locator.evidenceId,
+  });
+}
+
+export function momentModality(sourceKind: string): MomentModality {
+  return sourceKind === "visual_ocr" ? "visible" : "spoken";
 }
 
 /** Channels & Sources page showing the directory, one tracked source or one channel. */
@@ -182,6 +247,17 @@ export function directoryUrl(
 
 /** Same-document navigation for in-app links: pushes history and notifies URL-state hooks. */
 export function navigateInApp(event: React.MouseEvent<HTMLAnchorElement>) {
+  if (pushInAppUrl(event)) {
+    window.scrollTo({ top: 0 });
+  }
+}
+
+/** Like {@link navigateInApp}, but keeps the scroll position (moments within one page). */
+export function navigateInPlace(event: React.MouseEvent<HTMLAnchorElement>) {
+  pushInAppUrl(event);
+}
+
+function pushInAppUrl(event: React.MouseEvent<HTMLAnchorElement>): boolean {
   if (
     event.defaultPrevented ||
     event.button !== 0 ||
@@ -190,16 +266,16 @@ export function navigateInApp(event: React.MouseEvent<HTMLAnchorElement>) {
     event.shiftKey ||
     event.altKey
   ) {
-    return;
+    return false;
   }
   const target = new URL(event.currentTarget.href);
   if (target.origin !== window.location.origin) {
-    return;
+    return false;
   }
   event.preventDefault();
   window.history.pushState(null, "", target);
   window.dispatchEvent(new PopStateEvent("popstate"));
-  window.scrollTo({ top: 0 });
+  return true;
 }
 
 function setOrDelete(url: URL, key: string, value: string | null) {

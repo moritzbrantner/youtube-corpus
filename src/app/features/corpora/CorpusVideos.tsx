@@ -37,9 +37,8 @@ import {
   type ReprocessStage,
   type TranscriptQuality,
 } from "./api";
-import { VideoProcessing } from "./VideoProcessing";
 import { corpusKeys } from "./query-keys";
-import { directoryUrl, navigateInApp } from "./url-state";
+import { directoryUrl, navigateInApp, videoUrl } from "./url-state";
 
 type CorpusVideosProps = {
   corpusId: string;
@@ -93,8 +92,8 @@ export function CorpusVideos({ corpusId, filter = {}, title = "Videos" }: Corpus
       <SurfaceHeader>
         <SurfaceTitle>{title}</SurfaceTitle>
         <SurfaceDescription>
-          Browse corpus contents, inspect the selected research transcript, and selectively
-          reprocess metadata, transcripts, ASR, or embeddings.
+          Browse corpus videos. Open a video to inspect its transcript, on-screen text, processing
+          and timestamped moments.
         </SurfaceDescription>
       </SurfaceHeader>
       <SurfaceContent className="grid gap-3">
@@ -192,7 +191,54 @@ type CorpusVideoRowProps = {
 };
 
 function CorpusVideoRow({ corpusId, video, labels, quality }: CorpusVideoRowProps) {
-  const queryClient = useQueryClient();
+  const href = videoUrl(new URL(window.location.href), video.id).href;
+  return (
+    <article className="grid gap-3 rounded-md border border-border px-4 py-4">
+      <div className="flex min-w-0 flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-sm font-semibold">
+            <a className="underline-offset-4 hover:underline" href={href} onClick={navigateInApp}>
+              {video.title ?? video.sourceUrl}
+            </a>
+          </h3>
+          <VideoChannel video={video} />
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <a href={href} onClick={navigateInApp}>
+            Inspect video
+          </a>
+        </Button>
+        <Button asChild variant="ghost" size="sm">
+          <a href={video.sourceUrl} target="_blank" rel="noreferrer">
+            Open source
+          </a>
+        </Button>
+      </div>
+      <VideoOverview corpusId={corpusId} video={video} labels={labels} quality={quality} />
+    </article>
+  );
+}
+
+export function VideoChannel({ video }: { video: CorpusVideo }) {
+  return (
+    <p className="mt-1 truncate text-xs text-muted-foreground">
+      {video.channelId ? (
+        <a
+          className="underline-offset-4 hover:underline"
+          href={directoryUrl(new URL(window.location.href), { channelId: video.channelId }).href}
+          onClick={navigateInApp}
+        >
+          {video.channel ?? video.channelId}
+        </a>
+      ) : (
+        (video.channel ?? "Channel unknown")
+      )}
+    </p>
+  );
+}
+
+/** Sources, labels, YouTube metadata and transcript coverage of one corpus video. */
+export function VideoOverview({ corpusId, video, labels, quality }: CorpusVideoRowProps) {
   const invalidateLabels = useInvalidateLabels(corpusId);
   const labelMutation = useMutation({
     mutationFn: ({ labelId, assigned }: { labelId: string; assigned: boolean }) =>
@@ -202,52 +248,10 @@ function CorpusVideoRow({ corpusId, video, labels, quality }: CorpusVideoRowProp
     onSettled: invalidateLabels,
   });
   const videoName = video.title ?? video.sourceUrl;
-  const [stage, setStage] = React.useState<ReprocessStage>("metadata");
   const preferred = quality.find((item) => item.isPreferred) ?? null;
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const report = await reprocessCorpusVideo(corpusId, video.id, { stage });
-      await refreshTranscriptQuality(corpusId);
-      return report;
-    },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: corpusKeys.all }),
-        queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "videos"] }),
-        queryClient.invalidateQueries({ queryKey: corpusKeys.quality(corpusId) }),
-        queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "search"] }),
-      ]);
-    },
-  });
 
   return (
-    <article className="grid gap-3 rounded-md border border-border px-4 py-4">
-      <div className="flex min-w-0 flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-semibold">{video.title ?? video.sourceUrl}</h3>
-          <p className="mt-1 truncate text-xs text-muted-foreground">
-            {video.channelId ? (
-              <a
-                className="underline-offset-4 hover:underline"
-                href={
-                  directoryUrl(new URL(window.location.href), { channelId: video.channelId }).href
-                }
-                onClick={navigateInApp}
-              >
-                {video.channel ?? video.channelId}
-              </a>
-            ) : (
-              (video.channel ?? "Channel unknown")
-            )}
-          </p>
-        </div>
-        <Button asChild variant="ghost" size="sm">
-          <a href={video.sourceUrl} target="_blank" rel="noreferrer">
-            Open source
-          </a>
-        </Button>
-      </div>
-
+    <>
       <p className="text-xs text-muted-foreground">
         {video.sources.length > 0 ? (
           <>
@@ -332,9 +336,38 @@ function CorpusVideoRow({ corpusId, video, labels, quality }: CorpusVideoRowProp
             : "No provenance yet"}
         </span>
       </div>
+    </>
+  );
+}
 
-      <VideoProcessing corpusId={corpusId} videoId={video.id} />
-      <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+/** Contextual reprocessing of one video's metadata, transcripts or embeddings. */
+export function VideoReprocessControl({
+  corpusId,
+  video,
+}: {
+  corpusId: string;
+  video: CorpusVideo;
+}) {
+  const queryClient = useQueryClient();
+  const [stage, setStage] = React.useState<ReprocessStage>("metadata");
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const report = await reprocessCorpusVideo(corpusId, video.id, { stage });
+      await refreshTranscriptQuality(corpusId);
+      return report;
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: corpusKeys.all }),
+        queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "videos"] }),
+        queryClient.invalidateQueries({ queryKey: corpusKeys.quality(corpusId) }),
+        queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "search"] }),
+      ]);
+    },
+  });
+  return (
+    <div className="grid gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <NativeSelect
           aria-label={`Reprocess ${video.title ?? video.sourceUrl}`}
           className="min-w-44"
@@ -362,7 +395,7 @@ function CorpusVideoRow({ corpusId, video, labels, quality }: CorpusVideoRowProp
         ) : null}
       </div>
       {mutation.error ? <p className="text-sm text-destructive">{String(mutation.error)}</p> : null}
-    </article>
+    </div>
   );
 }
 
@@ -384,7 +417,7 @@ function formatPercent(value: number) {
   return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 }
 
-function formatDuration(seconds: number | null) {
+export function formatDuration(seconds: number | null) {
   if (seconds === null) {
     return "Duration unknown";
   }
@@ -394,7 +427,7 @@ function formatDuration(seconds: number | null) {
   return `${minutes}:${rest.toString().padStart(2, "0")}`;
 }
 
-function formatDate(value: string) {
+export function formatDate(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }

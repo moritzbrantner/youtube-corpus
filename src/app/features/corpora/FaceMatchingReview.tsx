@@ -10,7 +10,7 @@ import {
   type FaceMatchReview,
 } from "./api";
 import { errorMessage } from "./CorpusLabels";
-import { timestampUrl } from "./CorpusSearch";
+import { timestampUrl } from "./evidence";
 
 export function FaceMatchingReview({
   corpusId,

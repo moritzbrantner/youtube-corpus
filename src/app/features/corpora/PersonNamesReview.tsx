@@ -11,7 +11,7 @@ import {
   type PersonNamesReport,
 } from "./api";
 import { errorMessage } from "./CorpusLabels";
-import { timestampUrl } from "./CorpusSearch";
+import { timestampUrl } from "./evidence";
 
 export function nameStatusLabel(status: PersonNameStatus) {
   switch (status) {
