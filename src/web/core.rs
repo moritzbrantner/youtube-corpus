@@ -47,6 +47,8 @@ pub struct WebServerConfig {
     pub open_browser: bool,
     pub migrate: bool,
     pub yt_dlp: YtDlpConfig,
+    /// Opt-in Tantivy lexical pilot (#76) for `/api/search`; `None` keeps Postgres.
+    pub tantivy_index_dir: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -54,6 +56,7 @@ struct AppState {
     database_url: Option<String>,
     yt_dlp: YtDlpConfig,
     pool: Arc<OnceCell<PgPool>>,
+    search_index: Option<Arc<crate::search_index::TantivySearch>>,
 }
 
 impl AppState {
@@ -62,8 +65,34 @@ impl AppState {
             database_url,
             yt_dlp,
             pool: Arc::new(OnceCell::new()),
+            search_index: None,
         }
     }
+}
+
+/// Opens the pilot index and rebuilds it from Postgres, so each launch serves the current corpus.
+async fn open_search_index(
+    dir: Option<&std::path::Path>,
+    database_url: Option<&str>,
+) -> anyhow::Result<Option<Arc<crate::search_index::TantivySearch>>> {
+    let Some(dir) = dir else {
+        return Ok(None);
+    };
+    let Some(database_url) = database_url else {
+        anyhow::bail!("--tantivy-index-dir needs a database URL to project the corpus from");
+    };
+    let index = crate::search_index::TantivySearch::open(dir)?;
+    let pool = crate::db::connect(database_url).await?;
+    let report = index.sync(&pool).await?;
+    println!(
+        "Tantivy literal search pilot at {}: {} passages ({} updated, {} deleted) in {} ms",
+        dir.display(),
+        report.live_passages,
+        report.upserted,
+        report.deleted,
+        report.elapsed_ms
+    );
+    Ok(Some(Arc::new(index)))
 }
 
 pub async fn serve(config: WebServerConfig) -> anyhow::Result<()> {
@@ -75,7 +104,10 @@ pub async fn serve(config: WebServerConfig) -> anyhow::Result<()> {
         }
     }
 
-    let state = AppState::new(database_url, config.yt_dlp);
+    let search_index =
+        open_search_index(config.tantivy_index_dir.as_deref(), database_url.as_deref()).await?;
+    let mut state = AppState::new(database_url, config.yt_dlp);
+    state.search_index = search_index;
     let address = SocketAddr::from((config.host, config.port));
     let listener = tokio::net::TcpListener::bind(address).await?;
     let local_address = listener.local_addr()?;
@@ -114,6 +146,16 @@ fn app(state: AppState) -> Router {
 #[doc(hidden)]
 pub fn app_for_tests(database_url: Option<String>) -> Router {
     app(AppState::new(database_url, YtDlpConfig::default()))
+}
+
+#[doc(hidden)]
+pub fn app_for_tests_with_search_index(
+    database_url: Option<String>,
+    search_index: Arc<crate::search_index::TantivySearch>,
+) -> Router {
+    let mut state = AppState::new(database_url, YtDlpConfig::default());
+    state.search_index = Some(search_index);
+    app(state)
 }
 
 fn browser_url(address: SocketAddr) -> String {
@@ -252,7 +294,7 @@ async fn search_transcripts(
         return Err(ApiError::bad_request("topK must be positive."));
     }
 
-    search_corpus(SearchRequest {
+    let request = SearchRequest {
         database_url,
         query: input.query,
         top_k: input.top_k,
@@ -274,10 +316,21 @@ async fn search_transcripts(
         metadata_query: input.metadata_query,
         view_count_min: input.view_count_min,
         view_count_max: input.view_count_max,
-    })
-    .await
-    .map(Json)
-    .map_err(ApiError::internal)
+    };
+    if let Some(index) = &state.search_index {
+        crate::search_index::check_supported(&request)
+            .map_err(|error| ApiError::bad_request(error.to_string()))?;
+        let pool = required_pool(&state).await?;
+        return index
+            .search(&pool, &request)
+            .await
+            .map(Json)
+            .map_err(ApiError::internal);
+    }
+    search_corpus(request)
+        .await
+        .map(Json)
+        .map_err(ApiError::internal)
 }
 
 async fn transcript_context(

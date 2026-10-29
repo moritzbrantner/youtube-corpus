@@ -26,7 +26,8 @@ serves embedded Vite assets from `dist/`, and exposes JSON endpoints under
 - `src/db.rs`: Postgres connection and migration entrypoints
 - `src/ingest.rs`: corpus ingest orchestration and database writes
 - `src/multimodal.rs`: face/voice processing provenance, observations, tracks, and persistence
-- `src/search.rs`: full-text, semantic, and hybrid search queries
+- `src/search.rs`: full-text, semantic, and hybrid search queries (default provider)
+- `src/search_index.rs`: opt-in Tantivy literal search pilot (#76) over a rebuildable projection, via Search Engine
 - `src/status.rs`: corpus status and video listing queries
 - `src/corpus_export.rs`: deterministic downstream exports (source-span, corpus-core JSONL, belief-lab evidence) from a loaded `CorpusExportSnapshot`
 - `src/source_span_export.rs`: `source_span_interchange@1` types and builder shared by the database and snapshot exports
@@ -139,6 +140,37 @@ repository history, or generated documentation.
 5. Hybrid mode combines FTS and semantic scores.
 6. Results are returned with segment ids, timestamps, source URLs, text, and
    score components.
+
+### Opt-in Tantivy literal pilot (#76)
+
+Decision Atlas 3.14 keeps Postgres the default until a measured advantage. The
+pilot reuses [Search Engine](https://github.com/moritzbrantner/search-engine)'s
+`TantivyIndex`; it adds no ingest path and owns no corpus records.
+
+- **Projection.** `search-index sync` (and `serve --tantivy-index-dir` at
+  launch) reads `corpus_search_segments` joined with `videos` and rebuilds the
+  index. Document IDs are the Postgres segment/track/translation IDs. An
+  unchanged passage keeps its revision, an edited one gets the next revision,
+  and a passage gone from Postgres becomes a revisioned tombstone, so re-syncing
+  the same data changes nothing and restarts reopen the same directory.
+- **Selection.** Chosen when the process starts (`search --tantivy-index-dir`,
+  `serve --tantivy-index-dir`), never per query. `serve` keeps one index for
+  its lifetime and answers `/api/search` from it; the corpus-scoped
+  `/api/corpora/{id}/…search` routes stay on Postgres.
+- **Semantics (owner question #76.Q1, option A).** Every whitespace-separated
+  term must occur as a case-folded substring in the passage text. There is no
+  tokenization, stemming or ranking: `planet` also matches `planetary`. Hits
+  come back in video/timestamp order with zero scores and
+  `provider: "tantivy_literal"`. Only `--mode fts` is accepted; semantic,
+  hybrid and the raw `metadata` filter are rejected rather than approximated.
+  Source kind, modality, video, language, timestamp, upload date, duration,
+  view count, channel, title, category and tag filters are projected.
+- **Provenance.** Translation and OCR evidence are attached from Postgres, as
+  on the default path. `ocrCoverage` counts the videos in the video-level
+  filter scope; a video without an OCR run is `unprocessedVideos`, never a
+  visible-text negative.
+- **Comparison.** `search-index compare` runs one query on both providers and
+  prints shared hits, provider-only hits and latency.
 
 ## Migrations
 

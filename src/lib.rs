@@ -27,6 +27,7 @@ pub mod reprocessing;
 pub mod research_quality_web;
 pub mod research_web;
 pub mod search;
+pub mod search_index;
 pub mod source_monitor;
 pub mod source_span_export;
 pub mod sponsorblock;

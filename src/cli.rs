@@ -126,6 +126,8 @@ pub enum Command {
     Status(StatusArgs),
     Benchmark(BenchmarkArgs),
     Search(SearchArgs),
+    /// Opt-in Tantivy literal search pilot index (#76).
+    SearchIndex(SearchIndexArgs),
     Diagnostics(DiagnosticsArgs),
     ApiSchema(ApiSchemaArgs),
     /// Writes a deterministic, versioned downstream export of the corpus.
@@ -166,6 +168,29 @@ pub struct ExtractEntitiesArgs {
 pub struct ServeArgs {
     #[arg(long)]
     pub migrate: bool,
+    /// Opt-in Tantivy literal search pilot (#76): rebuild this local index from Postgres at
+    /// launch and answer `/api/search` with it. Omit to keep the default Postgres search.
+    #[arg(long)]
+    pub tantivy_index_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Parser)]
+pub struct SearchIndexArgs {
+    #[command(subcommand)]
+    pub command: SearchIndexCommand,
+}
+
+/// Opt-in Tantivy literal search pilot (#76). Postgres remains canonical and the default.
+#[derive(Debug, Subcommand)]
+pub enum SearchIndexCommand {
+    /// Rebuilds the local index from Postgres (edits get new revisions, removals tombstones).
+    Sync {
+        #[arg(long)]
+        index_dir: PathBuf,
+    },
+    /// Runs one query on both providers and reports shared/missing hits and latency.
+    /// Requires `--tantivy-index-dir` and `--mode fts`.
+    Compare(Box<SearchArgs>),
 }
 
 #[derive(Debug, Parser)]
@@ -670,6 +695,10 @@ pub struct SearchArgs {
     pub view_count_min: Option<i64>,
     #[arg(long)]
     pub view_count_max: Option<i64>,
+    /// Answer from this Tantivy pilot index (literal substring terms, `--mode fts` only)
+    /// instead of Postgres. Run `search-index sync` first; the index is not refreshed here.
+    #[arg(long)]
+    pub tantivy_index_dir: Option<PathBuf>,
 }
 
 impl SearchArgs {
