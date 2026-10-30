@@ -907,22 +907,11 @@ pub(crate) async fn corpus_video_ids_with(
         .fetch_one(&mut *connection)
         .await?;
     anyhow::ensure!(exists, "corpus not found");
-    let ids = sqlx::query_scalar::<_, Uuid>(
-        "SELECT vm.video_id
-         FROM corpus_video_memberships vm
-         WHERE vm.corpus_id = $1
-         UNION
-         SELECT v.id
-         FROM corpus_source_memberships sm
-         JOIN corpus_subscription_items i ON i.subscription_id = sm.subscription_id
-         JOIN videos v
-           ON v.source_url = i.source_url
-           OR (v.youtube_id IS NOT NULL AND i.youtube_id = v.youtube_id)
-         WHERE sm.corpus_id = $1",
-    )
-    .bind(corpus_id)
-    .fetch_all(&mut *connection)
-    .await?;
+    let ids =
+        sqlx::query_scalar::<_, Uuid>("SELECT video_id FROM corpus_videos WHERE corpus_id = $1")
+            .bind(corpus_id)
+            .fetch_all(&mut *connection)
+            .await?;
     Ok(ids.into_iter().collect())
 }
 
