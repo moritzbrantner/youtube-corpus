@@ -20,6 +20,13 @@ export type CorpusUrlState = {
   tagQuery: string;
   uploadDateFrom: string;
   uploadDateTo: string;
+  /** Video selected on the Processing page. */
+  processingVideoId: string | null;
+  /** Processing run list filters: stage (detector id), attempt state and history scope. */
+  stage: string;
+  attemptState: string;
+  /** `all` lists superseded attempts too; empty lists the newest attempt per video stage. */
+  attempts: "" | "all";
 };
 
 export type CorpusSearchFilters = Pick<
@@ -54,6 +61,10 @@ const keys: Array<[keyof CorpusUrlState, string]> = [
   ["tagQuery", "tag"],
   ["uploadDateFrom", "from"],
   ["uploadDateTo", "to"],
+  ["processingVideoId", "video"],
+  ["stage", "stage"],
+  ["attemptState", "state"],
+  ["attempts", "attempts"],
 ];
 
 function selected<T extends string>(value: string | null, options: readonly T[], fallback: T): T {
@@ -80,6 +91,10 @@ export function readUrlState(
       tagQuery: "",
       uploadDateFrom: "",
       uploadDateTo: "",
+      processingVideoId: null,
+      stage: "",
+      attemptState: "",
+      attempts: "",
     };
   }
   const params = url.searchParams;
@@ -103,6 +118,10 @@ export function readUrlState(
     tagQuery: params.get("tag") ?? "",
     uploadDateFrom: params.get("from") ?? "",
     uploadDateTo: params.get("to") ?? "",
+    processingVideoId: params.get("video"),
+    stage: params.get("stage") ?? "",
+    attemptState: params.get("state") ?? "",
+    attempts: params.get("attempts") === "all" ? "all" : "",
   };
 }
 
@@ -151,13 +170,50 @@ export function patchCorpusUrl(current: URL, patch: CorpusUrlPatch): URL {
   if (patch.corpusId !== undefined && patch.corpusId !== current.searchParams.get("corpus")) {
     if (patch.sourceId === undefined) url.searchParams.delete("source");
     if (patch.channelId === undefined) url.searchParams.delete("channelId");
+    if (patch.processingVideoId === undefined) url.searchParams.delete("video");
   }
   return url;
 }
 
-const directoryFields = new Set(["segmentId", "sourceId", "channelId"]);
+/** Selections that leave the selected search moment intact. */
+const directoryFields = new Set([
+  "segmentId",
+  "sourceId",
+  "channelId",
+  "processingVideoId",
+  "stage",
+  "attemptState",
+  "attempts",
+]);
 
-export type CorpusPage = "corpora" | "search" | "sources" | "videos";
+export type CorpusPage = "corpora" | "search" | "sources" | "videos" | "processing";
+
+/** Parses `/processing` and `/processing/attempts/:attemptId`. */
+export function readProcessingRoute(url: URL): { attemptId: string | null } | null {
+  const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (parts[0] !== "processing") {
+    return null;
+  }
+  if (parts.length === 1) {
+    return { attemptId: null };
+  }
+  return parts[1] === "attempts" && parts[2] && parts.length === 3 ? { attemptId: parts[2] } : null;
+}
+
+/** The Processing page, optionally with one video selected. */
+export function processingUrl(current: URL, videoId?: string | null): URL {
+  return corpusPageUrl(
+    videoId === undefined ? current : patchCorpusUrl(current, { processingVideoId: videoId }),
+    "processing",
+  );
+}
+
+/** Deep link to one recorded detector attempt; keeps the Processing filters for the way back. */
+export function attemptUrl(current: URL, attemptId: string): URL {
+  const url = corpusPageUrl(current, "processing");
+  url.pathname = `/processing/attempts/${encodeURIComponent(attemptId)}`;
+  return url;
+}
 
 export function corpusPageUrl(current: URL, page: CorpusPage): URL {
   const url = new URL(current);

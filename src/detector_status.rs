@@ -103,6 +103,28 @@ impl Attempt {
     }
 }
 
+/// Whether the backend that recorded a `running` attempt still holds its stage lock. A running
+/// row without a live owner was interrupted (crash, restart or cancelled request).
+macro_rules! attempt_alive_sql {
+    () => {
+        "EXISTS(SELECT 1 FROM pg_locks l WHERE l.pid = a.backend_pid AND l.locktype = 'advisory'
+            AND l.granted AND l.classid::bigint = ((hashtextextended('detector:' || a.video_id::text || ':' || a.detector, 0) >> 32) & 4294967295)
+            AND l.objid::bigint = (hashtextextended('detector:' || a.video_id::text || ':' || a.detector, 0) & 4294967295))"
+    };
+}
+
+fn recorded_state(recorded: &str, alive: bool) -> anyhow::Result<StageState> {
+    Ok(match recorded {
+        "running" if alive => StageState::Running,
+        "running" => StageState::Interrupted,
+        "failed" => StageState::Failed,
+        "skipped" => StageState::Skipped,
+        "unavailable" => StageState::Unavailable,
+        "completed" => StageState::Completed,
+        other => anyhow::bail!("unknown recorded detector state {other}"),
+    })
+}
+
 pub(crate) async fn output_count(
     pool: &PgPool,
     video: Uuid,
@@ -151,13 +173,11 @@ async fn status_for_plan(
            JOIN corpus_subscriptions s ON s.id = i.subscription_id
            WHERE v.id = $1 AND ((s.enabled AND s.processing_policy = 'automatic') OR i.status IN ('indexed', 'no_transcript', 'skipped')))",
     ).bind(plan.video_id).fetch_one(pool).await?;
-    let attempts = sqlx::query(
-        "SELECT DISTINCT ON (detector) detector, state, message, started_at, finished_at,
-          EXISTS(SELECT 1 FROM pg_locks l WHERE l.pid = a.backend_pid AND l.locktype = 'advisory'
-            AND l.granted AND l.classid::bigint = ((hashtextextended('detector:' || a.video_id::text || ':' || a.detector, 0) >> 32) & 4294967295)
-            AND l.objid::bigint = (hashtextextended('detector:' || a.video_id::text || ':' || a.detector, 0) & 4294967295)) AS alive
-         FROM detector_attempts a WHERE video_id = $1 ORDER BY detector, started_at DESC, id DESC",
-    ).bind(plan.video_id).fetch_all(pool).await?;
+    let attempts = sqlx::query(concat!(
+        "SELECT DISTINCT ON (detector) detector, state, message, started_at, finished_at, ",
+        attempt_alive_sql!(),
+        " AS alive FROM detector_attempts a WHERE video_id = $1 ORDER BY detector, started_at DESC, id DESC",
+    )).bind(plan.video_id).fetch_all(pool).await?;
     let mut stages = Vec::new();
     for planned in &plan.detectors {
         let count = output_count(pool, plan.video_id, &planned.detector).await?;
@@ -186,16 +206,7 @@ async fn status_for_plan(
         };
         if planned.enabled {
             if let Some(row) = attempt {
-                let recorded: String = row.try_get("state")?;
-                state = match recorded.as_str() {
-                    "running" if row.try_get("alive")? => StageState::Running,
-                    "running" => StageState::Interrupted,
-                    "failed" => StageState::Failed,
-                    "skipped" => StageState::Skipped,
-                    "unavailable" => StageState::Unavailable,
-                    "completed" => StageState::Completed,
-                    other => anyhow::bail!("unknown recorded detector state {other}"),
-                };
+                state = recorded_state(&row.try_get::<String, _>("state")?, row.try_get("alive")?)?;
                 message = row.try_get("message")?;
             }
         }
@@ -309,4 +320,167 @@ pub(crate) fn file_identity(path: &std::path::Path) -> anyhow::Result<Value> {
     Ok(
         json!({ "path": path, "sha256": hash.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>() }),
     )
+}
+
+/// One recorded detector attempt of a corpus video (#103). Attempts are observations of real
+/// work; they are never synthesized from settings or outputs.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttemptSummary {
+    pub id: Uuid,
+    pub video_id: Uuid,
+    pub video_title: Option<String>,
+    pub video_source_url: String,
+    pub detector: String,
+    pub label: String,
+    /// `running` only while the owning backend still holds the stage lock, else `interrupted`.
+    pub state: StageState,
+    pub message: Option<String>,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: Option<DateTime<Utc>>,
+    /// Whether this is the newest attempt of its video's stage; older ones are superseded.
+    pub latest: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttemptDetail {
+    #[serde(flatten)]
+    pub attempt: AttemptSummary,
+    /// The recorded input/producer identity the attempt ran against.
+    pub identity: Value,
+    /// Every attempt of the same video stage, newest first (including this one).
+    pub history: Vec<AttemptSummary>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttemptFilter {
+    pub video_id: Option<Uuid>,
+    pub detector: Option<String>,
+    /// A derived attempt state: `running`, `interrupted`, `completed`, `skipped`, `failed` or
+    /// `unavailable`.
+    pub state: Option<String>,
+    /// Only the newest attempt of each video stage.
+    #[serde(default)]
+    pub latest: bool,
+    pub limit: Option<i64>,
+}
+
+macro_rules! attempt_rows_sql {
+    () => {
+        concat!(
+            "SELECT a.id, a.video_id, v.title, v.source_url, a.detector, a.state AS recorded,
+               a.message, a.started_at, a.finished_at, a.identity, ",
+            attempt_alive_sql!(),
+            " AS alive,
+               a.id = (SELECT b.id FROM detector_attempts b WHERE b.video_id = a.video_id
+                 AND b.detector = a.detector ORDER BY b.started_at DESC, b.id DESC LIMIT 1) AS latest
+             FROM detector_attempts a JOIN videos v ON v.id = a.video_id"
+        )
+    };
+}
+
+fn attempt_summary(row: &sqlx::postgres::PgRow) -> anyhow::Result<AttemptSummary> {
+    let detector: String = row.try_get("detector")?;
+    Ok(AttemptSummary {
+        id: row.try_get("id")?,
+        video_id: row.try_get("video_id")?,
+        video_title: row.try_get("title")?,
+        video_source_url: row.try_get("source_url")?,
+        label: crate::detectors::detector(&detector)
+            .map(|info| info.label.to_string())
+            .unwrap_or_else(|| detector.clone()),
+        detector,
+        state: recorded_state(
+            &row.try_get::<String, _>("recorded")?,
+            row.try_get("alive")?,
+        )?,
+        message: row.try_get("message")?,
+        started_at: row.try_get("started_at")?,
+        finished_at: row.try_get("finished_at")?,
+        latest: row.try_get("latest")?,
+    })
+}
+
+async fn corpus_videos(pool: &PgPool, corpus: Uuid) -> Result<Vec<Uuid>, DetectorError> {
+    let exists =
+        sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM corpora WHERE id = $1)")
+            .bind(corpus)
+            .fetch_one(pool)
+            .await?;
+    if !exists {
+        return Err(DetectorError::NotFound("corpus not found".to_string()));
+    }
+    Ok(crate::corpora::corpus_video_ids(pool, corpus)
+        .await?
+        .into_iter()
+        .collect())
+}
+
+/// Recorded attempts of the corpus's videos, newest first.
+pub async fn list_attempts(
+    pool: &PgPool,
+    corpus: Uuid,
+    filter: &AttemptFilter,
+) -> Result<Vec<AttemptSummary>, DetectorError> {
+    let videos = corpus_videos(pool, corpus).await?;
+    let rows = sqlx::query(concat!(
+        "SELECT * FROM (",
+        attempt_rows_sql!(),
+        " WHERE a.video_id = ANY($1) AND ($2::uuid IS NULL OR a.video_id = $2)
+             AND ($3::text IS NULL OR a.detector = $3)) x
+         WHERE ($4::text IS NULL OR (CASE WHEN recorded = 'running' AND NOT alive
+             THEN 'interrupted' ELSE recorded END) = $4)
+           AND (NOT $5 OR latest)
+         ORDER BY started_at DESC, id DESC LIMIT $6"
+    ))
+    .bind(&videos)
+    .bind(filter.video_id)
+    .bind(filter.detector.as_deref().filter(|value| !value.is_empty()))
+    .bind(filter.state.as_deref().filter(|value| !value.is_empty()))
+    .bind(filter.latest)
+    .bind(filter.limit.unwrap_or(100).clamp(1, 500))
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .iter()
+        .map(attempt_summary)
+        .collect::<anyhow::Result<_>>()?)
+}
+
+/// One attempt of a corpus video, with its recorded identity and its stage's history.
+pub async fn attempt_detail(
+    pool: &PgPool,
+    corpus: Uuid,
+    attempt: Uuid,
+) -> Result<AttemptDetail, DetectorError> {
+    let videos = corpus_videos(pool, corpus).await?;
+    let row = sqlx::query(concat!(
+        attempt_rows_sql!(),
+        " WHERE a.id = $1 AND a.video_id = ANY($2)"
+    ))
+    .bind(attempt)
+    .bind(&videos)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| DetectorError::NotFound("attempt is not part of this corpus".to_string()))?;
+    let summary = attempt_summary(&row)?;
+    let identity: Value = row.try_get("identity").map_err(anyhow::Error::from)?;
+    let history = list_attempts(
+        pool,
+        corpus,
+        &AttemptFilter {
+            video_id: Some(summary.video_id),
+            detector: Some(summary.detector.clone()),
+            limit: Some(50),
+            ..AttemptFilter::default()
+        },
+    )
+    .await?;
+    Ok(AttemptDetail {
+        attempt: summary,
+        identity,
+        history,
+    })
 }

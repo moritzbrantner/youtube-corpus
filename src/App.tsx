@@ -8,12 +8,26 @@ import {
 } from "./app/features/analyzer/DirectBrowserYouTubeAnalyzer";
 import { YouTubeAnalyzer } from "./app/features/analyzer/YouTubeAnalyzer";
 import { CorpusWorkspace } from "./app/features/corpora/CorpusWorkspace";
+import type { CorpusPage } from "./app/features/corpora/url-state";
 
-type AppRoute = "analyzer" | "corpora" | "search" | "sources" | "videos" | "legacy";
+type CorpusRoute = CorpusPage;
+type AppRoute = "analyzer" | CorpusRoute | "legacy";
+
+const corpusRoutes: readonly AppRoute[] = ["corpora", "search", "sources", "videos", "processing"];
+
+function isCorpusRoute(route: AppRoute): route is CorpusRoute {
+  return corpusRoutes.includes(route);
+}
 
 function routeFromLocation(): AppRoute {
   if (typeof window === "undefined") {
     return "analyzer";
+  }
+  if (
+    window.location.pathname === "/processing" ||
+    window.location.pathname.startsWith("/processing/")
+  ) {
+    return "processing";
   }
   if (window.location.pathname === "/videos" || window.location.pathname.startsWith("/videos/")) {
     return "videos";
@@ -47,12 +61,13 @@ export default function App() {
   }, []);
 
   if (shouldUseDirectBrowserAnalyzer()) {
-    if (route === "corpora" || route === "search" || route === "sources" || route === "videos") {
+    if (isCorpusRoute(route)) {
       return (
         <ErrorState>
           <StateViewTitle>Local corpus app required</StateViewTitle>
           <StateViewDescription>
-            Corpora, Search, Videos and Channels & Sources need the local app and its database.
+            Corpora, Search, Videos, Channels & Sources and Processing need the local app and its
+            database.
           </StateViewDescription>
           <Button asChild>
             <a href="./?mode=browser">Open browser analyzer</a>
@@ -63,7 +78,7 @@ export default function App() {
     return <DirectBrowserYouTubeAnalyzer />;
   }
 
-  if (route === "corpora" || route === "search" || route === "sources" || route === "videos") {
+  if (isCorpusRoute(route)) {
     return <CorpusWorkspace page={route} />;
   }
 
