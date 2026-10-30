@@ -503,6 +503,8 @@ pub struct EntitySummary {
     pub spoken_mentions: i64,
     pub visible_text_mentions: i64,
     pub video_count: i64,
+    /// The global canonical identity this corpus-local group belongs to (#104).
+    pub identity_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -516,6 +518,8 @@ pub struct PersonSummary {
     pub name: Option<String>,
     /// `inferred`, `confirmed` or `user_provided` when `name` is set.
     pub name_status: Option<String>,
+    /// The global canonical identity this corpus-local person belongs to (#104).
+    pub identity_id: Option<Uuid>,
     pub shown_tracks: i64,
     pub heard_tracks: i64,
     pub video_count: i64,
@@ -554,8 +558,12 @@ pub async fn lookup_entities(
                 mode() WITHIN GROUP (ORDER BY surface_text) AS display_name,
                 count(*) FILTER (WHERE modality = 'spoken') AS spoken,
                 count(*) FILTER (WHERE modality = 'visible_text') AS visible,
-                count(DISTINCT video_id) AS videos
-         FROM entity_mentions
+                count(DISTINCT video_id) AS videos,
+                (SELECT l.identity_id FROM canonical_identity_links l
+                  WHERE l.unit_kind = 'entity_group' AND l.corpus_id = $4
+                    AND l.entity_type = m.entity_type AND l.entity_key = m.entity_key)
+                  AS identity_id
+         FROM entity_mentions m
          WHERE video_id = ANY($1) AND ($2 = '' OR strpos(entity_key, $2) > 0)
          GROUP BY entity_type, entity_key
          ORDER BY (entity_key = $2) DESC, count(*) DESC, entity_key, entity_type
@@ -564,6 +572,7 @@ pub async fn lookup_entities(
     .bind(&video_ids)
     .bind(&needle)
     .bind(limit)
+    .bind(corpus_id)
     .fetch_all(pool)
     .await?
     .into_iter()
@@ -575,6 +584,7 @@ pub async fn lookup_entities(
             spoken_mentions: row.try_get("spoken")?,
             visible_text_mentions: row.try_get("visible")?,
             video_count: row.try_get("videos")?,
+            identity_id: row.try_get("identity_id")?,
         })
     })
     .collect::<anyhow::Result<Vec<_>>>()?;
@@ -595,6 +605,8 @@ pub async fn lookup_entities(
          )
          SELECT p.id, p.label, p.identity_source, p.identity_confidence,
                 n.name, n.status AS name_status,
+                (SELECT l.identity_id FROM canonical_identity_links l
+                  WHERE l.person_id = p.id) AS identity_id,
                 count(DISTINCT t.track_id) FILTER (WHERE t.kind = 'shown') AS shown,
                 count(DISTINCT t.track_id) FILTER (WHERE t.kind = 'heard') AS heard,
                 count(DISTINCT t.video_id) AS videos
@@ -623,6 +635,7 @@ pub async fn lookup_entities(
             identity_confidence: row.try_get("identity_confidence")?,
             name: row.try_get("name")?,
             name_status: row.try_get("name_status")?,
+            identity_id: row.try_get("identity_id")?,
             shown_tracks: row.try_get("shown")?,
             heard_tracks: row.try_get("heard")?,
             video_count: row.try_get("videos")?,
@@ -837,8 +850,9 @@ pub async fn person_occurrences(
     let video_ids = corpus_video_list(pool, corpus_id).await?;
     let person = sqlx::query(
         "SELECT p.id, p.label, p.identity_source, p.identity_confidence, n.name,
-                n.status AS name_status
+                n.status AS name_status, l.identity_id
          FROM people p LEFT JOIN person_name_attributions n ON n.person_id = p.id
+         LEFT JOIN canonical_identity_links l ON l.person_id = p.id
          WHERE p.id = $1 AND p.corpus_id = $2",
     )
     .bind(person_id)
@@ -940,6 +954,7 @@ pub async fn person_occurrences(
         identity_confidence: person.try_get("identity_confidence")?,
         name: person.try_get("name")?,
         name_status: person.try_get("name_status")?,
+        identity_id: person.try_get("identity_id")?,
         shown_tracks: videos.iter().map(|v| v.shown_tracks as i64).sum(),
         heard_tracks: videos.iter().map(|v| v.heard_tracks as i64).sum(),
         video_count: videos.len() as i64,

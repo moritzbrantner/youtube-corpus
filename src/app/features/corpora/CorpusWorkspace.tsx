@@ -30,11 +30,13 @@ import { CorpusSearch } from "./CorpusSearch";
 import { CorpusSourcesPage } from "./CorpusSourcesPage";
 import { CorpusVideoPage } from "./CorpusVideoPage";
 import { CorpusVideos } from "./CorpusVideos";
+import { IdentityPages } from "./IdentityPages";
 import { corpusKeys } from "./query-keys";
 import {
   corpusPageUrl,
   directoryUrl,
   type CorpusPage,
+  readIdentityRoute,
   readProcessingRoute,
   readVideoRoute,
   useCorpusUrlState,
@@ -46,11 +48,17 @@ const pageTitles: Record<CorpusPage, string> = {
   sources: "Channels & Sources",
   videos: "Videos",
   processing: "Processing",
+  people: "People",
+  entities: "Entities",
 };
 
 export function CorpusWorkspace({ page }: { page: CorpusPage }) {
   const { state, update } = useCorpusUrlState();
   const videoRoute = page === "videos" ? readVideoRoute(new URL(window.location.href)) : null;
+  const identityRoute =
+    page === "people" || page === "entities"
+      ? readIdentityRoute(new URL(window.location.href))
+      : null;
   const processingRoute =
     page === "processing" ? readProcessingRoute(new URL(window.location.href)) : null;
   const corporaQuery = useQuery({
@@ -97,6 +105,16 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
                 id: "videos",
                 label: "Videos",
                 href: corpusPageUrl(new URL(window.location.href), "videos").href,
+              },
+              {
+                id: "people",
+                label: "People",
+                href: corpusPageUrl(new URL(window.location.href), "people").href,
+              },
+              {
+                id: "entities",
+                label: "Entities",
+                href: corpusPageUrl(new URL(window.location.href), "entities").href,
               },
               {
                 id: "processing",
@@ -266,6 +284,17 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
                     </Button>
                   </ErrorState>
                 )
+              ) : null}
+              {(page === "people" || page === "entities") && identityRoute ? (
+                <IdentityPages
+                  key={`${page}:${selectedCorpus.id}:${identityRoute.identityId ?? ""}`}
+                  page={page}
+                  corpusId={selectedCorpus.id}
+                  corpusName={selectedCorpus.name}
+                  identityId={identityRoute.identityId}
+                  state={state}
+                  onUpdate={update}
+                />
               ) : null}
               {page === "corpora" ? (
                 <>

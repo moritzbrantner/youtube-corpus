@@ -18,6 +18,7 @@ pub mod entities;
 pub mod evaluation;
 pub mod face_matching;
 pub mod face_processing;
+pub mod identities;
 pub mod ingest;
 pub mod media_evidence;
 pub mod multimodal;

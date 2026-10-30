@@ -4,9 +4,11 @@ import {
   attemptUrl,
   corpusPageUrl,
   directoryUrl,
+  identityUrl,
   momentModality,
   patchCorpusUrl,
   processingUrl,
+  readIdentityRoute,
   readProcessingRoute,
   readUrlState,
   readVideoRoute,
@@ -170,5 +172,22 @@ describe("processing page", () => {
     expect(readProcessingRoute(new URL("http://localhost/processing/attempts"))).toBeNull();
     expect(readProcessingRoute(new URL("http://localhost/processing/runs/x"))).toBeNull();
     expect(readProcessingRoute(new URL("http://localhost/videos"))).toBeNull();
+  });
+});
+
+describe("people and entities pages", () => {
+  test("profiles keep the corpus and scope and parse back", () => {
+    const current = new URL("http://localhost/people?corpus=c1&scope=all&name=ada");
+    const url = identityUrl(current, "people", "id-1");
+    expect(url.pathname).toBe("/people/id-1");
+    expect(readUrlState(url)).toMatchObject({
+      corpusId: "c1",
+      identityScope: "all",
+      identityQuery: "ada",
+    });
+    expect(readIdentityRoute(url)).toEqual({ identityId: "id-1" });
+    expect(readIdentityRoute(new URL("http://localhost/entities"))).toEqual({ identityId: null });
+    expect(readIdentityRoute(new URL("http://localhost/entities/a/b"))).toBeNull();
+    expect(readIdentityRoute(new URL("http://localhost/videos/a"))).toBeNull();
   });
 });

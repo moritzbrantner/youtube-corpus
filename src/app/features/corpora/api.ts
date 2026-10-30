@@ -635,6 +635,8 @@ export type EntitySummary = {
   spokenMentions: number;
   visibleTextMentions: number;
   videoCount: number;
+  /** Global canonical identity of this corpus-local group (#104). */
+  identityId: string | null;
 };
 
 /** A labeled corpus-local person identity from face/voice matching; never a verified identity. */
@@ -646,6 +648,8 @@ export type PersonSummary = {
   /** Evidence-grounded name (#65); `label` stays the placeholder identity label. */
   name: string | null;
   nameStatus: PersonNameStatus | null;
+  /** Global canonical identity of this corpus-local person (#104). */
+  identityId: string | null;
   shownTracks: number;
   heardTracks: number;
   videoCount: number;
@@ -1070,4 +1074,90 @@ export function correctPersonName(corpusId: string, correction: PersonNameCorrec
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(correction),
   });
+}
+
+/** Global canonical people and entities over corpus-local evidence (#104, Atlas 5.2-5.3). */
+export type IdentityKind = "person" | "entity";
+export type IdentitySummary = {
+  id: string;
+  kind: IdentityKind;
+  entityType: string;
+  displayName: string;
+  /** `researcher`, `mentions`, `inferred_name` or `unnamed`. */
+  nameSource: "researcher" | "mentions" | "inferred_name" | "unnamed";
+  corpora: { id: string; name: string }[];
+  localUnits: number;
+  hasConfirmedLinks: boolean;
+  spokenMentions: number;
+  visibleTextMentions: number;
+  shownTracks: number;
+  heardTracks: number;
+  videoCount: number;
+};
+export type IdentityLocalUnit = {
+  unitKey: string;
+  unitKind: "entity_group" | "inferred_person";
+  corpusId: string;
+  corpusName: string;
+  label: string;
+  entityType: string | null;
+  entityKey: string | null;
+  personId: string | null;
+  nameStatus: PersonNameStatus | null;
+  status: "auto" | "confirmed";
+  basis: "local" | "shared_evidence" | "name_evidence" | "researcher";
+  inScope: boolean;
+};
+export type IdentityProfile = {
+  requestedId: string;
+  identity: IdentitySummary;
+  units: IdentityLocalUnit[];
+  evidence: {
+    unitKey: string;
+    corpusId: string;
+    mentions: EntityOccurrencesReport | null;
+    tracks: PersonOccurrencesReport | null;
+  }[];
+  suggestions: { identity: IdentitySummary; sharedKey: string }[];
+  keptApart: IdentitySummary[];
+};
+export type IdentityCorrection = {
+  action: "confirm" | "merge" | "split" | "reject" | "unreject";
+  otherIdentityId?: string;
+  unitKeys?: string[];
+};
+export type IdentityListFilter = {
+  kind: IdentityKind;
+  entityType?: string;
+  /** Restricts to one corpus; omitted lists all corpora. */
+  corpusId?: string | null;
+  q?: string;
+};
+export function listIdentities(filter: IdentityListFilter) {
+  const params = new URLSearchParams({ kind: filter.kind });
+  if (filter.entityType) params.set("entityType", filter.entityType);
+  if (filter.corpusId) params.set("corpusId", filter.corpusId);
+  if (filter.q) params.set("q", filter.q);
+  return apiFetch<IdentitySummary[]>(`/api/identities?${params}`);
+}
+export function getIdentityProfile(identityId: string, corpusId?: string | null) {
+  const params = new URLSearchParams();
+  if (corpusId) params.set("corpusId", corpusId);
+  return apiFetch<IdentityProfile>(`/api/identities/${identityId}?${params}`);
+}
+export function resolveIdentities() {
+  return apiFetch<{ units: number; identities: number; linkedUnits: number }>(
+    "/api/identities/resolve",
+    { method: "POST" },
+  );
+}
+export function correctIdentity(identityId: string, correction: IdentityCorrection) {
+  return apiFetch<{ identityId: string; createdIdentityId: string | null }>(
+    `/api/identities/${identityId}/corrections`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(correction),
+    },
+  );
 }

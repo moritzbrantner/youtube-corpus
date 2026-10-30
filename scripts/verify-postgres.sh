@@ -32,6 +32,7 @@ cargo test --test detector_profiles_db -- --ignored
 cargo test --test face_matching_db -- --ignored
 cargo test --test face_matching_acceptance_db -- --ignored
 cargo test --test person_names_db -- --ignored
+cargo test --test identities_db -- --ignored
 cargo test --test review_first_db -- --ignored
 cargo test --test translated_text_db -- --ignored --skip native_opus_mt
 cargo test --test backfill_db -- --ignored

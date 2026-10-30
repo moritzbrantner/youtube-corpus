@@ -13,7 +13,15 @@ import type { CorpusPage } from "./app/features/corpora/url-state";
 type CorpusRoute = CorpusPage;
 type AppRoute = "analyzer" | CorpusRoute | "legacy";
 
-const corpusRoutes: readonly AppRoute[] = ["corpora", "search", "sources", "videos", "processing"];
+const corpusRoutes: readonly AppRoute[] = [
+  "corpora",
+  "search",
+  "sources",
+  "videos",
+  "processing",
+  "people",
+  "entities",
+];
 
 function isCorpusRoute(route: AppRoute): route is CorpusRoute {
   return corpusRoutes.includes(route);
@@ -22,6 +30,12 @@ function isCorpusRoute(route: AppRoute): route is CorpusRoute {
 function routeFromLocation(): AppRoute {
   if (typeof window === "undefined") {
     return "analyzer";
+  }
+  for (const page of ["people", "entities"] as const) {
+    const path = window.location.pathname;
+    if (path === `/${page}` || path.startsWith(`/${page}/`)) {
+      return page;
+    }
   }
   if (
     window.location.pathname === "/processing" ||

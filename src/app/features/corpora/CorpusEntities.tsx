@@ -26,7 +26,9 @@ import {
   lookupEntities,
   type EntityCoverage,
   type EntityOccurrence,
+  type EntityOccurrencesReport,
   type EntitySummary,
+  type PersonOccurrencesReport,
   type PersonSummary,
 } from "./api";
 import { errorMessage } from "./CorpusLabels";
@@ -34,6 +36,30 @@ import { timestampUrl } from "./evidence";
 import { corpusKeys } from "./query-keys";
 import { FaceMatchingReview } from "./FaceMatchingReview";
 import { nameStatusLabel, PersonNamesReview } from "./PersonNamesReview";
+import { identityUrl, navigateInApp, patchCorpusUrl, videoUrl } from "./url-state";
+
+/** Link to the global profile of a corpus-local group, once resolution has placed it. */
+function ProfileLink({
+  identityId,
+  page,
+}: {
+  identityId: string | null;
+  page: "people" | "entities";
+}) {
+  if (!identityId) {
+    return null;
+  }
+  return (
+    <Button asChild size="sm" variant="ghost">
+      <a
+        href={identityUrl(new URL(window.location.href), page, identityId).href}
+        onClick={navigateInApp}
+      >
+        Profile
+      </a>
+    </Button>
+  );
+}
 
 type Selection =
   | { kind: "entity"; entityType: string; entityKey: string; name: string }
@@ -237,6 +263,10 @@ function EntityRow({
       <span className="text-sm text-muted-foreground">
         {entity.videoCount} {entity.videoCount === 1 ? "video" : "videos"}
       </span>
+      <ProfileLink
+        identityId={entity.identityId}
+        page={entity.entityType === "person" ? "people" : "entities"}
+      />
       <Button
         className="ml-auto"
         size="sm"
@@ -284,6 +314,7 @@ function PersonRow({
       <span className="text-sm text-muted-foreground">
         {person.videoCount} {person.videoCount === 1 ? "video" : "videos"}
       </span>
+      <ProfileLink identityId={person.identityId} page="people" />
       <Button
         className="ml-auto"
         size="sm"
@@ -316,10 +347,50 @@ function EntityOccurrences({
           {errorMessage(occurrencesQuery.error)}
         </p>
       ) : null}
-      {occurrencesQuery.data?.videos.map((video) => (
+      {occurrencesQuery.data ? (
+        <MentionVideos corpusId={corpusId} videos={occurrencesQuery.data.videos} />
+      ) : null}
+    </section>
+  );
+}
+
+/** A video's title linking to its in-app page in `corpusId`. */
+function VideoTitle({
+  corpusId,
+  video,
+}: {
+  corpusId: string;
+  video: { videoId: string; title: string | null; sourceUrl: string };
+}) {
+  const href = videoUrl(
+    patchCorpusUrl(new URL(window.location.href), { corpusId }),
+    video.videoId,
+  ).href;
+  return (
+    <a
+      className="font-medium underline-offset-4 hover:underline"
+      href={href}
+      onClick={navigateInApp}
+    >
+      {video.title ?? video.sourceUrl}
+    </a>
+  );
+}
+
+/** Mention evidence of one corpus-local entity group, grouped by video. */
+export function MentionVideos({
+  corpusId,
+  videos,
+}: {
+  corpusId: string;
+  videos: EntityOccurrencesReport["videos"];
+}) {
+  return (
+    <>
+      {videos.map((video) => (
         <article key={video.videoId} className="grid gap-2 rounded-md border border-border p-3">
           <header className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{video.title ?? video.sourceUrl}</span>
+            <VideoTitle corpusId={corpusId} video={video} />
             <Badge variant="secondary">Spoken ×{video.spokenMentions}</Badge>
             <Badge variant="secondary">On-screen text ×{video.visibleTextMentions}</Badge>
           </header>
@@ -330,7 +401,7 @@ function EntityOccurrences({
           </ul>
         </article>
       ))}
-    </section>
+    </>
   );
 }
 
@@ -389,15 +460,30 @@ function PersonOccurrences({ corpusId, personId }: { corpusId: string; personId:
           {report.person.nameStatus ? `; ${nameStatusLabel(report.person.nameStatus)}` : ""})
         </h3>
       ) : null}
-      {report?.videos.length === 0 ? (
+      {report ? <TrackVideos corpusId={corpusId} videos={report.videos} /> : null}
+    </section>
+  );
+}
+
+/** Face and voice track evidence of one corpus-local person, grouped by video. */
+export function TrackVideos({
+  corpusId,
+  videos,
+}: {
+  corpusId: string;
+  videos: PersonOccurrencesReport["videos"];
+}) {
+  return (
+    <>
+      {videos.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No face or voice tracks of this identity in the corpus videos.
         </p>
       ) : null}
-      {report?.videos.map((video) => (
+      {videos.map((video) => (
         <article key={video.videoId} className="grid gap-2 rounded-md border border-border p-3">
           <header className="flex flex-wrap items-center gap-2">
-            <span className="font-medium">{video.title ?? video.sourceUrl}</span>
+            <VideoTitle corpusId={corpusId} video={video} />
             <Badge variant="secondary">Shown ×{video.shownTracks}</Badge>
             <Badge variant="secondary">Heard ×{video.heardTracks}</Badge>
           </header>
@@ -430,7 +516,7 @@ function PersonOccurrences({ corpusId, personId }: { corpusId: string; personId:
           </ul>
         </article>
       ))}
-    </section>
+    </>
   );
 }
 
