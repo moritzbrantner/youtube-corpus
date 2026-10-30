@@ -388,3 +388,65 @@ async fn canonical_identities_link_on_shared_evidence_and_keep_researcher_decisi
     .unwrap();
     assert_eq!(corrections, 6);
 }
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL"]
+async fn profile_evidence_carries_known_publication_dates_only() {
+    let Some(database_url) = std::env::var("DATABASE_URL").ok() else {
+        return;
+    };
+    let pool = youtube_corpus::db::connect(&database_url).await.unwrap();
+    youtube_corpus::db::migrate(&pool).await.unwrap();
+    let ctx = Ctx { pool, database_url };
+    let tag = &Uuid::new_v4().simple().to_string()[..8];
+    let name = format!("Timeline Person {tag}");
+    let corpus = ctx.corpus("Timeline").await;
+    let dated = ctx.video(&[corpus], &[("person", &name)]).await;
+    let stamped = ctx.video(&[corpus], &[("person", &name)]).await;
+    let garbled = ctx.video(&[corpus], &[("person", &name)]).await;
+    let unknown = ctx.video(&[corpus], &[("person", &name)]).await;
+    for (video, upload_date, timestamp) in [
+        (dated, Some("20240315"), None),
+        // 2021-01-02T03:04:05Z
+        (stamped, None, Some(1_609_556_645_i64)),
+        (garbled, Some("sometime"), None),
+        (unknown, None, None),
+    ] {
+        sqlx::query("UPDATE videos SET upload_date = $2, timestamp = $3 WHERE id = $1")
+            .bind(video)
+            .bind(upload_date)
+            .bind(timestamp)
+            .execute(&ctx.pool)
+            .await
+            .unwrap();
+    }
+    resolve_identities(&ctx.pool).await.unwrap();
+    let identity = ctx
+        .identity_of(&entity_unit_key(corpus, "person", &entity_key(&name)))
+        .await;
+    let profile = ctx
+        .call(
+            Method::GET,
+            format!("/api/identities/{identity}?corpusId={corpus}"),
+            None,
+        )
+        .await;
+    let videos = profile["evidence"][0]["mentions"]["videos"]
+        .as_array()
+        .unwrap();
+    let date_of = |video: Uuid| {
+        videos
+            .iter()
+            .find(|v| v["videoId"] == json!(video))
+            .map(|v| v["publicationDate"].clone())
+            .unwrap()
+    };
+    assert_eq!(date_of(dated), json!("2024-03-15"));
+    assert_eq!(date_of(stamped), json!("2021-01-02"));
+    assert_eq!(
+        date_of(garbled),
+        Value::Null,
+        "unparseable dates stay unknown"
+    );
+    assert_eq!(date_of(unknown), Value::Null, "missing dates stay unknown");
+}

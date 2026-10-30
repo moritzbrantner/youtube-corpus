@@ -683,6 +683,23 @@ async fn entity_coverage(
     })
 }
 
+/// A video's publication date as `YYYY-MM-DD`, from yt-dlp's `upload_date` (`YYYYMMDD`) or,
+/// failing that, its upload/release timestamps. Unknown or unparseable dates stay `None`.
+fn publication_date(row: &sqlx::postgres::PgRow) -> anyhow::Result<Option<String>> {
+    let upload_date: Option<String> = row.try_get("upload_date")?;
+    let timestamp: Option<i64> = row.try_get("timestamp")?;
+    let release_timestamp: Option<i64> = row.try_get("release_timestamp")?;
+    Ok(upload_date
+        .and_then(|value| chrono::NaiveDate::parse_from_str(value.trim(), "%Y%m%d").ok())
+        .or_else(|| {
+            timestamp
+                .or(release_timestamp)
+                .and_then(|seconds| chrono::DateTime::from_timestamp(seconds, 0))
+                .map(|value| value.date_naive())
+        })
+        .map(|date| date.format("%Y-%m-%d").to_string()))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EntityOccurrence {
@@ -712,6 +729,8 @@ pub struct EntityVideoOccurrences {
     pub video_id: Uuid,
     pub title: Option<String>,
     pub source_url: String,
+    /// Publication date (`YYYY-MM-DD`) from the video's metadata; `None` when unknown.
+    pub publication_date: Option<String>,
     pub spoken_mentions: usize,
     pub visible_text_mentions: usize,
     pub occurrences: Vec<EntityOccurrence>,
@@ -733,7 +752,8 @@ pub async fn entity_occurrences(
 ) -> anyhow::Result<EntityOccurrencesReport> {
     let video_ids = corpus_video_list(pool, corpus_id).await?;
     let rows = sqlx::query(
-        "SELECT m.id, m.video_id, v.title, v.source_url, m.modality, m.surface_text,
+        "SELECT m.id, m.video_id, v.title, v.source_url, v.upload_date, v.timestamp,
+                v.release_timestamp, m.modality, m.surface_text,
                 m.start_seconds, m.end_seconds, coalesce(s.text, t.text) AS context,
                 m.byte_start, m.byte_end, m.confidence, m.transcript_segment_id,
                 m.visual_text_track_id, t.role, r.id AS run_id, r.producer,
@@ -783,6 +803,7 @@ pub async fn entity_occurrences(
                     video_id,
                     title: row.try_get("title")?,
                     source_url: row.try_get("source_url")?,
+                    publication_date: publication_date(&row)?,
                     spoken_mentions: 0,
                     visible_text_mentions: 0,
                     occurrences: Vec::new(),
@@ -830,6 +851,8 @@ pub struct PersonVideoOccurrences {
     pub video_id: Uuid,
     pub title: Option<String>,
     pub source_url: String,
+    /// Publication date (`YYYY-MM-DD`) from the video's metadata; `None` when unknown.
+    pub publication_date: Option<String>,
     pub shown_tracks: usize,
     pub heard_tracks: usize,
     pub occurrences: Vec<PersonTrackOccurrence>,
@@ -906,23 +929,31 @@ pub async fn person_occurrences(
             });
     }
     let ids: Vec<Uuid> = by_video.keys().copied().collect();
-    let titles: BTreeMap<Uuid, (Option<String>, String)> =
-        sqlx::query("SELECT id, title, source_url FROM videos WHERE id = ANY($1)")
-            .bind(&ids)
-            .fetch_all(pool)
-            .await?
-            .into_iter()
-            .map(|row| {
-                Ok((
-                    row.try_get("id")?,
-                    (row.try_get("title")?, row.try_get("source_url")?),
-                ))
-            })
-            .collect::<anyhow::Result<_>>()?;
+    type VideoMeta = (Option<String>, String, Option<String>);
+    let titles: BTreeMap<Uuid, VideoMeta> = sqlx::query(
+        "SELECT id, title, source_url, upload_date, timestamp, release_timestamp
+         FROM videos WHERE id = ANY($1)",
+    )
+    .bind(&ids)
+    .fetch_all(pool)
+    .await?
+    .into_iter()
+    .map(|row| {
+        Ok((
+            row.try_get("id")?,
+            (
+                row.try_get("title")?,
+                row.try_get("source_url")?,
+                publication_date(&row)?,
+            ),
+        ))
+    })
+    .collect::<anyhow::Result<_>>()?;
     let videos: Vec<PersonVideoOccurrences> = by_video
         .into_iter()
         .map(|(video_id, occurrences)| {
-            let (title, source_url) = titles.get(&video_id).cloned().unwrap_or_default();
+            let (title, source_url, publication_date) =
+                titles.get(&video_id).cloned().unwrap_or_default();
             let mut seen = HashSet::new();
             let mut shown_tracks = 0;
             let mut heard_tracks = 0;
@@ -939,6 +970,7 @@ pub async fn person_occurrences(
                 video_id,
                 title,
                 source_url,
+                publication_date,
                 shown_tracks,
                 heard_tracks,
                 occurrences,
