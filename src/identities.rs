@@ -8,7 +8,8 @@
 //! - entity groups of the same type and key in different corpora that share a mention (the same
 //!   video is a member of both corpora);
 //! - inferred people in different corpora whose clusters contain the same face or voice track;
-//! - an inferred person and the person-mention group its evidence-grounded name cites (#65).
+//! - an inferred person and the person-mention group of its attributed name in the same corpus
+//!   (an evidence-grounded #65 inference, or a confirmed/researcher-provided name).
 //!
 //! Same names alone only produce reviewable suggestions. Researcher decisions are durable: merged
 //! or split units are `confirmed` and never moved by resolution, and kept-apart unit pairs block
@@ -96,7 +97,9 @@ pub async fn resolve_identities(pool: &PgPool) -> anyhow::Result<ResolutionRepor
     lock(&mut tx).await?;
 
     let mut units: BTreeMap<String, Unit> = BTreeMap::new();
-    let mut groups: BTreeMap<(String, String), Vec<(String, HashSet<Uuid>)>> = BTreeMap::new();
+    // (entity type, key) -> each corpus's unit key and the videos its mentions come from.
+    type UnitVideos = Vec<(String, HashSet<Uuid>)>;
+    let mut groups: BTreeMap<(String, String), UnitVideos> = BTreeMap::new();
     let excluded: Vec<String> = UNRESOLVED_ENTITY_TYPES.map(String::from).to_vec();
     for row in sqlx::query(
         "SELECT cv.corpus_id, m.entity_type, m.entity_key, array_agg(DISTINCT m.video_id) AS videos
@@ -169,11 +172,7 @@ pub async fn resolve_identities(pool: &PgPool) -> anyhow::Result<ResolutionRepor
         edges.push((person_unit_key(a), person_unit_key(b), "shared_evidence"));
     }
     for (person, corpus, entity_key) in sqlx::query_as::<_, (Uuid, Uuid, String)>(
-        "SELECT DISTINCT a.person_id, a.corpus_id, m.entity_key
-         FROM person_name_attributions a
-         JOIN person_name_evidence e ON e.person_id = a.person_id
-         JOIN entity_mentions m ON m.id = e.entity_mention_id
-         WHERE m.entity_type = 'person'",
+        "SELECT person_id, corpus_id, name_key FROM person_name_attributions",
     )
     .fetch_all(&mut *tx)
     .await?
@@ -337,10 +336,12 @@ pub async fn resolve_identities(pool: &PgPool) -> anyhow::Result<ResolutionRepor
         "INSERT INTO canonical_identity_links
            (unit_key, unit_kind, corpus_id, person_id, entity_type, entity_key, identity_id, status,
             basis)
-         SELECT u.*, 'auto', b
+         SELECT u.unit_key, u.unit_kind, u.corpus_id, u.person_id, u.entity_type, u.entity_key,
+                u.identity_id, 'auto', u.basis
          FROM unnest($1::text[], $2::text[], $3::uuid[], $4::uuid[], $5::text[], $6::text[],
-                     $7::uuid[]) AS u
-         JOIN unnest($1::text[], $8::text[]) AS x(k, b) ON x.k = u.unnest
+                     $7::uuid[], $8::text[])
+           AS u(unit_key, unit_kind, corpus_id, person_id, entity_type, entity_key, identity_id,
+                basis)
          ON CONFLICT (unit_key) DO UPDATE
            SET identity_id = excluded.identity_id, status = 'auto', basis = excluded.basis,
                updated_at = now()
@@ -696,7 +697,11 @@ pub async fn identity_profile(
         limit: 200,
         ..IdentityFilter::default()
     };
-    let Some(identity) = list_identities(pool, &all(vec![id])).await?.into_iter().next() else {
+    let Some(identity) = list_identities(pool, &all(vec![id]))
+        .await?
+        .into_iter()
+        .next()
+    else {
         return Ok(None);
     };
     let identity = match corpus {
@@ -1020,8 +1025,11 @@ pub async fn correct_identity(
             if moved.len() == own.len() {
                 return Err(input("a split must leave at least one local unit behind"));
             }
-            let remaining: Vec<String> =
-                own.iter().filter(|key| !moved.contains(key)).cloned().collect();
+            let remaining: Vec<String> = own
+                .iter()
+                .filter(|key| !moved.contains(key))
+                .cloned()
+                .collect();
             let new_identity = Uuid::new_v4();
             sqlx::query(
                 "INSERT INTO canonical_identities (id, kind, entity_type) VALUES ($1, $2, $3)",

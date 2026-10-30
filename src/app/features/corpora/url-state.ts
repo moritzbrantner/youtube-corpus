@@ -27,6 +27,12 @@ export type CorpusUrlState = {
   attemptState: string;
   /** `all` lists superseded attempts too; empty lists the newest attempt per video stage. */
   attempts: "" | "all";
+  /** People and Entities pages: `all` spans every corpus; empty scopes to the current corpus. */
+  identityScope: "" | "all";
+  /** Entities page type filter (organization, location, ...); empty lists every type. */
+  identityType: string;
+  /** People and Entities name filter. */
+  identityQuery: string;
 };
 
 export type CorpusSearchFilters = Pick<
@@ -65,6 +71,9 @@ const keys: Array<[keyof CorpusUrlState, string]> = [
   ["stage", "stage"],
   ["attemptState", "state"],
   ["attempts", "attempts"],
+  ["identityScope", "scope"],
+  ["identityType", "type"],
+  ["identityQuery", "name"],
 ];
 
 function selected<T extends string>(value: string | null, options: readonly T[], fallback: T): T {
@@ -95,6 +104,9 @@ export function readUrlState(
       stage: "",
       attemptState: "",
       attempts: "",
+      identityScope: "",
+      identityType: "",
+      identityQuery: "",
     };
   }
   const params = url.searchParams;
@@ -122,6 +134,9 @@ export function readUrlState(
     stage: params.get("stage") ?? "",
     attemptState: params.get("state") ?? "",
     attempts: params.get("attempts") === "all" ? "all" : "",
+    identityScope: params.get("scope") === "all" ? "all" : "",
+    identityType: params.get("type") ?? "",
+    identityQuery: params.get("name") ?? "",
   };
 }
 
@@ -184,9 +199,40 @@ const directoryFields = new Set([
   "stage",
   "attemptState",
   "attempts",
+  "identityScope",
+  "identityType",
+  "identityQuery",
 ]);
 
-export type CorpusPage = "corpora" | "search" | "sources" | "videos" | "processing";
+export type CorpusPage =
+  | "corpora"
+  | "search"
+  | "sources"
+  | "videos"
+  | "processing"
+  | "people"
+  | "entities";
+
+export type IdentityPage = "people" | "entities";
+
+/** Parses `/people`, `/entities` and their `/:identityId` profiles. */
+export function readIdentityRoute(url: URL): { identityId: string | null } | null {
+  const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (parts[0] !== "people" && parts[0] !== "entities") {
+    return null;
+  }
+  if (parts.length === 1) {
+    return { identityId: null };
+  }
+  return parts.length === 2 ? { identityId: parts[1] } : null;
+}
+
+/** A canonical identity's profile; keeps the corpus, scope and list filters for the way back. */
+export function identityUrl(current: URL, page: IdentityPage, identityId: string): URL {
+  const url = corpusPageUrl(current, page);
+  url.pathname = `/${page}/${encodeURIComponent(identityId)}`;
+  return url;
+}
 
 /** Parses `/processing` and `/processing/attempts/:attemptId`. */
 export function readProcessingRoute(url: URL): { attemptId: string | null } | null {

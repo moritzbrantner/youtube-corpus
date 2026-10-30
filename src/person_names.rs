@@ -684,6 +684,7 @@ pub async fn infer_person_names(pool: &PgPool, corpus: Uuid) -> anyhow::Result<P
     }
     let result = report(&mut tx, corpus).await?;
     tx.commit().await?;
+    crate::identities::resolve_identities(pool).await?;
     Ok(result)
 }
 
@@ -818,6 +819,7 @@ pub async fn correct_person_name(
     .await?;
     let result = report(&mut tx, corpus).await?;
     tx.commit().await?;
+    crate::identities::resolve_identities(pool).await?;
     Ok(result)
 }
 

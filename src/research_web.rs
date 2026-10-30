@@ -188,6 +188,13 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
             "/api/corpora/{corpus_id}/videos/{video_id}/reprocess",
             post(reprocess_video),
         )
+        .route("/api/identities", get(list_identities))
+        .route("/api/identities/resolve", post(resolve_identities))
+        .route("/api/identities/{identity_id}", get(identity_profile))
+        .route(
+            "/api/identities/{identity_id}/corrections",
+            post(correct_identity),
+        )
         .with_state(state)
 }
 
@@ -1315,6 +1322,82 @@ fn capitalize(message: &str) -> String {
         Some(first) => format!("{}{}.", first.to_uppercase(), characters.as_str()),
         None => String::new(),
     }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityListInput {
+    kind: Option<crate::identities::IdentityKind>,
+    entity_type: Option<String>,
+    corpus_id: Option<Uuid>,
+    q: Option<String>,
+    limit: Option<i64>,
+}
+
+async fn list_identities(
+    State(state): State<ResearchState>,
+    Query(input): Query<IdentityListInput>,
+) -> Result<Json<Vec<crate::identities::IdentitySummary>>, ResearchError> {
+    let pool = pool(&state).await?;
+    let filter = crate::identities::IdentityFilter {
+        kind: input.kind,
+        entity_type: input.entity_type.filter(|t| !t.is_empty()),
+        corpus: input.corpus_id,
+        query: input.q.unwrap_or_default(),
+        ids: None,
+        limit: input.limit.unwrap_or(100).clamp(1, 500),
+    };
+    crate::identities::list_identities(&pool, &filter)
+        .await
+        .map(Json)
+        .map_err(map_corpus_error)
+}
+
+async fn resolve_identities(
+    State(state): State<ResearchState>,
+) -> Result<Json<crate::identities::ResolutionReport>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::identities::resolve_identities(&pool)
+        .await
+        .map(Json)
+        .map_err(map_corpus_error)
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityProfileInput {
+    corpus_id: Option<Uuid>,
+}
+
+async fn identity_profile(
+    State(state): State<ResearchState>,
+    AxumPath(identity_id): AxumPath<Uuid>,
+    Query(input): Query<IdentityProfileInput>,
+) -> Result<Json<crate::identities::IdentityProfile>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::identities::identity_profile(&pool, identity_id, input.corpus_id)
+        .await
+        .map_err(map_corpus_error)?
+        .map(Json)
+        .ok_or_else(|| ResearchError::not_found("identity not found"))
+}
+
+async fn correct_identity(
+    State(state): State<ResearchState>,
+    AxumPath(identity_id): AxumPath<Uuid>,
+    Json(input): Json<crate::identities::IdentityCorrectionRequest>,
+) -> Result<Json<crate::identities::IdentityCorrectionReport>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::identities::correct_identity(&pool, identity_id, input)
+        .await
+        .map(Json)
+        .map_err(|error| {
+            if error.is::<crate::identities::IdentityCorrectionInputError>() {
+                ResearchError::bad_request(error.to_string())
+            } else {
+                map_corpus_error(error)
+            }
+        })
 }
 
 fn map_corpus_error(error: anyhow::Error) -> ResearchError {
