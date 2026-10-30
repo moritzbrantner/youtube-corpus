@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  attemptUrl,
   corpusPageUrl,
   directoryUrl,
   momentModality,
   patchCorpusUrl,
+  processingUrl,
+  readProcessingRoute,
   readUrlState,
   readVideoRoute,
   searchMomentUrl,
@@ -128,5 +131,44 @@ describe("video and moment pages", () => {
     expect(readVideoRoute(new URL("http://localhost/search"))).toBeNull();
     expect(momentModality("visual_ocr")).toBe("visible");
     expect(momentModality("caption_auto")).toBe("spoken");
+  });
+});
+
+describe("processing page", () => {
+  const runs = new URL(
+    "http://localhost/processing?corpus=one&q=helios&segment=moment&stage=entities&state=failed&attempts=all",
+  );
+
+  test("selecting a video or attempt keeps run filters and the originating search", () => {
+    expect(readProcessingRoute(runs)).toEqual({ attemptId: null });
+    expect(readUrlState(runs)).toMatchObject({
+      stage: "entities",
+      attemptState: "failed",
+      attempts: "all",
+      processingVideoId: null,
+    });
+
+    const video = processingUrl(runs, "video-1");
+    expect(readUrlState(video)).toEqual({ ...readUrlState(runs), processingVideoId: "video-1" });
+
+    const attempt = attemptUrl(video, "attempt-7");
+    expect(attempt.pathname).toBe("/processing/attempts/attempt-7");
+    expect(readProcessingRoute(attempt)).toEqual({ attemptId: "attempt-7" });
+
+    const back = processingUrl(attempt);
+    expect(back.pathname).toBe("/processing");
+    expect(readUrlState(back)).toEqual(readUrlState(video));
+    expect(readUrlState(corpusPageUrl(back, "search")).segmentId).toBe("moment");
+  });
+
+  test("switching corpus drops the selected video", () => {
+    const switched = patchCorpusUrl(processingUrl(runs, "video-1"), { corpusId: "two" });
+    expect(readUrlState(switched)).toMatchObject({ corpusId: "two", processingVideoId: null });
+  });
+
+  test("only well-formed processing paths are processing routes", () => {
+    expect(readProcessingRoute(new URL("http://localhost/processing/attempts"))).toBeNull();
+    expect(readProcessingRoute(new URL("http://localhost/processing/runs/x"))).toBeNull();
+    expect(readProcessingRoute(new URL("http://localhost/videos"))).toBeNull();
   });
 });

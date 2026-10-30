@@ -22,7 +22,6 @@ import {
 import {
   getDetectorProfiles,
   getVideoDetectorPlan,
-  listCorpusVideos,
   runVideoDetectorPlan,
   setCorpusDetectors,
   setSourceDetectors,
@@ -65,21 +64,35 @@ function fromDraft(draft: Draft): DetectorSetting[] {
     }));
 }
 
-/** Corpus detector profile, tracked-source overrides and per-video effective plans (#63). */
-export function CorpusDetectors({ corpusId }: { corpusId: string }) {
-  const profilesQuery = useQuery({
+export function useDetectorProfiles(corpusId: string) {
+  return useQuery({
     queryKey: corpusKeys.detectorProfiles(corpusId),
     queryFn: () => getDetectorProfiles(corpusId),
   });
+}
+
+function describeSetting(setting: DetectorSetting | undefined, inherit: string) {
+  if (!setting) return inherit;
+  if (!setting.enabled) return "off";
+  return setting.targetLanguages.length > 0 ? `on → ${setting.targetLanguages.join(", ")}` : "on";
+}
+
+/**
+ * The corpus pipeline: every detector stage with its corpus default, tracked-source overrides
+ * and availability (#63, #103). Settings are edited here and only here.
+ */
+export function PipelineStages({ corpusId }: { corpusId: string }) {
+  const profilesQuery = useDetectorProfiles(corpusId);
   const profiles = profilesQuery.data;
   return (
     <Surface>
       <SurfaceHeader>
-        <SurfaceTitle>Detectors</SurfaceTitle>
+        <SurfaceTitle>Pipeline stages</SurfaceTitle>
         <SurfaceDescription>
-          Choose which analyses run. The corpus sets the default; a tracked source can switch single
-          detectors on or off; a video can be overridden within this corpus only. A video found
-          through several sources gets every detector any of them requests, run once.
+          The corpus sets the default; a tracked source can switch single stages on or off; a video
+          can be overridden within this corpus only. A video found through several sources gets
+          every stage any of them requests, run once. Reusable workflow definitions are not
+          integrated yet, so this corpus detector plan is the pipeline.
         </SurfaceDescription>
       </SurfaceHeader>
       <SurfaceContent className="grid gap-6">
@@ -92,26 +105,70 @@ export function CorpusDetectors({ corpusId }: { corpusId: string }) {
         ) : null}
         {profiles ? (
           <>
-            <ScopeEditor
-              title="Corpus default"
-              corpusId={corpusId}
-              detectors={profiles.detectors}
-              settings={profiles.corpus}
-              allowInherit={false}
-              save={(settings) => setCorpusDetectors(corpusId, settings)}
-            />
-            {profiles.sources.map((source) => (
-              <ScopeEditor
-                key={source.sourceId}
-                title={`Source: ${source.name ?? source.sourceUrl}`}
-                corpusId={corpusId}
-                detectors={profiles.detectors}
-                settings={source.settings}
-                allowInherit
-                save={(settings) => setSourceDetectors(corpusId, source.sourceId, settings)}
-              />
-            ))}
-            <VideoPlan corpusId={corpusId} detectors={profiles.detectors} />
+            <ol className="grid gap-2" aria-label="Pipeline stages">
+              {profiles.detectors.map((detector) => {
+                const corpusSetting = profiles.corpus.find(
+                  (setting) => setting.detector === detector.id,
+                );
+                const overrides = profiles.sources.flatMap((source) => {
+                  const setting = source.settings.find((entry) => entry.detector === detector.id);
+                  return setting
+                    ? [`${source.name ?? source.sourceUrl}: ${describeSetting(setting, "")}`]
+                    : [];
+                });
+                return (
+                  <li
+                    key={detector.id}
+                    className="grid gap-1 rounded-md border border-border px-3 py-2 sm:grid-cols-[minmax(12rem,1fr)_auto] sm:items-center"
+                  >
+                    <div className="grid min-w-0 gap-0.5">
+                      <span className="font-medium">{detector.label}</span>
+                      <span className="text-xs text-muted-foreground">{detector.producer}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      {detector.available ? null : <Badge variant="outline">Unavailable</Badge>}
+                      <Badge variant={corpusSetting?.enabled ? "default" : "secondary"}>
+                        Corpus: {describeSetting(corpusSetting, "off")}
+                      </Badge>
+                      {overrides.map((override) => (
+                        <Badge key={override} variant="outline">
+                          {override}
+                        </Badge>
+                      ))}
+                    </div>
+                    {detector.note && !detector.available ? (
+                      <span className="text-xs text-muted-foreground sm:col-span-2">
+                        {detector.note}
+                      </span>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ol>
+            <details className="grid gap-4">
+              <summary className="cursor-pointer text-sm font-medium">Edit stage settings</summary>
+              <div className="mt-3 grid gap-6">
+                <ScopeEditor
+                  title="Corpus default"
+                  corpusId={corpusId}
+                  detectors={profiles.detectors}
+                  settings={profiles.corpus}
+                  allowInherit={false}
+                  save={(settings) => setCorpusDetectors(corpusId, settings)}
+                />
+                {profiles.sources.map((source) => (
+                  <ScopeEditor
+                    key={source.sourceId}
+                    title={`Source: ${source.name ?? source.sourceUrl}`}
+                    corpusId={corpusId}
+                    detectors={profiles.detectors}
+                    settings={source.settings}
+                    allowInherit
+                    save={(settings) => setSourceDetectors(corpusId, source.sourceId, settings)}
+                  />
+                ))}
+              </div>
+            </details>
           </>
         ) : null}
       </SurfaceContent>
@@ -250,17 +307,20 @@ function DetectorTable({
   );
 }
 
-function VideoPlan({ corpusId, detectors }: { corpusId: string; detectors: DetectorInfo[] }) {
+/** One video's effective plan, its corpus-local overrides and the whole-plan run control. */
+export function VideoPlan({
+  corpusId,
+  videoId,
+  detectors,
+}: {
+  corpusId: string;
+  videoId: string;
+  detectors: DetectorInfo[];
+}) {
   const queryClient = useQueryClient();
-  const videosQuery = useQuery({
-    queryKey: corpusKeys.videos(corpusId, 200),
-    queryFn: () => listCorpusVideos(corpusId, 200),
-  });
-  const [videoId, setVideoId] = React.useState<string>("");
   const planQuery = useQuery({
     queryKey: corpusKeys.detectorPlan(corpusId, videoId),
     queryFn: () => getVideoDetectorPlan(corpusId, videoId),
-    enabled: videoId !== "",
   });
   const [draft, setDraft] = React.useState<Draft>({});
   React.useEffect(() => {
@@ -274,14 +334,8 @@ function VideoPlan({ corpusId, detectors }: { corpusId: string; detectors: Detec
   });
   const runMutation = useMutation({
     mutationFn: () => runVideoDetectorPlan(corpusId, videoId, refresh),
-    onSettled: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: corpusKeys.detectorPlan(corpusId, videoId) }),
-        queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "videos"] }),
-        queryClient.invalidateQueries({ queryKey: corpusKeys.quality(corpusId) }),
-        queryClient.invalidateQueries({ queryKey: ["corpora", corpusId, "entities"] }),
-      ]);
-    },
+    // Plans, stage status, attempts, videos, quality and entities all live under the corpus.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ["corpora", corpusId] }),
   });
 
   const plan = planQuery.data
@@ -299,23 +353,8 @@ function VideoPlan({ corpusId, detectors }: { corpusId: string; detectors: Detec
 
   return (
     <section className="grid gap-2" aria-label="Video detector plan">
-      <h3 className="text-sm font-semibold">Effective plan for a video</h3>
-      <NativeSelect
-        aria-label="Video"
-        value={videoId}
-        onChange={(event) => {
-          setVideoId(event.target.value);
-          runMutation.reset();
-        }}
-      >
-        <option value="">Choose a video</option>
-        {videosQuery.data?.map((video) => (
-          <option key={video.id} value={video.id}>
-            {video.title ?? video.sourceUrl}
-          </option>
-        ))}
-      </NativeSelect>
-      {planQuery.isFetching ? <LoadingState label="Resolving plan" /> : null}
+      <h3 className="text-sm font-semibold">Effective plan</h3>
+      {planQuery.isPending ? <LoadingState label="Resolving plan" /> : null}
       {planQuery.error ? (
         <p role="alert" className="text-sm text-destructive">
           {errorMessage(planQuery.error)}

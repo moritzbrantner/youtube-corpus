@@ -50,6 +50,7 @@ import {
   momentModality,
   navigateInApp,
   navigateInPlace,
+  processingUrl,
   readUrlState,
   videoUrl,
 } from "./url-state";
@@ -152,6 +153,13 @@ export function CorpusVideoPage({ corpusId, route }: CorpusVideoPageProps) {
         <SurfaceContent className="grid gap-3">
           <VideoProcessing corpusId={corpusId} videoId={videoId} />
           <VideoReprocessControl corpusId={corpusId} video={data.video} />
+          <a
+            className="text-sm underline-offset-2 hover:underline"
+            href={processingUrl(new URL(window.location.href), videoId).href}
+            onClick={navigateInApp}
+          >
+            Plan, overrides and attempt history in Processing
+          </a>
         </SurfaceContent>
       </Surface>
     </div>

@@ -21,11 +21,11 @@ import {
 
 import { listCorpora } from "./api";
 import { CorpusAnnotations } from "./CorpusAnnotations";
-import { CorpusDetectors } from "./CorpusDetectors";
 import { CorpusEntities } from "./CorpusEntities";
 import { CorpusEvaluation } from "./CorpusEvaluation";
 import { CorpusLabels } from "./CorpusLabels";
 import { CorpusPicker } from "./CorpusPicker";
+import { CorpusProcessingPage } from "./CorpusProcessing";
 import { CorpusSearch } from "./CorpusSearch";
 import { CorpusSourcesPage } from "./CorpusSourcesPage";
 import { CorpusVideoPage } from "./CorpusVideoPage";
@@ -35,6 +35,7 @@ import {
   corpusPageUrl,
   directoryUrl,
   type CorpusPage,
+  readProcessingRoute,
   readVideoRoute,
   useCorpusUrlState,
 } from "./url-state";
@@ -44,11 +45,14 @@ const pageTitles: Record<CorpusPage, string> = {
   search: "Search",
   sources: "Channels & Sources",
   videos: "Videos",
+  processing: "Processing",
 };
 
 export function CorpusWorkspace({ page }: { page: CorpusPage }) {
   const { state, update } = useCorpusUrlState();
   const videoRoute = page === "videos" ? readVideoRoute(new URL(window.location.href)) : null;
+  const processingRoute =
+    page === "processing" ? readProcessingRoute(new URL(window.location.href)) : null;
   const corporaQuery = useQuery({
     queryKey: corpusKeys.all,
     queryFn: listCorpora,
@@ -93,6 +97,11 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
                 id: "videos",
                 label: "Videos",
                 href: corpusPageUrl(new URL(window.location.href), "videos").href,
+              },
+              {
+                id: "processing",
+                label: "Processing",
+                href: corpusPageUrl(new URL(window.location.href), "processing").href,
               },
               { id: "analyzer", label: "Analyze video", href: "/" },
             ],
@@ -184,6 +193,11 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
                   <Button asChild variant="outline">
                     <a href={corpusPageUrl(new URL(window.location.href), "videos").href}>Videos</a>
                   </Button>
+                  <Button asChild variant="outline">
+                    <a href={corpusPageUrl(new URL(window.location.href), "processing").href}>
+                      Processing
+                    </a>
+                  </Button>
                 </div>
               ) : null}
             </div>
@@ -233,12 +247,28 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
                   <CorpusVideos key={selectedCorpus.id} corpusId={selectedCorpus.id} />
                 )
               ) : null}
+              {page === "processing" ? (
+                processingRoute ? (
+                  <CorpusProcessingPage
+                    key={selectedCorpus.id}
+                    corpusId={selectedCorpus.id}
+                    attemptId={processingRoute.attemptId}
+                    state={state}
+                    onUpdate={(patch) => update(patch)}
+                  />
+                ) : (
+                  <ErrorState>
+                    <StateViewTitle>Unknown processing page</StateViewTitle>
+                    <Button asChild variant="outline">
+                      <a href={corpusPageUrl(new URL(window.location.href), "processing").href}>
+                        Processing
+                      </a>
+                    </Button>
+                  </ErrorState>
+                )
+              ) : null}
               {page === "corpora" ? (
                 <>
-                  <CorpusDetectors
-                    key={`detectors:${selectedCorpus.id}`}
-                    corpusId={selectedCorpus.id}
-                  />
                   <CorpusEntities key={selectedCorpus.id} corpusId={selectedCorpus.id} />
                   <div className="grid gap-4 xl:grid-cols-2">
                     <CorpusEvaluation corpusId={selectedCorpus.id} />

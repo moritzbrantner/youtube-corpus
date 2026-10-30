@@ -140,6 +140,14 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
             post(run_video_plan),
         )
         .route(
+            "/api/corpora/{corpus_id}/detector-attempts",
+            get(list_detector_attempts),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/detector-attempts/{attempt_id}",
+            get(get_detector_attempt),
+        )
+        .route(
             "/api/corpora/{corpus_id}/face-matches",
             get(get_face_matches),
         )
@@ -895,6 +903,29 @@ async fn get_processing_status(
 ) -> Result<Json<crate::detector_status::VideoProcessingStatus>, ResearchError> {
     let pool = pool(&state).await?;
     crate::detector_status::video_status(&pool, corpus_id, video_id)
+        .await
+        .map(Json)
+        .map_err(map_detector_error)
+}
+
+async fn list_detector_attempts(
+    State(state): State<ResearchState>,
+    AxumPath(corpus_id): AxumPath<Uuid>,
+    Query(filter): Query<crate::detector_status::AttemptFilter>,
+) -> Result<Json<Vec<crate::detector_status::AttemptSummary>>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::detector_status::list_attempts(&pool, corpus_id, &filter)
+        .await
+        .map(Json)
+        .map_err(map_detector_error)
+}
+
+async fn get_detector_attempt(
+    State(state): State<ResearchState>,
+    AxumPath((corpus_id, attempt_id)): AxumPath<(Uuid, Uuid)>,
+) -> Result<Json<crate::detector_status::AttemptDetail>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::detector_status::attempt_detail(&pool, corpus_id, attempt_id)
         .await
         .map(Json)
         .map_err(map_detector_error)

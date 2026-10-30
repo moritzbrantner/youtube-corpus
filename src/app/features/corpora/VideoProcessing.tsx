@@ -1,12 +1,37 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Badge, Button } from "@moritzbrantner/ui";
-import { getVideoProcessingStatus, runVideoDetectorPlan } from "./api";
+import { getVideoProcessingStatus, runVideoDetectorPlan, type StageState } from "./api";
 import { corpusKeys } from "./query-keys";
 
-export function VideoProcessing({ corpusId, videoId }: { corpusId: string; videoId: string }) {
+/**
+ * Only `completed` reads as success. Failures are destructive, running work is secondary, and
+ * every other state (skipped, unavailable, missing or incomplete evidence, held for review,
+ * disabled) is an outlined badge naming the state.
+ */
+export function StageStateBadge({ state }: { state: StageState }) {
+  const variant =
+    state === "completed"
+      ? "default"
+      : state === "failed" || state === "interrupted"
+        ? "destructive"
+        : state === "running"
+          ? "secondary"
+          : "outline";
+  return <Badge variant={variant}>{state.replaceAll("_", " ")}</Badge>;
+}
+
+export function VideoProcessing({
+  corpusId,
+  videoId,
+  defaultOpen = false,
+}: {
+  corpusId: string;
+  videoId: string;
+  defaultOpen?: boolean;
+}) {
   const client = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultOpen);
   const retry = useMutation({
     mutationFn: ({ detector, refresh }: { detector: string; refresh: boolean }) =>
       runVideoDetectorPlan(corpusId, videoId, refresh, [detector]),
@@ -26,6 +51,7 @@ export function VideoProcessing({ corpusId, videoId }: { corpusId: string; video
   });
   return (
     <details
+      open={defaultOpen || undefined}
       onToggle={(event) => {
         setExpanded(event.currentTarget.open);
       }}
@@ -53,9 +79,7 @@ export function VideoProcessing({ corpusId, videoId }: { corpusId: string; video
               {stage.sourceLanguages.length > 0 ? ` (${stage.sourceLanguages.join(", ")})` : ""}
               {stage.targetLanguage ? ` → ${stage.targetLanguage}` : ""}
             </span>
-            <Badge variant={stage.state === "failed" ? "destructive" : "outline"}>
-              {stage.state.replaceAll("_", " ")}
-            </Badge>
+            <StageStateBadge state={stage.state} />
             <span className="text-xs text-muted-foreground">
               {stage.outputCount} retained outputs
             </span>

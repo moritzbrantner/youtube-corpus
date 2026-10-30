@@ -1,6 +1,6 @@
 import type { SearchTranscriptsInput } from "../../api";
 
-import type { CorpusVideoFilter } from "./api";
+import type { CorpusVideoFilter, DetectorAttemptFilter } from "./api";
 
 export const corpusKeys = {
   all: ["corpora"] as const,
@@ -37,6 +37,10 @@ export const corpusKeys = {
     ["corpora", corpusId, "detectors", "plan", videoId] as const,
   processingStatus: (corpusId: string, videoId: string) =>
     ["corpora", corpusId, "detectors", "plan", videoId, "status"] as const,
+  attempts: (corpusId: string, filter: DetectorAttemptFilter) =>
+    ["corpora", corpusId, "attempts", filter] as const,
+  attempt: (corpusId: string, attemptId: string) =>
+    ["corpora", corpusId, "attempts", "detail", attemptId] as const,
   context: (segmentId: string) =>
     ["transcript-context", segmentId, { before: 4, after: 6 }] as const,
 };

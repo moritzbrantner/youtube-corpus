@@ -901,6 +901,66 @@ export function getVideoProcessingStatus(corpusId: string, videoId: string) {
   );
 }
 
+export type StageState = VideoProcessingStatus["stages"][number]["state"];
+
+/** States a recorded attempt can be in; `interrupted` is a running row without a live owner. */
+export const attemptStates = [
+  "running",
+  "interrupted",
+  "completed",
+  "skipped",
+  "failed",
+  "unavailable",
+] as const;
+export type AttemptState = (typeof attemptStates)[number];
+
+export type DetectorAttempt = {
+  id: string;
+  videoId: string;
+  videoTitle: string | null;
+  videoSourceUrl: string;
+  detector: string;
+  label: string;
+  state: AttemptState;
+  message: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  /** Newest attempt of its video stage; older attempts are superseded. */
+  latest: boolean;
+};
+
+export type DetectorAttemptDetail = DetectorAttempt & {
+  identity: unknown;
+  history: DetectorAttempt[];
+};
+
+export type DetectorAttemptFilter = {
+  videoId?: string;
+  detector?: string;
+  state?: string;
+  latest?: boolean;
+  limit?: number;
+};
+
+export function listDetectorAttempts(corpusId: string, filter: DetectorAttemptFilter = {}) {
+  const params = new URLSearchParams();
+  if (filter.videoId) params.set("videoId", filter.videoId);
+  if (filter.detector) params.set("detector", filter.detector);
+  if (filter.state) params.set("state", filter.state);
+  if (filter.latest) params.set("latest", "true");
+  if (filter.limit) params.set("limit", String(filter.limit));
+  const query = params.toString();
+  return apiFetch<DetectorAttempt[]>(
+    `/api/corpora/${corpusId}/detector-attempts${query ? `?${query}` : ""}`,
+  );
+}
+
+export function getDetectorAttempt(corpusId: string, attemptId: string) {
+  return apiFetch<DetectorAttemptDetail>(
+    `/api/corpora/${corpusId}/detector-attempts/${encodeURIComponent(attemptId)}`,
+  );
+}
+
 export type FaceEvidence = {
   trackId: string;
   videoId: string;
