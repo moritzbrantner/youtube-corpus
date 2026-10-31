@@ -1001,9 +1001,20 @@ async fn run_stage_inner(
                         "entity mentions are retained, but person name inference failed: {error:#}"
                     )
                 })?;
+            let events =
+                crate::event_extraction::extract_video_event_claims(pool, request.video_id)
+                    .await
+                    .map_err(|error| {
+                        anyhow::anyhow!(
+                    "entity mentions are retained, but event claim suggestion failed: {error:#}"
+                )
+                    })?;
             Ok((
                 StageOutcome::Completed,
-                Some(format!("{} mentions", report.mentions)),
+                Some(format!(
+                    "{} mentions, {} new unreviewed event claims",
+                    report.mentions, events.claims_suggested
+                )),
             ))
         }
         "translate_spoken" | "translate_ocr" => {

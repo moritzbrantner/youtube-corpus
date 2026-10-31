@@ -1,6 +1,16 @@
+import { useQuery } from "@tanstack/react-query";
 import * as React from "react";
 
-import { Badge, Button, Input, NativeSelect } from "@moritzbrantner/ui";
+import {
+  Badge,
+  Button,
+  ErrorState,
+  Input,
+  LoadingState,
+  NativeSelect,
+  StateViewDescription,
+  StateViewTitle,
+} from "@moritzbrantner/ui";
 import {
   Surface,
   SurfaceContent,
@@ -9,9 +19,11 @@ import {
   SurfaceTitle,
 } from "@moritzbrantner/ui/shell";
 
-import type { IdentityLocalUnit, IdentityProfile } from "./api";
+import { getHistoricalTimeline, type IdentityLocalUnit, type IdentityProfile } from "./api";
 import { MentionVideos, PublicationDate, TrackVideos } from "./CorpusEntities";
+import { errorMessage } from "./CorpusLabels";
 import { formatInterval, timestampUrl } from "./evidence";
+import { HistoricalTimeline } from "./HistoricalTimeline";
 import {
   axisTicks,
   dateMs,
@@ -25,7 +37,6 @@ import {
   type TimelineVideo,
 } from "./publication-timeline";
 import {
-  corpusPageUrl,
   evidenceKinds,
   navigateInApp,
   patchCorpusUrl,
@@ -59,6 +70,7 @@ export function ProfileEvidence({ profile, corpusId, corpusName, state, onUpdate
   const occurrences = videos.reduce((sum, video) => sum + video.moments.length, 0);
   const undated = videos.filter((video) => !video.publicationDate).length;
   const scopedToCorpus = state.identityScope !== "all";
+  const historical = state.profileView === "historical";
   return (
     <Surface>
       <SurfaceHeader>
@@ -99,6 +111,7 @@ export function ProfileEvidence({ profile, corpusId, corpusName, state, onUpdate
             Evidence type
             <NativeSelect
               aria-label="Evidence type"
+              disabled={historical}
               value={state.evidenceKind}
               onChange={(event) => onUpdate({ evidenceKind: event.target.value as EvidenceKind })}
             >
@@ -115,6 +128,7 @@ export function ProfileEvidence({ profile, corpusId, corpusName, state, onUpdate
             <Input
               type="date"
               aria-label="Published from"
+              disabled={historical}
               value={state.publishedFrom}
               onChange={(event) => onUpdate({ publishedFrom: event.target.value }, "replace")}
             />
@@ -124,6 +138,7 @@ export function ProfileEvidence({ profile, corpusId, corpusName, state, onUpdate
             <Input
               type="date"
               aria-label="Published to"
+              disabled={historical}
               value={state.publishedTo}
               onChange={(event) => onUpdate({ publishedTo: event.target.value }, "replace")}
             />
@@ -145,21 +160,37 @@ export function ProfileEvidence({ profile, corpusId, corpusName, state, onUpdate
             >
               Publication timeline
             </Button>
+            <Button
+              type="button"
+              variant={historical ? "default" : "outline"}
+              aria-pressed={historical}
+              onClick={() => onUpdate({ profileView: "historical" })}
+            >
+              Historical timeline
+            </Button>
           </div>
         </div>
-        <p
-          className="text-sm text-muted-foreground"
-          aria-live="polite"
-          data-testid="evidence-count"
-        >
-          {occurrences} {occurrences === 1 ? "occurrence" : "occurrences"} in {videos.length}{" "}
-          {videos.length === 1 ? "video" : "videos"}
-          {undated > 0 ? `; ${undated} without a known publication date` : ""}
-          {state.publishedFrom || state.publishedTo
-            ? ". Videos with unknown publication dates are outside any date range."
-            : "."}
-        </p>
-        {state.profileView === "timeline" ? (
+        {historical ? (
+          <IdentityHistoricalTimeline
+            identityId={profile.identity.id}
+            corpusId={corpusId}
+            scopedToCorpus={scopedToCorpus}
+          />
+        ) : (
+          <p
+            className="text-sm text-muted-foreground"
+            aria-live="polite"
+            data-testid="evidence-count"
+          >
+            {occurrences} {occurrences === 1 ? "occurrence" : "occurrences"} in {videos.length}{" "}
+            {videos.length === 1 ? "video" : "videos"}
+            {undated > 0 ? `; ${undated} without a known publication date` : ""}
+            {state.publishedFrom || state.publishedTo
+              ? ". Videos with unknown publication dates are outside any date range."
+              : "."}
+          </p>
+        )}
+        {historical ? null : state.profileView === "timeline" ? (
           <PublicationTimeline videos={videos} state={state} onUpdate={onUpdate} />
         ) : (
           <EvidenceList evidence={evidence} unitsByKey={unitsByKey} />
@@ -205,7 +236,40 @@ function EvidenceList({
   );
 }
 
-function useElementWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
+/** Events this identity takes part in (participant or place claims), on the historical axis. */
+function IdentityHistoricalTimeline({
+  identityId,
+  corpusId,
+  scopedToCorpus,
+}: {
+  identityId: string;
+  corpusId: string;
+  scopedToCorpus: boolean;
+}) {
+  const scope = scopedToCorpus ? corpusId : null;
+  const query = useQuery({
+    queryKey: ["events", "timeline", "identity", identityId, scope],
+    queryFn: () => getHistoricalTimeline({ identityId, corpusId: scope }),
+  });
+  if (query.isPending) return <LoadingState label="Loading historical timeline" />;
+  if (query.error) {
+    return (
+      <ErrorState>
+        <StateViewTitle>Historical timeline unavailable</StateViewTitle>
+        <StateViewDescription>{errorMessage(query.error)}</StateViewDescription>
+      </ErrorState>
+    );
+  }
+  return (
+    <HistoricalTimeline
+      timeline={query.data}
+      corpusId={corpusId}
+      empty="No event claims name this identity as a participant or place yet. Evidence type and publication filters do not apply here."
+    />
+  );
+}
+
+export function useElementWidth<T extends HTMLElement>(): [React.RefObject<T | null>, number] {
   const ref = React.useRef<T>(null);
   const [width, setWidth] = React.useState(0);
   React.useLayoutEffect(() => {
@@ -232,7 +296,7 @@ function markerLabel(video: TimelineVideo) {
   }`;
 }
 
-function PublicationTimeline({
+export function PublicationTimeline({
   videos,
   state,
   onUpdate,
@@ -301,13 +365,6 @@ function PublicationTimeline({
           />{" "}
           Inferred face/voice identity
         </span>
-        <a
-          className="ml-auto underline"
-          href={corpusPageUrl(new URL(window.location.href), "events").href}
-          onClick={navigateInApp}
-        >
-          Historical event dates are on Events
-        </a>
       </div>
       <div
         ref={trackRef}

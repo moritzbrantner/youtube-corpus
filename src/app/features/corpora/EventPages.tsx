@@ -24,7 +24,9 @@ import {
   addEventClaim,
   correctEvent,
   createEvent,
+  extractEventClaims,
   getEventProfile,
+  getHistoricalTimeline,
   listEvents,
   listIdentities,
   loadTranscriptContext,
@@ -37,6 +39,15 @@ import {
 } from "./api";
 import { errorMessage } from "./CorpusLabels";
 import { formatInterval } from "./evidence";
+import { formatEventDate, formatYear } from "./historical-timeline";
+import {
+  ExtractionNote,
+  HistoricalTimeline,
+  reviewLabels,
+  SourceQuote,
+} from "./HistoricalTimeline";
+import { PublicationTimeline } from "./ProfileEvidence";
+import type { TimelineVideo } from "./publication-timeline";
 import {
   corpusPageUrl,
   eventUrl,
@@ -72,27 +83,96 @@ export function EventPages(props: Props) {
   );
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-function formatYear(year: number) {
-  return year < 0 ? `${-year} BC` : `${year}`;
+function ViewSwitch({
+  views,
+  state,
+  onUpdate,
+}: {
+  views: [CorpusUrlState["profileView"], string][];
+  state: CorpusUrlState;
+  onUpdate: Props["onUpdate"];
+}) {
+  return (
+    <div className="flex flex-wrap gap-1" role="group" aria-label="Event view">
+      {views.map(([view, label]) => (
+        <Button
+          key={view || "list"}
+          type="button"
+          variant={state.profileView === view ? "default" : "outline"}
+          aria-pressed={state.profileView === view}
+          onClick={() => onUpdate({ profileView: view })}
+        >
+          {label}
+        </Button>
+      ))}
+    </div>
+  );
 }
 
-function formatPoint(year: number, month?: number | null, day?: number | null) {
-  return [day ?? null, month ? MONTHS[month - 1] : null, formatYear(year)]
-    .filter((part) => part !== null)
-    .join(" ");
+function TimelineQuery({
+  filter,
+  corpusId,
+  empty,
+}: {
+  filter: { corpusId: string | null; eventId?: string };
+  corpusId: string;
+  empty: string;
+}) {
+  const query = useQuery({
+    queryKey: ["events", "timeline", filter.eventId ?? null, filter.corpusId],
+    queryFn: () => getHistoricalTimeline(filter),
+  });
+  if (query.isPending) return <LoadingState label="Loading historical timeline" />;
+  if (query.error) {
+    return (
+      <ErrorState>
+        <StateViewTitle>Historical timeline unavailable</StateViewTitle>
+        <StateViewDescription>{errorMessage(query.error)}</StateViewDescription>
+      </ErrorState>
+    );
+  }
+  return <HistoricalTimeline timeline={query.data} corpusId={corpusId} empty={empty} />;
 }
 
-/** `14 Oct 1066`, `c. 1067`, `44 BC – 43 BC`; a missing date stays visibly unknown. */
-export function formatEventDate(date: EventDate | null) {
-  if (!date) return "Date unknown";
-  const start = formatPoint(date.startYear, date.startMonth, date.startDay);
-  const text =
-    date.endYear != null
-      ? `${start} – ${formatPoint(date.endYear, date.endMonth, date.endDay)}`
-      : start;
-  return date.approximate ? `c. ${text}` : text;
+/** An event's claims grouped by video, for the publication timeline. */
+function claimVideos(claims: EventClaim[], corpusId: string, corpusName: string): TimelineVideo[] {
+  const byVideo = new Map<string, TimelineVideo>();
+  for (const claim of claims) {
+    let video = byVideo.get(claim.videoId);
+    if (!video) {
+      video = {
+        videoId: claim.videoId,
+        title: claim.videoTitle,
+        sourceUrl: claim.sourceUrl,
+        publicationDate: claim.publicationDate,
+        corpora: [{ id: corpusId, name: corpusName }],
+        counts: { spoken: 0, ocr: 0, shown: 0, heard: 0 },
+        inferred: false,
+        moments: [],
+      };
+      byVideo.set(claim.videoId, video);
+    }
+    const kind = claim.modality === "visible" ? "ocr" : "spoken";
+    video.counts[kind] += 1;
+    video.moments.push({
+      id: claim.id,
+      kind,
+      corpusId,
+      startSeconds: claim.startSeconds,
+      endSeconds: claim.endSeconds,
+      moment: { modality: claim.modality, evidenceId: claim.evidenceId },
+      text: claim.evidenceText,
+      provenance: `${claim.predicate} claim · ${reviewLabels[claim.reviewStatus]}${
+        claim.extraction ? ` · ${claim.extraction.producer}` : ""
+      }`,
+    });
+  }
+  return [...byVideo.values()].sort(
+    (a, b) =>
+      (a.publicationDate === null ? 1 : 0) - (b.publicationDate === null ? 1 : 0) ||
+      (a.publicationDate ?? "").localeCompare(b.publicationDate ?? "") ||
+      a.videoId.localeCompare(b.videoId),
+  );
 }
 
 function ScopeSelect({
@@ -365,6 +445,11 @@ function EventList({
     queryKey: eventKeys.list(scopedCorpus, state.identityQuery),
     queryFn: () => listEvents({ corpusId: scopedCorpus, q: state.identityQuery }),
   });
+  const suggest = useMutation({
+    mutationFn: () => extractEventClaims(corpusId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: eventKeys.all }),
+  });
+  const historical = state.profileView === "historical";
   const create = useMutation({
     mutationFn: () => createEvent(label, claimFromMoment(moment!, claim!)),
     onSuccess: async ({ id }) => {
@@ -441,22 +526,69 @@ function EventList({
           </label>
           <Button type="submit">Filter</Button>
         </form>
-        {listQuery.isPending ? <LoadingState label="Loading events" /> : null}
-        {listQuery.error ? (
+        <section
+          className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2"
+          aria-label="Suggest claims"
+        >
+          <Button
+            type="button"
+            variant="outline"
+            disabled={suggest.isPending}
+            onClick={() => suggest.mutate()}
+          >
+            {suggest.isPending ? "Reading transcripts and OCR…" : "Suggest dated claims"}
+          </Button>
+          <span className="text-sm text-muted-foreground" aria-live="polite">
+            {suggest.data
+              ? `${suggest.data.claimsSuggested} new unverified ${
+                  suggest.data.claimsSuggested === 1 ? "claim" : "claims"
+                } from ${suggest.data.segmentsAnalyzed} transcript segments and ${
+                  suggest.data.visualTextTracksAnalyzed
+                } on-screen texts in ${corpusName}; ${suggest.data.claimsKept} kept, ${
+                  suggest.data.reviewedSkipped
+                } already reviewed, ${suggest.data.staleRemoved} no longer found, ${
+                  suggest.data.lowConfidenceDropped
+                } low-confidence dates skipped.`
+              : `Finds dates in ${corpusName}'s transcripts and on-screen text and adds them as unverified claims for review. Reviewed claims are never changed.`}
+          </span>
+          {suggest.error ? (
+            <p role="alert" className="text-sm text-destructive">
+              {errorMessage(suggest.error)}
+            </p>
+          ) : null}
+        </section>
+        <ViewSwitch
+          views={[
+            ["", "Event list"],
+            ["historical", "Historical timeline"],
+          ]}
+          state={state}
+          onUpdate={onUpdate}
+        />
+        {historical ? (
+          <TimelineQuery
+            filter={{ corpusId: scopedCorpus }}
+            corpusId={corpusId}
+            empty="No event has a date claim in this scope yet."
+          />
+        ) : null}
+        {historical ? null : listQuery.isPending ? <LoadingState label="Loading events" /> : null}
+        {!historical && listQuery.error ? (
           <ErrorState>
             <StateViewTitle>Events unavailable</StateViewTitle>
             <StateViewDescription>{errorMessage(listQuery.error)}</StateViewDescription>
           </ErrorState>
         ) : null}
-        {listQuery.data?.length === 0 ? (
+        {!historical && listQuery.data?.length === 0 ? (
           <StateView variant="empty">
             <StateViewTitle>No events</StateViewTitle>
             <StateViewDescription>
-              Open a video moment and choose “Record event claim” to start one.
+              Suggest dated claims from this corpus, or open a video moment and choose “Record event
+              claim”.
             </StateViewDescription>
           </StateView>
         ) : null}
-        {listQuery.data && listQuery.data.length > 0 ? (
+        {!historical && listQuery.data && listQuery.data.length > 0 ? (
           <ul className="grid gap-2" aria-label="Events">
             {listQuery.data.map((event) => (
               <li
@@ -486,12 +618,6 @@ function EventList({
     </Surface>
   );
 }
-
-const reviewLabels: Record<EventClaim["reviewStatus"], string> = {
-  unverified: "Unverified",
-  confirmed: "Confirmed",
-  rejected: "Rejected",
-};
 
 function ClaimRow({
   claim,
@@ -604,8 +730,9 @@ function ClaimRow({
           {claim.modality === "visible" ? "On-screen text" : "Spoken"} ·{" "}
           {formatInterval(claim.startSeconds, claim.endSeconds)}
         </span>
-        <span>{claim.evidenceText ?? "The original evidence was reprocessed or removed."}</span>
+        <SourceQuote claim={claim} />
       </a>
+      <ExtractionNote claim={claim} />
     </li>
   );
 }
@@ -740,6 +867,45 @@ function EventProfilePage({
               {errorMessage(correction.error)}
             </p>
           ) : null}
+          <ViewSwitch
+            views={[
+              ["", "Claims"],
+              ["timeline", "Publication timeline"],
+              ["historical", "Historical timeline"],
+            ]}
+            state={state}
+            onUpdate={onUpdate}
+          />
+          {state.profileView === "timeline" ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                The videos these claims come from, by when they were published, not by the dates
+                they claim.
+              </p>
+              <PublicationTimeline
+                videos={claimVideos(profile.claims, corpusId, corpusName)}
+                state={state}
+                onUpdate={onUpdate}
+              />
+            </>
+          ) : null}
+          {state.profileView === "historical" ? (
+            <TimelineQuery
+              filter={{ corpusId: scopedCorpus, eventId: event.id }}
+              corpusId={corpusId}
+              empty="No date claims in this scope."
+            />
+          ) : null}
+        </SurfaceContent>
+      </Surface>
+      <Surface hidden={state.profileView !== ""}>
+        <SurfaceHeader>
+          <SurfaceTitle>Claims</SurfaceTitle>
+          <SurfaceDescription>
+            Suggested claims stay unverified until you confirm or reject them.
+          </SurfaceDescription>
+        </SurfaceHeader>
+        <SurfaceContent className="grid gap-4">
           <section className="grid gap-2" aria-label="Date claims">
             <h3 className="text-sm font-semibold">Date claims</h3>
             {dates.length === 0 ? (

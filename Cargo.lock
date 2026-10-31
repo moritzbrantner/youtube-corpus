@@ -5128,6 +5128,7 @@ dependencies = [
  "moenarch-video-analysis-ingest",
  "native-whisperx",
  "open",
+ "regex",
  "rust-embed",
  "search-engine",
  "serde",

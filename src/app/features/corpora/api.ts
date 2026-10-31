@@ -1209,7 +1209,57 @@ export type EventClaim = {
   qualification: string;
   reviewStatus: "unverified" | "confirmed" | "rejected";
   preferred: boolean;
+  sourceUrl: string;
+  /** The video's publication date; never the claimed historical date. */
+  publicationDate: string | null;
+  /** Set for an automatically suggested claim (#107); null when a researcher recorded it. */
+  extraction: ClaimExtraction | null;
 };
+export type ClaimExtraction = {
+  runId: string;
+  producer: string;
+  producerVersion: string;
+  /** The matched expression exactly as it appears in the evidence text. */
+  sourceText: string;
+  sourceByteStart: number;
+  sourceByteEnd: number;
+  confidence: number;
+  extractedAt: string | null;
+};
+/** Historical (claimed) dates by event, separate from publication dates (#107). */
+export type HistoricalTimeline = {
+  events: { event: EventSummary; claims: EventClaim[] }[];
+  truncated: boolean;
+};
+export function getHistoricalTimeline(filter: {
+  corpusId?: string | null;
+  identityId?: string;
+  eventId?: string;
+}) {
+  const params = new URLSearchParams();
+  if (filter.corpusId) params.set("corpusId", filter.corpusId);
+  if (filter.identityId) params.set("identityId", filter.identityId);
+  if (filter.eventId) params.set("eventId", filter.eventId);
+  return apiFetch<HistoricalTimeline>(`/api/events/timeline?${params}`);
+}
+export type EventClaimExtractionReport = {
+  producer: string;
+  producerVersion: string;
+  videosProcessed: number;
+  videosWithoutText: number;
+  segmentsAnalyzed: number;
+  visualTextTracksAnalyzed: number;
+  claimsSuggested: number;
+  claimsKept: number;
+  reviewedSkipped: number;
+  staleRemoved: number;
+  lowConfidenceDropped: number;
+};
+export function extractEventClaims(corpusId: string) {
+  return apiFetch<EventClaimExtractionReport>(`/api/corpora/${corpusId}/events/extract`, {
+    method: "POST",
+  });
+}
 export type EventProfile = {
   requestedId: string;
   event: EventSummary;

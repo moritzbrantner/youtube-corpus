@@ -196,6 +196,11 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
             post(correct_identity),
         )
         .route("/api/events", get(list_events).post(create_event))
+        .route("/api/events/timeline", get(historical_timeline))
+        .route(
+            "/api/corpora/{corpus_id}/events/extract",
+            post(extract_event_claims),
+        )
         .route("/api/events/{event_id}", get(event_profile))
         .route("/api/events/{event_id}/claims", post(add_event_claim))
         .route("/api/events/{event_id}/corrections", post(correct_event))
@@ -1135,6 +1140,10 @@ async fn extract_entities(
     crate::person_names::infer_person_names(&pool, corpus_id)
         .await
         .map_err(map_corpus_error)?;
+    // Event claim suggestions name the participants and places these mentions link to.
+    crate::event_extraction::extract_corpus_event_claims(&pool, corpus_id)
+        .await
+        .map_err(map_corpus_error)?;
     Ok(Json(report))
 }
 
@@ -1486,6 +1495,41 @@ async fn correct_event(
 ) -> Result<Json<crate::events::EventCorrectionReport>, ResearchError> {
     let pool = pool(&state).await?;
     crate::events::correct_event(&pool, event_id, input)
+        .await
+        .map(Json)
+        .map_err(map_event_error)
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct HistoricalTimelineInput {
+    corpus_id: Option<Uuid>,
+    identity_id: Option<Uuid>,
+    event_id: Option<Uuid>,
+}
+
+async fn historical_timeline(
+    State(state): State<ResearchState>,
+    Query(input): Query<HistoricalTimelineInput>,
+) -> Result<Json<crate::events::HistoricalTimeline>, ResearchError> {
+    let pool = pool(&state).await?;
+    let filter = crate::events::TimelineFilter {
+        corpus: input.corpus_id,
+        identity: input.identity_id,
+        event: input.event_id,
+    };
+    crate::events::historical_timeline(&pool, &filter)
+        .await
+        .map(Json)
+        .map_err(map_event_error)
+}
+
+async fn extract_event_claims(
+    State(state): State<ResearchState>,
+    AxumPath(corpus_id): AxumPath<Uuid>,
+) -> Result<Json<crate::event_extraction::EventClaimExtractionReport>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::event_extraction::extract_corpus_event_claims(&pool, corpus_id)
         .await
         .map(Json)
         .map_err(map_event_error)
