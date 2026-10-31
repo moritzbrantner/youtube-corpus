@@ -23,6 +23,7 @@ pub mod face_matching;
 pub mod face_processing;
 pub mod identities;
 pub mod ingest;
+pub mod media_acquisition;
 pub mod media_evidence;
 pub mod multimodal;
 pub mod person_names;

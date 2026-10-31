@@ -569,7 +569,8 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
             "Approve this video in its source before running detectors.".to_string(),
         ));
     }
-    let mut stages = Vec::new();
+    // Decide every stage first: only stages that will actually run shape the media to acquire.
+    let mut decided: Vec<Result<StageReport, &str>> = Vec::new();
     for planned in plan.detectors.iter().filter(|planned| {
         planned.enabled
             && request
@@ -579,11 +580,11 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
     }) {
         let detector = planned.detector.as_str();
         if !planned.available {
-            stages.push(StageReport {
+            decided.push(Ok(StageReport {
                 detector: detector.to_string(),
                 outcome: StageOutcome::Unavailable,
                 message: planned.note.clone(),
-            });
+            }));
             continue;
         }
         let failed = status.stages.iter().any(|s| {
@@ -594,13 +595,47 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
                         | crate::detector_status::StageState::Interrupted
                 )
         });
-        let report = match existing_output(&pool, &request, detector).await {
-            Ok(true) if !request.refresh && !failed && detector != "faces" => StageReport {
+        decided.push(match existing_output(&pool, &request, detector).await {
+            Ok(true) if !request.refresh && !failed && detector != "faces" => Ok(StageReport {
                 detector: detector.to_string(),
                 outcome: StageOutcome::Reused,
                 message: None,
-            },
-            Ok(_) => match run_stage(&pool, &request, detector).await {
+            }),
+            Ok(_) => Err(detector),
+            Err(error) => Ok(StageReport {
+                detector: detector.to_string(),
+                outcome: StageOutcome::Failed,
+                message: Some(format!("{error:#}")),
+            }),
+        });
+    }
+    // Acquire once, for everything that runs (#126): nothing, audio, or one video.
+    let need = crate::media_acquisition::MediaNeed::for_detectors(
+        decided
+            .iter()
+            .filter_map(|stage| stage.as_ref().err().copied()),
+    );
+    let media_error = crate::media_acquisition::ensure_media(
+        &pool,
+        request.video_id,
+        need,
+        &request.work_dir,
+        &request.yt_dlp,
+    )
+    .await
+    .err()
+    .map(|error| format!("could not acquire the source media this stage needs: {error:#}"));
+    let mut stages = Vec::new();
+    for stage in decided {
+        let detector = match stage {
+            Ok(report) => {
+                stages.push(report);
+                continue;
+            }
+            Err(detector) => detector,
+        };
+        stages.push(
+            match run_stage(&pool, &request, detector, media_error.as_deref()).await {
                 Ok((outcome, message)) => StageReport {
                     detector: detector.to_string(),
                     outcome,
@@ -612,13 +647,7 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
                     message: Some(format!("{error:#}")),
                 },
             },
-            Err(error) => StageReport {
-                detector: detector.to_string(),
-                outcome: StageOutcome::Failed,
-                message: Some(format!("{error:#}")),
-            },
-        };
-        stages.push(report);
+        );
     }
     Ok(PlanRunReport {
         video_id: request.video_id,
@@ -864,14 +893,26 @@ async fn run_stage(
     pool: &PgPool,
     request: &PlanRunRequest,
     detector: &str,
+    media_error: Option<&str>,
 ) -> anyhow::Result<(StageOutcome, Option<String>)> {
+    // Captions and ASR run through ingest, which records its own attempts and acquires
+    // ASR audio itself (reusing what the plan acquired).
     if matches!(detector, "captions" | "asr") {
         return run_stage_inner(pool, request, detector).await;
     }
     let identity = stage_identity(pool, request.video_id, detector).await?;
     let attempt =
         crate::detector_status::Attempt::begin(pool, request.video_id, detector, &identity).await?;
-    let mut result = run_stage_inner(pool, request, detector).await;
+    let mut result = match media_error {
+        // Never report a stage processed when its media could not be acquired.
+        Some(error)
+            if crate::media_acquisition::MediaNeed::for_detector(detector)
+                != crate::media_acquisition::MediaNeed::Nothing =>
+        {
+            Err(anyhow::anyhow!("{error}"))
+        }
+        _ => run_stage_inner(pool, request, detector).await,
+    };
     if result.is_ok() && stage_identity(pool, request.video_id, detector).await? != identity {
         result = Err(anyhow::anyhow!(
             "{detector} input changed during processing; retry the stage"

@@ -139,6 +139,10 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
   Status: adopted 2026-10-15. Answers 2.9.  
   An explicit per-video detector override applies **only within the corpus in which the user set it**. It does not change that video's effective detector plan in other corpora that also contain it; those corpora keep their own profiles and their own overrides. Identical work requested from several corpora is still reused under 2.2, and the effective plan shown in each corpus identifies the overrides that apply there.
 
+- **2.11 Acquire only the source media the enabled, still-to-run stages need.**  
+  Status: adopted 2026-10-31 (issue #126 defaults).  
+  Metadata, captions, entities and translations download no media. ASR and voices acquire an audio-only stream, preferring the original-language track over auto-dubs. Video stages acquire one video with audio at the lowest sufficient height (scenes 360p; faces and OCR 720p), shared by every stage of the plan. Each acquisition records its yt-dlp format ids, audio track language, byte size and SHA-256. A later plan that needs more, or finds the recorded file removed, acquires again; missing media is reported as a stage failure, never as processed. Local input files are used as they are and never acquired or replaced.
+
 ## 3. Finding material inside videos
 
 - **3.1 Search transcript words, phrases, and passages across the corpus.**  

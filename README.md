@@ -135,7 +135,7 @@ Common `yt-dlp` reliability options have typed flags, including
 `--yt-dlp-cookies-from-browser`, `--yt-dlp-retries`,
 `--yt-dlp-fragment-retries`, `--yt-dlp-sleep-interval-seconds`,
 `--yt-dlp-max-sleep-interval-seconds`, `--yt-dlp-socket-timeout-seconds`,
-`--yt-dlp-format`, and `--yt-dlp-user-agent`. Pass emergency compatibility
+and `--yt-dlp-user-agent`. Pass emergency compatibility
 arguments with repeated `--yt-dlp-arg` flags. Each raw flag is passed as one argv
 entry after the typed options to every `yt-dlp` call used by ingest, caption
 download, metadata download, media download, benchmark ingest, and saved
@@ -156,6 +156,18 @@ For YouTube sources, ingest downloads normalized video metadata with `yt-dlp`
 into each item's `metadata/` work-dir folder. The corpus stores common filter
 fields such as channel/uploader ids, thumbnails, counts, categories, tags, live
 status, availability, and age limit alongside the full normalized metadata JSON.
+
+Source media is acquired only for the enabled stages that still need to run.
+Captions, metadata, entities and translations download no media blob. ASR and
+voices fetch an audio-only stream (`ba/wa*`; yt-dlp's default `lang` sort picks
+the original-language track over auto-dubs). Scenes request video capped at
+360p, faces and OCR at 720p (`bv*[height<=H]+ba/b[height<=H]/wv*+ba/w`); one
+video download serves every stage. Each acquisition is recorded in
+`videos.media_acquisition` with the yt-dlp format ids, the audio track's
+language, the file's byte size and its SHA-256. A later plan that needs more
+(video after audio, or a higher cap) acquires again, as does a plan whose
+recorded file was removed. Local `--input` files are used as they are and never
+re-acquired.
 
 ## Subscriptions
 
