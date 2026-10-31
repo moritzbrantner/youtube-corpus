@@ -939,7 +939,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1041,7 +1041,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2126,7 +2126,7 @@ dependencies = [
 [[package]]
 name = "moenarch-audio-analysis-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1#ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1"
+source = "git+https://github.com/moritzbrantner/audio-analysis?rev=d9586adcc4240d08320019de8407f5ee5d2f1426#d9586adcc4240d08320019de8407f5ee5d2f1426"
 dependencies = [
  "moenarch-audio-contracts",
  "moenarch-math-signal-core",
@@ -2140,7 +2140,7 @@ dependencies = [
 [[package]]
 name = "moenarch-audio-analysis-io"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1#ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1"
+source = "git+https://github.com/moritzbrantner/audio-analysis?rev=d9586adcc4240d08320019de8407f5ee5d2f1426#d9586adcc4240d08320019de8407f5ee5d2f1426"
 dependencies = [
  "hound",
  "moenarch-audio-analysis-core",
@@ -2153,7 +2153,7 @@ dependencies = [
 [[package]]
 name = "moenarch-audio-analysis-processing"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1#ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1"
+source = "git+https://github.com/moritzbrantner/audio-analysis?rev=d9586adcc4240d08320019de8407f5ee5d2f1426#d9586adcc4240d08320019de8407f5ee5d2f1426"
 dependencies = [
  "moenarch-audio-analysis-core",
  "moenarch-audio-analysis-io",
@@ -2167,7 +2167,7 @@ dependencies = [
 [[package]]
 name = "moenarch-audio-analysis-recognition"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1#ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1"
+source = "git+https://github.com/moritzbrantner/audio-analysis?rev=d9586adcc4240d08320019de8407f5ee5d2f1426#d9586adcc4240d08320019de8407f5ee5d2f1426"
 dependencies = [
  "moenarch-audio-analysis-core",
  "moenarch-audio-contracts",
@@ -2181,7 +2181,7 @@ dependencies = [
 [[package]]
 name = "moenarch-audio-analysis-speakers"
 version = "0.1.4"
-source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1#ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1"
+source = "git+https://github.com/moritzbrantner/audio-analysis?rev=d9586adcc4240d08320019de8407f5ee5d2f1426#d9586adcc4240d08320019de8407f5ee5d2f1426"
 dependencies = [
  "moenarch-audio-analysis-core",
  "moenarch-audio-analysis-recognition",
@@ -2196,7 +2196,7 @@ dependencies = [
 [[package]]
 name = "moenarch-audio-analysis-transcription"
 version = "0.1.15"
-source = "git+https://github.com/moritzbrantner/audio-analysis?rev=ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1#ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1"
+source = "git+https://github.com/moritzbrantner/audio-analysis?rev=d9586adcc4240d08320019de8407f5ee5d2f1426#d9586adcc4240d08320019de8407f5ee5d2f1426"
 dependencies = [
  "cmake",
  "hound",
@@ -2536,18 +2536,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "moenarch-text-model-runtime"
-version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/nlp-stack?rev=50dd68521e425d2ce734d1f2df1d8c818a659f12#50dd68521e425d2ce734d1f2df1d8c818a659f12"
-dependencies = [
- "moenarch-media-core",
- "moenarch-runtime-core",
- "moenarch-runtime-onnx",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "moenarch-text-transcripts"
 version = "0.1.3"
 source = "git+https://github.com/moritzbrantner/nlp-stack?rev=19b0e1e86ac1fd36117921a4c027c2653ff97fd5#19b0e1e86ac1fd36117921a4c027c2653ff97fd5"
@@ -2690,7 +2678,7 @@ checksum = "a8afc6df942f4c022d70c5725e18df1a705773870e5b7f96fde94ca0334ce77a"
 [[package]]
 name = "native-whisperx"
 version = "0.1.14"
-source = "git+https://github.com/moritzbrantner/native-whisperx?rev=cb947ee1384e9f4b222acf52678a547f2d440192#cb947ee1384e9f4b222acf52678a547f2d440192"
+source = "git+https://github.com/moritzbrantner/native-whisperx?rev=23a12514bffbe05211c26999ca04f5442fae101d#23a12514bffbe05211c26999ca04f5442fae101d"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -2701,7 +2689,6 @@ dependencies = [
  "moenarch-media-core",
  "moenarch-model-runtime",
  "moenarch-runtime-core",
- "moenarch-text-model-runtime",
  "sentencepiece-rs",
  "serde",
  "serde_json",
@@ -2740,7 +2727,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3388,7 +3375,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4154,7 +4141,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4844,7 +4831,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

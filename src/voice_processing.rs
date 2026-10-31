@@ -25,7 +25,7 @@ use crate::multimodal::{
     UpsertVoiceObservationRequest, UpsertVoiceTrackRequest,
 };
 
-pub const AUDIO_ANALYSIS_REVISION: &str = "ec42fcfc1fa3a0d0b9dccdfcf5506ababe287fc1";
+pub const AUDIO_ANALYSIS_REVISION: &str = "d9586adcc4240d08320019de8407f5ee5d2f1426";
 pub const VOICE_PROCESSOR: &str = "youtube-corpus/voices";
 pub const VOICE_MODEL: &str = "Wespeaker/wespeaker-voxceleb-resnet34-LM";
 pub const VOICE_MODEL_VERSION: &str = "f0c48c298fd835726c27956a5d617bad7115627e";
@@ -265,8 +265,7 @@ fn analyze_media(path: &Path, models: &Path, token: &CancellationToken) -> anyho
         embeddings: Vec::new(),
         token: token.clone(),
     };
-    let mut diarizer =
-        WindowedSpeakerDiarizer::new(recorder, EnergyVoiceActivityDetector::default());
+    let mut diarizer = WindowedSpeakerDiarizer::new(recorder, EnergyVoiceActivityDetector);
     let audio = SpeakerAudio::mono(&clip.samples, 16000)?;
     let result = diarizer.diarize(&audio)?;
     anyhow::ensure!(!token.is_cancelled(), "voice analysis cancelled");
