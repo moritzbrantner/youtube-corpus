@@ -5,6 +5,7 @@ pub mod asr;
 pub mod backfill;
 pub mod benchmark;
 pub mod captions;
+pub mod citations;
 pub mod cli;
 pub mod config;
 pub mod corpora;

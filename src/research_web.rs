@@ -778,12 +778,10 @@ async fn search_corpus(
     let allowed_video_ids = crate::corpora::corpus_video_ids(&pool, corpus_id)
         .await
         .map_err(map_corpus_error)?;
-    let requested_top_k = input.top_k;
-    let candidate_top_k = requested_top_k.saturating_mul(20).clamp(100, 1000);
     let mut report = crate::search::search_corpus(SearchRequest {
         database_url: database_url(&state)?,
         query: input.query,
-        top_k: candidate_top_k,
+        top_k: input.top_k,
         mode: input.mode,
         source_kind: input.source_kind,
         modality: input.modality,
@@ -802,14 +800,12 @@ async fn search_corpus(
         metadata_query: input.metadata_query,
         view_count_min: input.view_count_min,
         view_count_max: input.view_count_max,
+        youtube_id: None,
+        corpus_id: Some(corpus_id),
+        speaker_label: None,
     })
     .await
     .map_err(ResearchError::internal)?;
-    report
-        .results
-        .retain(|result| allowed_video_ids.contains(&result.video_id));
-    let truncate_to = usize::try_from(requested_top_k).unwrap_or(usize::MAX);
-    report.results.truncate(truncate_to);
     // Without coverage an empty visible-text result would read as a confirmed negative.
     report.ocr_coverage = Some(
         crate::search::corpus_ocr_coverage(&pool, &allowed_video_ids)

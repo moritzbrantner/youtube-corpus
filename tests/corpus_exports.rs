@@ -162,6 +162,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use support::*;
 use uuid::Uuid;
+use youtube_corpus::citations::{media_spans, ContextWindow, SpanQuery};
 use youtube_corpus::cli::{Cli, Command, ExportFormat};
 use youtube_corpus::corpus_export::{
     export_belief_evidence, export_corpus_core_jsonl, export_source_span, CorpusExportSnapshot,
@@ -1157,4 +1158,209 @@ fn belief_export_preserves_recorded_upstream_processor_identity() {
     }
     input.transcript_streams[0].processor_revision = Some("0.1.0".into());
     assert!(export_belief_evidence(&input, "git:exporter").is_err());
+}
+
+// --- Span citations (#140) -------------------------------------------------------------------
+
+fn span_query(transcript_source: &str, start: f64, end: f64) -> SpanQuery {
+    SpanQuery {
+        youtube_id: "abc123XYZ_0".into(),
+        start_seconds: start,
+        end_seconds: end,
+        stream_id: None,
+        transcript_source: Some(transcript_source.into()),
+        language: Some("en".into()),
+    }
+}
+
+/// truth-core's `media_span_segments` + `media_span_hash` over a parsed source-span export.
+fn truth_core_span_hash(export: &Value, transcript_source: &str, start: f64, end: f64) -> String {
+    let stream = export["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|source| {
+            source["kind"] == "youtube_transcript"
+                && source["metadata"]["youtubeId"] == "abc123XYZ_0"
+                && source["metadata"]["transcriptSource"] == transcript_source
+                && source["language"] == "en"
+        })
+        .unwrap()["id"]
+        .clone();
+    let mut segments: Vec<(f64, u64, Value)> = export["spans"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|span| span["sourceId"] == stream && span["locator"]["kind"] == "timed")
+        .filter_map(|span| {
+            let locator = &span["locator"];
+            let (seg_start, seg_end) = (
+                locator["startSeconds"].as_f64()?,
+                locator["endSeconds"].as_f64()?,
+            );
+            (seg_start < end && seg_end > start).then(|| {
+                let index = locator["segmentIndex"].as_u64().unwrap();
+                let material = serde_json::json!({
+                    "endSeconds": seg_end,
+                    "segmentIndex": index,
+                    "startSeconds": seg_start,
+                    "textHash": sha256_prefixed(span["text"].as_str().unwrap()),
+                });
+                (seg_start, index, material)
+            })
+        })
+        .collect();
+    segments.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+    // serde_json's map is sorted, so this is the compact sorted-key form truth-core hashes.
+    let material = Value::Array(segments.into_iter().map(|segment| segment.2).collect());
+    sha256_prefixed(&serde_json::to_string(&material).unwrap())
+}
+
+#[test]
+fn span_citation_hash_matches_truth_core_over_the_committed_export() {
+    let export: Value = serde_json::from_str(&read_fixture("expected/source-span.json")).unwrap();
+    // Literals computed by truth-core `scripts/source_evidence.py` (`media_span_hash`) on
+    // `expected/source-span.json`.
+    for (transcript_source, start, end, count, expected) in [
+        (
+            "caption_manual",
+            0.0,
+            5.0,
+            2,
+            "sha256:d742de4e83a3c5e857eb4d630ae0cabd4daf34a64fa9f8ba8b3c35de9a6c2048",
+        ),
+        (
+            "asr",
+            2.0,
+            4.0,
+            2,
+            "sha256:992ec97d7b6cb0a9adf32d8608ece8c1e891b5104e57e998f75084f31bc8a992",
+        ),
+        (
+            "caption_manual",
+            2.5,
+            3.0,
+            1,
+            "sha256:5800a9b7e4c49dbe28d2c19f699351617a72e80c6cb68724991d41634739c553",
+        ),
+    ] {
+        let report = media_spans(
+            &snapshot(),
+            FIXTURE_REVISION,
+            &span_query(transcript_source, start, end),
+        )
+        .unwrap();
+        assert_eq!(report.schema, "source_span_interchange@1");
+        assert_eq!(report.producer.revision, FIXTURE_REVISION);
+        assert_eq!(report.spans.len(), 1);
+        let span = &report.spans[0];
+        assert_eq!(span.transcript_source, transcript_source);
+        assert_eq!(span.segment_count, count);
+        assert_eq!(span.span_sha256, expected);
+        assert_eq!(
+            truth_core_span_hash(&export, transcript_source, start, end),
+            expected
+        );
+        // Each segment carries the export's own content hash.
+        for segment in &span.segments {
+            assert_eq!(segment.content_hash, sha256_prefixed(&segment.text));
+        }
+    }
+}
+
+#[test]
+fn span_citation_lists_every_stream_in_time_order_and_attaches_raw_speaker_labels() {
+    let mut input = snapshot_json();
+    input["speakerTurns"] = serde_json::from_str(&read_fixture("speaker-turns.json")).unwrap();
+    let with_speakers: CorpusExportSnapshot = serde_json::from_value(input).unwrap();
+    let mut query = span_query("asr", 2.0, 4.0);
+    let report = media_spans(&with_speakers, FIXTURE_REVISION, &query).unwrap();
+    let span = &report.spans[0];
+    assert_eq!(
+        span.segments
+            .iter()
+            .map(|segment| segment.segment_index)
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+    assert!(span.segments[1]
+        .speaker_labels
+        .contains(&"SPEAKER_01".to_string()));
+    // Speaker labels are not part of the pinned hash.
+    assert_eq!(
+        span.span_sha256,
+        "sha256:992ec97d7b6cb0a9adf32d8608ece8c1e891b5104e57e998f75084f31bc8a992"
+    );
+    assert_eq!(
+        span.timestamp_url,
+        "https://www.youtube.com/watch?v=abc123XYZ_0&t=2s"
+    );
+
+    query.transcript_source = None;
+    let all = media_spans(&snapshot(), FIXTURE_REVISION, &query).unwrap();
+    let mut sources: Vec<_> = all
+        .spans
+        .iter()
+        .map(|span| span.transcript_source.as_str())
+        .collect();
+    sources.sort();
+    assert_eq!(sources, ["asr", "caption_manual"]);
+
+    query.start_seconds = 100.0;
+    query.end_seconds = 200.0;
+    assert!(media_spans(&snapshot(), FIXTURE_REVISION, &query)
+        .unwrap()
+        .spans
+        .is_empty());
+    query.end_seconds = 50.0;
+    assert!(media_spans(&snapshot(), FIXTURE_REVISION, &query).is_err());
+}
+
+#[test]
+fn span_cli_parses_the_citation_arguments() {
+    let cli = Cli::try_parse_from([
+        "youtube-corpus",
+        "span",
+        "--youtube-id",
+        "abc123XYZ_0",
+        "--start",
+        "2",
+        "--end",
+        "4.5",
+        "--transcript-source",
+        "asr",
+        "--producer-revision",
+        "git:abc",
+        "--format",
+        "text",
+    ])
+    .unwrap();
+    let Some(Command::Span(args)) = cli.command else {
+        panic!("span command");
+    };
+    assert_eq!((args.start, args.end), (2.0, 4.5));
+
+    let cli = Cli::try_parse_from([
+        "youtube-corpus",
+        "search",
+        "--query",
+        "alpha",
+        "--youtube-id",
+        "abc123XYZ_0",
+        "--corpus",
+        "default",
+        "--speaker-label",
+        "SPEAKER_00",
+        "--context",
+        "30s",
+    ])
+    .unwrap();
+    let Some(Command::Search(args)) = cli.command else {
+        panic!("search command");
+    };
+    assert_eq!(args.context, Some(ContextWindow::Seconds(30.0)));
+    assert!(
+        Cli::try_parse_from(["youtube-corpus", "search", "--query", "a", "--context", "x"])
+            .is_err()
+    );
 }

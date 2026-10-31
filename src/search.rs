@@ -34,6 +34,13 @@ pub struct SearchRequest {
     pub metadata_query: Option<String>,
     pub view_count_min: Option<i64>,
     pub view_count_max: Option<i64>,
+    /// Exact YouTube video id (the 11-character id, not the corpus UUID).
+    pub youtube_id: Option<String>,
+    /// Restricts hits to videos of this corpus.
+    pub corpus_id: Option<Uuid>,
+    /// Raw diarization label of a stored `speaker_turn` annotation overlapping the hit; not an
+    /// identity. Scoped to `corpus_id`'s annotations when a corpus is given.
+    pub speaker_label: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -140,6 +147,10 @@ pub struct SearchResult {
     /// Present when this hit is generated translated text rather than original evidence.
     #[serde(default)]
     pub translation: Option<TranslationEvidence>,
+    /// Citation identifiers, speaker labels and context, attached by
+    /// [`crate::citations::attach_citations`] (the CLI search).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub citation: Option<crate::citations::SearchCitation>,
 }
 
 /// Provenance of a translated hit and the original-language evidence it was derived from.
@@ -226,6 +237,20 @@ async fn fts_search(pool: &PgPool, request: &SearchRequest) -> anyhow::Result<Ve
                AND ($19::text IS NULL
                     OR ($19 = 'visible' AND s.source_kind = 'visual_ocr')
                     OR ($19 = 'spoken' AND s.source_kind <> 'visual_ocr'))
+               AND ($20::text IS NULL OR v.youtube_id = $20)
+               AND ($21::uuid IS NULL OR EXISTS (
+                 SELECT 1 FROM corpus_videos cv
+                 WHERE cv.corpus_id = $21 AND cv.video_id = s.video_id
+               ))
+               AND ($22::text IS NULL OR EXISTS (
+                 SELECT 1 FROM research_annotations ra
+                 WHERE ra.kind = 'speaker_turn' AND ra.label = $22
+                   AND ra.video_id = s.video_id
+                   AND ($21::uuid IS NULL OR ra.corpus_id = $21)
+                   AND (ra.segment_id = s.id
+                        OR (ra.start_seconds < s.end_seconds
+                            AND ra.end_seconds > s.start_seconds))
+               ))
              ORDER BY score DESC
              LIMIT $2",
         )
@@ -290,6 +315,20 @@ async fn semantic_search(
                AND ($19::text IS NULL
                     OR ($19 = 'visible' AND s.source_kind = 'visual_ocr')
                     OR ($19 = 'spoken' AND s.source_kind <> 'visual_ocr'))
+               AND ($20::text IS NULL OR v.youtube_id = $20)
+               AND ($21::uuid IS NULL OR EXISTS (
+                 SELECT 1 FROM corpus_videos cv
+                 WHERE cv.corpus_id = $21 AND cv.video_id = s.video_id
+               ))
+               AND ($22::text IS NULL OR EXISTS (
+                 SELECT 1 FROM research_annotations ra
+                 WHERE ra.kind = 'speaker_turn' AND ra.label = $22
+                   AND ra.video_id = s.video_id
+                   AND ($21::uuid IS NULL OR ra.corpus_id = $21)
+                   AND (ra.segment_id = s.id
+                        OR (ra.start_seconds < s.end_seconds
+                            AND ra.end_seconds > s.start_seconds))
+               ))
              ORDER BY s.embedding <=> $1::vector
              LIMIT $2",
         )
@@ -351,6 +390,20 @@ async fn hybrid_search(
                   AND ($20::text IS NULL
                     OR ($20 = 'visible' AND s.source_kind = 'visual_ocr')
                     OR ($20 = 'spoken' AND s.source_kind <> 'visual_ocr'))
+                  AND ($21::text IS NULL OR v.youtube_id = $21)
+                  AND ($22::uuid IS NULL OR EXISTS (
+                    SELECT 1 FROM corpus_videos cv
+                    WHERE cv.corpus_id = $22 AND cv.video_id = s.video_id
+                  ))
+                  AND ($23::text IS NULL OR EXISTS (
+                    SELECT 1 FROM research_annotations ra
+                    WHERE ra.kind = 'speaker_turn' AND ra.label = $23
+                      AND ra.video_id = s.video_id
+                      AND ($22::uuid IS NULL OR ra.corpus_id = $22)
+                      AND (ra.segment_id = s.id
+                           OR (ra.start_seconds < s.end_seconds
+                               AND ra.end_seconds > s.start_seconds))
+                  ))
                 ORDER BY score DESC
                 LIMIT $3
               ),
@@ -396,6 +449,20 @@ async fn hybrid_search(
                   AND ($20::text IS NULL
                     OR ($20 = 'visible' AND s.source_kind = 'visual_ocr')
                     OR ($20 = 'spoken' AND s.source_kind <> 'visual_ocr'))
+                  AND ($21::text IS NULL OR v.youtube_id = $21)
+                  AND ($22::uuid IS NULL OR EXISTS (
+                    SELECT 1 FROM corpus_videos cv
+                    WHERE cv.corpus_id = $22 AND cv.video_id = s.video_id
+                  ))
+                  AND ($23::text IS NULL OR EXISTS (
+                    SELECT 1 FROM research_annotations ra
+                    WHERE ra.kind = 'speaker_turn' AND ra.label = $23
+                      AND ra.video_id = s.video_id
+                      AND ($22::uuid IS NULL OR ra.corpus_id = $22)
+                      AND (ra.segment_id = s.id
+                           OR (ra.start_seconds < s.end_seconds
+                               AND ra.end_seconds > s.start_seconds))
+                  ))
                 ORDER BY s.embedding <=> $2::vector
                 LIMIT $3
               ),
@@ -446,6 +513,9 @@ impl<'q> BindSearchFilters<'q> for Query<'q, Postgres, PgArguments> {
             .bind(filters.view_count_min)
             .bind(filters.view_count_max)
             .bind(filters.modality.as_deref())
+            .bind(filters.youtube_id.as_deref())
+            .bind(filters.corpus_id)
+            .bind(filters.speaker_label.as_deref())
     }
 }
 
@@ -468,6 +538,7 @@ fn rows_to_results(rows: Vec<sqlx::postgres::PgRow>) -> anyhow::Result<Vec<Searc
             semantic_score: row.get("semantic_score"),
             ocr_evidence: None,
             translation: None,
+            citation: None,
         })
         .collect())
 }
@@ -630,6 +701,9 @@ struct SearchFilterParams {
     metadata_query: Option<String>,
     view_count_min: Option<i64>,
     view_count_max: Option<i64>,
+    youtube_id: Option<String>,
+    corpus_id: Option<Uuid>,
+    speaker_label: Option<String>,
 }
 
 impl TryFrom<&SearchRequest> for SearchFilterParams {
@@ -656,6 +730,9 @@ impl TryFrom<&SearchRequest> for SearchFilterParams {
             metadata_query: trim_filter(&request.metadata_query),
             view_count_min: request.view_count_min,
             view_count_max: request.view_count_max,
+            youtube_id: trim_filter(&request.youtube_id),
+            corpus_id: request.corpus_id,
+            speaker_label: trim_filter(&request.speaker_label),
         })
     }
 }

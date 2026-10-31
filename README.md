@@ -359,7 +359,35 @@ cargo run -- search --query "semantic topic" --mode semantic
 ```
 
 Search results include the video id, stream id, transcript source, timestamps,
-source URL, title, snippet text, and scores.
+source URL, title, snippet text, and scores. Each CLI hit also carries a
+`citation`: the YouTube id, channel, upload date, `transcriptSource`
+(`caption_manual`, `caption_auto` or `asr`), a timestamp link, and the raw
+labels of stored speaker turns that overlap it (labels, not identities).
+
+### Citation search (#140)
+
+```bash
+# Hits of one recording, two segments of context on each side, as plain text
+cargo run -- search --query "free will" --youtube-id dQw4w9WgXcQ --context 2 --format text
+# Hits within 30 s of context, limited to a corpus (id or slug) and a diarization label
+cargo run -- search --query "free will" --corpus debates --speaker-label SPEAKER_01 --context 30s
+# Pin a citation: the segments overlapping [start, end) and their span_sha256
+cargo run -- span --youtube-id dQw4w9WgXcQ --start 754 --end 781 \
+  --transcript-source caption_manual --language en --producer-revision "git:$(git rev-parse HEAD)"
+```
+
+`--context` returns the neighbouring transcript segments of each hit in time
+order with the hit marked (`isHit`, or `>` in text output); a translated hit
+shows its original-language context. `--format text` prints
+`[mm:ss–mm:ss] speaker: text` lines.
+
+`span` prints, per matching transcript stream, the overlapping segments, the
+`segmentCount`, and the `spanSha256` truth-core pins a `media_span` passage
+with: the SHA-256 of the canonical JSON list of each segment's `segmentIndex`,
+`startSeconds`, `endSeconds` and `textHash`, in time order. It is computed over
+the same `source_span_interchange@1` batch `export --format source-span`
+writes, so the hash equals the one a whole-corpus export yields; no export file
+is needed. `--snapshot FILE` reads a corpus snapshot instead of Postgres.
 
 ### Opt-in Tantivy literal search pilot
 

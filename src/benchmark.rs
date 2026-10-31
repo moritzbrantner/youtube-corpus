@@ -96,6 +96,9 @@ pub async fn run_distinguo_benchmark(request: BenchmarkRequest) -> anyhow::Resul
             metadata_query: None,
             view_count_min: None,
             view_count_max: None,
+            youtube_id: None,
+            corpus_id: None,
+            speaker_label: None,
         })
         .await?;
         searches.push(TimedSearchReport {
