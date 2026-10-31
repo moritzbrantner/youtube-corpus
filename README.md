@@ -303,7 +303,10 @@ Cross-video voice matching (#134) and naming from spoken self-introductions (#13
 these tracks: a person mention right after "I'm", "my name is" or "Hi, this is" (or "ich bin",
 "mein Name ist", "hier ist") in a transcript segment that one voice track clearly speaks names that
 voice's corpus person, as an inferred name to confirm in **Entities → Person names**. A host's
-"joining me is …" never names the speaker.
+"joining me is …" never names the speaker. Voice matching only forms a person once a voice is
+heard in two videos; a guest heard in one video who clearly introduces themselves gets a
+single-video person for their track (#164), suggested and unverified like any other match, and
+a later appearance in another video joins it. Unnamed single-video voices form no person.
 
 The free [WeSpeaker model](https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34-LM)
 (CC-BY-4.0, attribution: WeSpeaker) downloads into the configured cache under `voices/`

@@ -732,3 +732,92 @@ async fn spoken_self_introductions_name_voice_people_but_guest_introductions_do_
         Some(("Ada Lovelace".into(), "confirmed".into()))
     );
 }
+
+#[tokio::test]
+#[ignore = "requires DATABASE_URL"]
+async fn self_introduction_forms_a_single_video_person_that_later_videos_join() {
+    use youtube_corpus::voice_matching::{match_corpus_voices, VoiceMatchStatus};
+    let Some(ctx) = Ctx::new().await else {
+        return;
+    };
+    let (v1, v2) = (ctx.video("Episode 1").await, ctx.video("Episode 2").await);
+    // The host (speaker 0) is in both episodes; one guest each (speakers 1 and 2).
+    let t1 = ctx.voices(v1, &[(0, 0.0, 8.0), (1, 10.0, 30.0)]).await;
+    let t2 = ctx.voices(v2, &[(0, 0.0, 8.0), (2, 10.0, 30.0)]).await;
+    ctx.transcript(
+        v1,
+        &[
+            (0.0, 4.0, "Welcome to the show.", &[]),
+            (
+                10.0,
+                14.0,
+                "Hi, I'm Joe Schmid, thanks for having me.",
+                &["Joe Schmid"],
+            ),
+        ],
+    )
+    .await;
+    ctx.transcript(
+        v2,
+        &[(
+            0.0,
+            4.0,
+            "Joining me today is Ada Lovelace.",
+            &["Ada Lovelace"],
+        )],
+    )
+    .await;
+    let voices = match_corpus_voices(&ctx.pool, ctx.corpus).await.unwrap();
+    assert_eq!(voices.groups.len(), 1, "only the host spans two videos");
+
+    let report = infer_person_names(&ctx.pool, ctx.corpus).await.unwrap();
+    let voices = youtube_corpus::voice_matching::review_voice_matches(&ctx.pool, ctx.corpus)
+        .await
+        .unwrap();
+    let guest = voices
+        .groups
+        .iter()
+        .find(|g| g.tracks.iter().any(|t| t.track_id == t1[1]))
+        .expect("the self-introduced guest forms a person");
+    assert_eq!(guest.tracks.len(), 1);
+    assert_eq!(guest.tracks[0].status, Some(VoiceMatchStatus::Suggested));
+    assert_eq!(
+        guest.identity_source.as_deref(),
+        Some("automatic-self-introduced-voice")
+    );
+    let guest = guest.person_id;
+    assert_eq!(
+        name_of(&report, guest),
+        Some(("Joe Schmid".into(), "inferred".into()))
+    );
+    assert_eq!(
+        entry(&report, guest).name.as_ref().unwrap().evidence[0].voice_track_id,
+        Some(t1[1])
+    );
+    // The guest only introduced by the host forms no person.
+    assert_eq!(voices.groups.len(), 2);
+    assert!(voices.unresolved.iter().any(|t| t.track_id == t2[1]));
+    let linked: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM canonical_identity_links p JOIN canonical_identity_links e
+           ON e.identity_id = p.identity_id
+         WHERE p.person_id = $1 AND e.entity_type = 'person' AND e.entity_key = 'joe schmid')",
+    )
+    .bind(guest)
+    .fetch_one(&ctx.pool)
+    .await
+    .unwrap();
+    assert!(linked);
+
+    // A later appearance joins the person through normal voice matching; reruns add no copy.
+    let v3 = ctx.video("Episode 3").await;
+    let t3 = ctx.voices(v3, &[(1, 0.0, 20.0)]).await;
+    let voices = match_corpus_voices(&ctx.pool, ctx.corpus).await.unwrap();
+    let joined = voices.groups.iter().find(|g| g.person_id == guest).unwrap();
+    assert!(joined.tracks.iter().any(|t| t.track_id == t3[0]));
+    let report = infer_person_names(&ctx.pool, ctx.corpus).await.unwrap();
+    assert_eq!(report.people.len(), 2);
+    assert_eq!(
+        name_of(&report, guest),
+        Some(("Joe Schmid".into(), "inferred".into()))
+    );
+}
