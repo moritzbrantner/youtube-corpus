@@ -697,6 +697,8 @@ export type EntityOccurrencesReport = {
     videoId: string;
     title: string | null;
     sourceUrl: string;
+    /** `YYYY-MM-DD` from the video's metadata; `null` when unknown. */
+    publicationDate: string | null;
     spokenMentions: number;
     visibleTextMentions: number;
     occurrences: EntityOccurrence[];
@@ -709,6 +711,8 @@ export type PersonOccurrencesReport = {
     videoId: string;
     title: string | null;
     sourceUrl: string;
+    /** `YYYY-MM-DD` from the video's metadata; `null` when unknown. */
+    publicationDate: string | null;
     shownTracks: number;
     heardTracks: number;
     occurrences: {

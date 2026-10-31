@@ -16,6 +16,7 @@
     "preview": "vite preview",
     "test:browser-wasm": "cargo test --manifest-path crates/youtube-browser-wasm/Cargo.toml",
     "test:frontend": "bun test tests/frontend",
+    "test:e2e": "playwright test --workers=2",
     "validate": "bun run verify:fast",
     "verify:fast": "bun run format:check && bun run test:browser-wasm && bun run test:frontend && bun run build && cargo fmt --check && cargo check && cargo clippy --all-targets -- -D warnings && cargo test",
     "verify:postgres": "bash ./scripts/verify-postgres.sh",
@@ -35,6 +36,7 @@
     "react-dom": "^19.2.5"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@tailwindcss/vite": "4.3.3",
     "@types/node": "26.6.5",
     "@types/react": "19.3.0",

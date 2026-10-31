@@ -33,7 +33,18 @@ export type CorpusUrlState = {
   identityType: string;
   /** People and Entities name filter. */
   identityQuery: string;
+  /** Profile evidence view: empty shows the evidence list, `timeline` the publication timeline. */
+  profileView: "" | "timeline";
+  /** Profile evidence type filter shared by both views; empty keeps every type. */
+  evidenceKind: "" | EvidenceKind;
+  /** Profile publication-date range (`YYYY-MM-DD`, inclusive), shared by both views. */
+  publishedFrom: string;
+  publishedTo: string;
 };
+
+/** Profile evidence types: transcript and on-screen text mentions, face and voice tracks. */
+export const evidenceKinds = ["spoken", "ocr", "shown", "heard"] as const;
+export type EvidenceKind = (typeof evidenceKinds)[number];
 
 export type CorpusSearchFilters = Pick<
   CorpusUrlState,
@@ -74,6 +85,10 @@ const keys: Array<[keyof CorpusUrlState, string]> = [
   ["identityScope", "scope"],
   ["identityType", "type"],
   ["identityQuery", "name"],
+  ["profileView", "view"],
+  ["evidenceKind", "evidence"],
+  ["publishedFrom", "since"],
+  ["publishedTo", "until"],
 ];
 
 function selected<T extends string>(value: string | null, options: readonly T[], fallback: T): T {
@@ -107,6 +122,10 @@ export function readUrlState(
       identityScope: "",
       identityType: "",
       identityQuery: "",
+      profileView: "",
+      evidenceKind: "",
+      publishedFrom: "",
+      publishedTo: "",
     };
   }
   const params = url.searchParams;
@@ -137,6 +156,10 @@ export function readUrlState(
     identityScope: params.get("scope") === "all" ? "all" : "",
     identityType: params.get("type") ?? "",
     identityQuery: params.get("name") ?? "",
+    profileView: params.get("view") === "timeline" ? "timeline" : "",
+    evidenceKind: selected(params.get("evidence"), ["", ...evidenceKinds], ""),
+    publishedFrom: params.get("since") ?? "",
+    publishedTo: params.get("until") ?? "",
   };
 }
 
@@ -202,6 +225,10 @@ const directoryFields = new Set([
   "identityScope",
   "identityType",
   "identityQuery",
+  "profileView",
+  "evidenceKind",
+  "publishedFrom",
+  "publishedTo",
 ]);
 
 export type CorpusPage =
