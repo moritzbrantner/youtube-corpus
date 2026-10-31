@@ -265,8 +265,7 @@ fn analyze_media(path: &Path, models: &Path, token: &CancellationToken) -> anyho
         embeddings: Vec::new(),
         token: token.clone(),
     };
-    let mut diarizer =
-        WindowedSpeakerDiarizer::new(recorder, EnergyVoiceActivityDetector::default());
+    let mut diarizer = WindowedSpeakerDiarizer::new(recorder, EnergyVoiceActivityDetector);
     let audio = SpeakerAudio::mono(&clip.samples, 16000)?;
     let result = diarizer.diarize(&audio)?;
     anyhow::ensure!(!token.is_cancelled(), "voice analysis cancelled");
