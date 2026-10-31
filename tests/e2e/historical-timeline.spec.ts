@@ -274,7 +274,9 @@ test("historical timeline separates readings by event and keeps suggestions unve
   const selection = page.getByTestId("historical-selection");
   await expect(selection).toContainText("Not reviewed; not an established fact.");
   await expect(selection.locator("mark")).toHaveText("1067");
-  await expect(selection).toContainText(`Suggested automatically · ${PRODUCER}@${PRODUCER_VERSION}`);
+  await expect(selection).toContainText(
+    `Suggested automatically · ${PRODUCER}@${PRODUCER_VERSION}`,
+  );
   await expect(selection).toContainText("video published 2024-03-01");
   await expect(selection.getByRole("link", { name: /Open moment/ })).toHaveAttribute(
     "href",
