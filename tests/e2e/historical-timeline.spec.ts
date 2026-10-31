@@ -3,7 +3,8 @@ import { expect, test, type Page } from "@playwright/test";
 // Route-mocked API responses in the shape the Rust backend returns (tests/event_extraction_db.rs
 // covers the backend itself). Not production analysis.
 const IDENTITY = "22222222-2222-4222-8222-222222222222";
-const PRODUCER = "youtube-corpus/historical-date-mentions";
+const PRODUCER = "nlp-stack/text-linguistics/temporal";
+const PRODUCER_VERSION = "19b0e1e86ac1fd36117921a4c027c2653ff97fd5";
 const corpora = [{ id: "c-history", name: "History", isDefault: true }].map((corpus) => ({
   ...corpus,
   slug: corpus.id,
@@ -60,7 +61,7 @@ function dateClaim(
       ? {
           runId: "run-1",
           producer: PRODUCER,
-          producerVersion: "1",
+          producerVersion: PRODUCER_VERSION,
           sourceText,
           sourceByteStart: byteStart,
           sourceByteEnd: byteStart + new TextEncoder().encode(sourceText).length,
@@ -191,7 +192,7 @@ async function mockApi(page: Page) {
       return route.fulfill({
         json: {
           producer: PRODUCER,
-          producerVersion: "1",
+          producerVersion: PRODUCER_VERSION,
           videosProcessed: 3,
           videosWithoutText: 0,
           segmentsAnalyzed: 412,
@@ -273,7 +274,7 @@ test("historical timeline separates readings by event and keeps suggestions unve
   const selection = page.getByTestId("historical-selection");
   await expect(selection).toContainText("Not reviewed; not an established fact.");
   await expect(selection.locator("mark")).toHaveText("1067");
-  await expect(selection).toContainText(`Suggested automatically · ${PRODUCER}@1`);
+  await expect(selection).toContainText(`Suggested automatically · ${PRODUCER}@${PRODUCER_VERSION}`);
   await expect(selection).toContainText("video published 2024-03-01");
   await expect(selection.getByRole("link", { name: /Open moment/ })).toHaveAttribute(
     "href",
@@ -303,7 +304,7 @@ test("an event profile reviews suggestions and switches between both timelines",
   const suggestion = page.getByLabel("Claim h2");
   await expect(suggestion).toContainText("Unverified");
   await expect(suggestion.getByTestId("claim-provenance")).toContainText(
-    `Suggested automatically · ${PRODUCER}@1 · confidence 0.80`,
+    `Suggested automatically · ${PRODUCER}@${PRODUCER_VERSION} · confidence 0.80`,
   );
   await expect(suggestion.locator("mark")).toHaveText("1067");
   await page.screenshot({ path: testInfo.outputPath("event-review.png"), fullPage: true });

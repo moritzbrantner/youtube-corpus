@@ -22,7 +22,7 @@ use uuid::Uuid;
 /// Producer identity recorded on every extraction run.
 pub const ENTITY_PRODUCER: &str = "nlp-stack/text-linguistics";
 /// Exact nlp-stack revision this repository pins (see `Cargo.toml`).
-pub const ENTITY_PRODUCER_VERSION: &str = "50dd68521e425d2ce734d1f2df1d8c818a659f12";
+pub const ENTITY_PRODUCER_VERSION: &str = "19b0e1e86ac1fd36117921a4c027c2653ff97fd5";
 /// Mentions below this producer confidence are dropped as unreliable.
 pub const MIN_ENTITY_CONFIDENCE: f32 = 0.6;
 /// Default directory for downloaded model bundles (generated material lives in
