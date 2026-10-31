@@ -17,6 +17,12 @@
 //! conflicting names and names supported for several people never assign a name. Names stay
 //! separate from observations and matching links; researcher confirmations, replacements and
 //! rejections survive reruns.
+//!
+//! Voice matching only forms a person once a voice is heard in two videos, so a guest heard in
+//! one video has no person to name. A confident self-introduction on such an unassigned voice
+//! track (#164) forms a single-video person for that track, as an unverified suggestion with the
+//! name; a later appearance in another video joins that person through normal voice matching.
+//! Unnamed single-video voices still form no person.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
@@ -24,7 +30,7 @@ use serde_json::{json, Value};
 use sqlx::{PgConnection, PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
-pub const ALGORITHM: &str = "youtube-corpus/person-name-evidence-v2";
+pub const ALGORITHM: &str = "youtube-corpus/person-name-evidence-v3";
 /// OCR roles that can carry a name tag; end credits and slides list names without pointing at
 /// a visible person.
 const NAME_TAG_ROLES: [&str; 2] = ["subtitle", "scene_text"];
@@ -123,6 +129,7 @@ pub fn configuration() -> Value {
         "minSpeakerCoverageOfSegment": MIN_VOICE_COVERAGE,
         "maxOtherSpeakerCoverageOfSegment": MAX_OTHER_VOICE_COVERAGE,
         "voiceIdentity": crate::voice_matching::ALGORITHM,
+        "singleVideoPeople": "a self-introduction on a current voice track no person holds forms a single-video person for that track, only when it names the track without conflict",
         "guestIntroductions": "never name the speaker; block that name for the introducing person",
         "otherSpokenMentions": "never used",
         "conflictingNames": "unresolved",
@@ -197,6 +204,9 @@ pub struct NameEvidenceInputs {
     pub face_people: BTreeMap<Uuid, BTreeSet<Uuid>>,
     /// Voice tracks of each corpus person.
     pub voice_people: BTreeMap<Uuid, BTreeSet<Uuid>>,
+    /// Current voice tracks no person holds (see `voice_matching::unassigned_voice_tracks`).
+    /// A plan keyed by one of these track ids forms a single-video person for that track.
+    pub unassigned_voice_tracks: BTreeSet<Uuid>,
     pub faces: Vec<VisibleFace>,
     pub voices: Vec<VoiceSpan>,
     pub tags: Vec<NameTagCandidate>,
@@ -384,10 +394,15 @@ fn note(
 }
 
 /// Pure planning step: aligns name tags with faces and self-introductions with voices, and
-/// decides each person's inferred name.
+/// decides each person's inferred name. An unassigned voice track stands in for the
+/// single-video person it would form, keyed by its track id; it gets a plan only when named.
 pub fn plan_names(inputs: &NameEvidenceInputs) -> BTreeMap<Uuid, NamePlan> {
     let face_owner = owners(&inputs.face_people);
-    let voice_owner = owners(&inputs.voice_people);
+    let mut voice_owner = owners(&inputs.voice_people);
+    for track in &inputs.unassigned_voice_tracks {
+        voice_owner.entry(*track).or_insert(*track);
+    }
+    let provisional = |subject: &Uuid| inputs.unassigned_voice_tracks.contains(subject);
     // (person, key, evidence) pairs clearly connected to that person.
     let mut strong: Vec<(Uuid, &str, NameEvidence)> = Vec::new();
     let mut ambiguous: BTreeMap<Uuid, (&'static str, BTreeSet<String>)> = BTreeMap::new();
@@ -535,6 +550,7 @@ pub fn plan_names(inputs: &NameEvidenceInputs) -> BTreeMap<Uuid, NamePlan> {
         .face_people
         .keys()
         .chain(inputs.voice_people.keys())
+        .chain(keys.keys().filter(|subject| provisional(subject)))
         .copied()
         .collect();
     let mut result = BTreeMap::new();
@@ -546,7 +562,14 @@ pub fn plan_names(inputs: &NameEvidenceInputs) -> BTreeMap<Uuid, NamePlan> {
             },
             Some(by_key) => {
                 let (key, evidence) = by_key.iter().next().unwrap();
-                if claims.get(key).is_some_and(|p| p.len() > 1) {
+                // A would-be single-video person never takes a name from an existing person.
+                let rivals = claims.get(key).map_or(0, |claimants| {
+                    claimants
+                        .iter()
+                        .filter(|c| **c != person && (provisional(&person) || !provisional(c)))
+                        .count()
+                });
+                if rivals > 0 {
                     NamePlan::Unresolved {
                         reason: "The same name is linked to several corpus people".into(),
                         candidates: vec![display(evidence)],
@@ -571,6 +594,10 @@ pub fn plan_names(inputs: &NameEvidenceInputs) -> BTreeMap<Uuid, NamePlan> {
                 None => continue,
             },
         };
+        // An unnamed or contested single-video voice forms no person.
+        if provisional(&person) && !matches!(plan, NamePlan::Named { .. }) {
+            continue;
+        }
         result.insert(person, plan);
     }
     result
@@ -874,6 +901,11 @@ async fn load(connection: &mut PgConnection, corpus: Uuid) -> anyhow::Result<Inp
         evidence: NameEvidenceInputs {
             face_people,
             voice_people,
+            unassigned_voice_tracks: crate::voice_matching::unassigned_voice_tracks(
+                &mut *connection,
+                corpus,
+            )
+            .await?,
             faces,
             voices,
             tags,
@@ -993,6 +1025,7 @@ pub async fn infer_person_names(pool: &PgPool, corpus: Uuid) -> anyhow::Result<P
     lock(&mut tx, corpus).await?;
     let inputs = load(&mut tx, corpus).await?;
     let plan = inputs.plan();
+    let mut names: Vec<(Uuid, &NamePlan)> = Vec::new();
     for person in inputs.labels.keys() {
         if inputs
             .current
@@ -1007,12 +1040,25 @@ pub async fn infer_person_names(pool: &PgPool, corpus: Uuid) -> anyhow::Result<P
         .bind(person)
         .execute(&mut *tx)
         .await?;
-        let Some(NamePlan::Named {
+        if let Some(named @ NamePlan::Named { .. }) = plan.get(person) {
+            names.push((*person, named));
+        }
+    }
+    for track in &inputs.evidence.unassigned_voice_tracks {
+        if let Some(named @ NamePlan::Named { .. }) = plan.get(track) {
+            let person =
+                crate::voice_matching::create_self_introduced_person(&mut tx, corpus, *track)
+                    .await?;
+            names.push((person, named));
+        }
+    }
+    for (person, named) in names {
+        let NamePlan::Named {
             name,
             key,
             confidence,
             evidence,
-        }) = plan.get(person)
+        } = named
         else {
             continue;
         };
@@ -1626,5 +1672,60 @@ mod tests {
         assert!(
             matches!(&plan[&person], NamePlan::Unresolved { reason, .. } if reason.contains("rejected"))
         );
+    }
+
+    #[test]
+    fn self_introductions_name_unassigned_voice_tracks() {
+        let video = Uuid::new_v4();
+        let (host, h, guest) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let inputs = |spoken: Vec<SpokenNameCandidate>| NameEvidenceInputs {
+            voice_people: BTreeMap::from([(host, BTreeSet::from([h]))]),
+            unassigned_voice_tracks: BTreeSet::from([guest]),
+            voices: vec![voice(h, video, 0.0, 10.0), voice(guest, video, 10.0, 30.0)],
+            spoken,
+            ..Default::default()
+        };
+        // The guest's own introduction names its track, keyed by the track id.
+        let plan = plan_names(&inputs(vec![said(
+            video,
+            "Hi, I'm Joe Schmid, thanks for having me.",
+            "Joe Schmid",
+            11.0,
+            14.0,
+        )]));
+        assert!(
+            matches!(&plan[&guest], NamePlan::Named { name, evidence, .. }
+                if name == "Joe Schmid" && evidence[0].voice_track_id == Some(guest))
+        );
+        assert!(!plan.contains_key(&host));
+        // Unnamed, introduced-by-the-host, conflicting or contested voices form no person.
+        let plan = plan_names(&inputs(vec![said(
+            video,
+            "Joining me is Joe Schmid.",
+            "Joe Schmid",
+            1.0,
+            3.0,
+        )]));
+        assert!(plan.is_empty());
+        let plan = plan_names(&inputs(vec![
+            said(video, "I'm Joe Schmid, hello.", "Joe Schmid", 11.0, 14.0),
+            said(
+                video,
+                "I'm Joseph Smith, hello.",
+                "Joseph Smith",
+                20.0,
+                23.0,
+            ),
+        ]));
+        assert!(plan.is_empty());
+        let plan = plan_names(&inputs(vec![
+            said(video, "I'm Joe Schmid, hello.", "Joe Schmid", 1.0, 4.0),
+            said(video, "I'm Joe Schmid, hello.", "Joe Schmid", 11.0, 14.0),
+        ]));
+        assert!(
+            matches!(&plan[&host], NamePlan::Named { name, .. } if name == "Joe Schmid"),
+            "an existing person keeps its name over a would-be single-video person"
+        );
+        assert!(!plan.contains_key(&guest));
     }
 }

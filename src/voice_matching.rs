@@ -822,16 +822,12 @@ async fn assign(
     cluster: Uuid,
     track: Uuid,
     score: Option<f64>,
+    settings: Value,
     source: &str,
 ) -> anyhow::Result<()> {
     sqlx::query("INSERT INTO voice_cluster_members(cluster_id,track_id,similarity,assignment_algorithm) VALUES($1,$2,$3,$4)
         ON CONFLICT(cluster_id,track_id) DO UPDATE SET similarity=EXCLUDED.similarity,assignment_algorithm=EXCLUDED.assignment_algorithm,assigned_at=now()")
         .bind(cluster).bind(track).bind(score).bind(source).execute(&mut **tx).await?;
-    let settings = if score.is_some() {
-        configuration()
-    } else {
-        json!({"algorithm":"researcher-corrected association","processorRevision":crate::provenance::PROCESSOR_SOURCE_REVISION,"source":source})
-    };
     let config_hash = hash(&settings);
     sqlx::query("INSERT INTO voice_match_configurations(config_hash,configuration) VALUES($1,$2) ON CONFLICT DO NOTHING")
         .bind(&config_hash).bind(settings).execute(&mut **tx).await?;
@@ -845,6 +841,50 @@ async fn assign(
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+/// Current voice tracks with enough clean speech that no corpus person holds and no researcher
+/// placed: what voice matching leaves unresolved, typically a guest heard in one video.
+pub(crate) async fn unassigned_voice_tracks(
+    connection: &mut PgConnection,
+    corpus: Uuid,
+) -> anyhow::Result<BTreeSet<Uuid>> {
+    let tracks = corpus_tracks(&mut *connection, corpus).await?;
+    let groups = groups(&mut *connection, corpus, &tracks).await?;
+    let assigned: BTreeSet<Uuid> = groups
+        .iter()
+        .flat_map(|g| g.tracks.iter().map(|t| t.track_id))
+        .collect();
+    Ok(tracks
+        .iter()
+        .filter(|t| {
+            t.current && t.strong() && !t.placement_fixed() && !assigned.contains(&t.track_id)
+        })
+        .map(|t| t.track_id)
+        .collect())
+}
+
+/// Forms a single-video corpus person around one unassigned voice track because a spoken
+/// self-introduction names it (#164). Like any automatic voice person it is an unverified
+/// suggestion, and a later appearance in another video joins it through [`match_corpus_voices`].
+pub(crate) async fn create_self_introduced_person(
+    tx: &mut Transaction<'_, Postgres>,
+    corpus: Uuid,
+    track: Uuid,
+) -> anyhow::Result<Uuid> {
+    let person = Uuid::new_v4();
+    create_person(tx, corpus, person, "automatic-self-introduced-voice").await?;
+    let source = format!(
+        "{}@{}",
+        crate::person_names::ALGORITHM,
+        crate::provenance::PROCESSOR_SOURCE_REVISION
+    );
+    let cluster = cluster_for(tx, corpus, person, &source).await?;
+    let settings = json!({"algorithm":"single-video voice person from a spoken self-introduction",
+        "processorRevision":crate::provenance::PROCESSOR_SOURCE_REVISION,
+        "nameEvidence":crate::person_names::ALGORITHM,"voiceMatching":configuration()});
+    assign(tx, cluster, track, None, settings, &source).await?;
+    Ok(person)
 }
 
 /// Suggests cross-video voice matches and face↔voice links for a corpus. Researcher decisions
@@ -874,6 +914,7 @@ pub async fn match_corpus_voices(pool: &PgPool, corpus: Uuid) -> anyhow::Result<
             cluster,
             assignment.track,
             Some(f64::from(assignment.score)),
+            configuration(),
             &source,
         )
         .await?;
@@ -1031,7 +1072,9 @@ pub async fn correct_voice_matches(
             } else {
                 "researcher-corrected inferred association"
             };
-            assign(&mut tx, cluster, *track, None, source).await?;
+            let settings = json!({"algorithm":"researcher-corrected association",
+                "processorRevision":crate::provenance::PROCESSOR_SOURCE_REVISION,"source":source});
+            assign(&mut tx, cluster, *track, None, settings, source).await?;
         }
         sqlx::query("INSERT INTO voice_match_decisions(corpus_id,track_id,person_id,decision) VALUES($1,$2,$3,$4)
             ON CONFLICT(corpus_id,track_id) DO UPDATE SET person_id=EXCLUDED.person_id,decision=EXCLUDED.decision,updated_at=now()")
