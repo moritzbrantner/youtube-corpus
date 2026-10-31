@@ -29,9 +29,9 @@ import {
   type IdentityLocalUnit,
   type IdentitySummary,
 } from "./api";
-import { MentionVideos, TrackVideos } from "./CorpusEntities";
 import { errorMessage } from "./CorpusLabels";
 import { nameStatusLabel } from "./PersonNamesReview";
+import { ProfileEvidence } from "./ProfileEvidence";
 import {
   corpusPageUrl,
   identityUrl,
@@ -317,7 +317,6 @@ function IdentityProfilePage({
     );
   }
   const { identity } = profile;
-  const unitsByKey = new Map(profile.units.map((unit) => [unit.unitKey, unit]));
   return (
     <div className="grid gap-4">
       <Surface>
@@ -347,7 +346,6 @@ function IdentityProfilePage({
             <EvidenceBadges identity={identity} />
           </div>
           <div className="flex flex-wrap items-end gap-2">
-            <ScopeSelect corpusName={corpusName} state={state} onUpdate={onUpdate} />
             <Button
               type="button"
               variant="outline"
@@ -487,38 +485,13 @@ function IdentityProfilePage({
           ) : null}
         </SurfaceContent>
       </Surface>
-      <Surface>
-        <SurfaceHeader>
-          <SurfaceTitle>Evidence</SurfaceTitle>
-          <SurfaceDescription>
-            {scopedCorpus
-              ? `Evidence in ${corpusName}. Switch the scope to All corpora for the rest.`
-              : "Evidence in every corpus."}
-          </SurfaceDescription>
-        </SurfaceHeader>
-        <SurfaceContent className="grid gap-4">
-          {profile.evidence.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No local evidence in this scope.</p>
-          ) : null}
-          {profile.evidence.map((evidence) => {
-            const unit = unitsByKey.get(evidence.unitKey);
-            return (
-              <section key={evidence.unitKey} className="grid gap-2">
-                <h3 className="text-sm font-semibold">
-                  {unit?.label || "Unnamed person"} in {unit?.corpusName}
-                  {evidence.tracks ? " (shown or heard)" : " (mentioned)"}
-                </h3>
-                {evidence.mentions ? (
-                  <MentionVideos corpusId={evidence.corpusId} videos={evidence.mentions.videos} />
-                ) : null}
-                {evidence.tracks ? (
-                  <TrackVideos corpusId={evidence.corpusId} videos={evidence.tracks.videos} />
-                ) : null}
-              </section>
-            );
-          })}
-        </SurfaceContent>
-      </Surface>
+      <ProfileEvidence
+        profile={profile}
+        corpusId={corpusId}
+        corpusName={corpusName}
+        state={state}
+        onUpdate={onUpdate}
+      />
     </div>
   );
 }

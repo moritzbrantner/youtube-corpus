@@ -15,3 +15,5 @@ dist/
 *.vtt
 *.srt
 *.json.tmp
+/test-results/
+/playwright-report/

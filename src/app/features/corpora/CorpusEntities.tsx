@@ -377,6 +377,17 @@ function VideoTitle({
   );
 }
 
+/** A video's metadata publication date; unknown dates say so instead of guessing. */
+export function PublicationDate({ date }: { date: string | null }) {
+  return date ? (
+    <span className="text-sm text-muted-foreground">
+      Published <time dateTime={date}>{date}</time>
+    </span>
+  ) : (
+    <span className="text-sm text-muted-foreground">Publication date unknown</span>
+  );
+}
+
 /** Mention evidence of one corpus-local entity group, grouped by video. */
 export function MentionVideos({
   corpusId,
@@ -391,6 +402,7 @@ export function MentionVideos({
         <article key={video.videoId} className="grid gap-2 rounded-md border border-border p-3">
           <header className="flex flex-wrap items-center gap-2">
             <VideoTitle corpusId={corpusId} video={video} />
+            <PublicationDate date={video.publicationDate} />
             <Badge variant="secondary">Spoken ×{video.spokenMentions}</Badge>
             <Badge variant="secondary">On-screen text ×{video.visibleTextMentions}</Badge>
           </header>
@@ -484,6 +496,7 @@ export function TrackVideos({
         <article key={video.videoId} className="grid gap-2 rounded-md border border-border p-3">
           <header className="flex flex-wrap items-center gap-2">
             <VideoTitle corpusId={corpusId} video={video} />
+            <PublicationDate date={video.publicationDate} />
             <Badge variant="secondary">Shown ×{video.shownTracks}</Badge>
             <Badge variant="secondary">Heard ×{video.heardTracks}</Badge>
           </header>
