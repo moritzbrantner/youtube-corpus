@@ -710,6 +710,7 @@ out.mkdir(parents=True, exist_ok=True)
             detectors: Some(vec!["asr".to_string()]),
             translation_provider: None,
             keep_media: false,
+            transcriber: None,
         })
     };
     let calls = || {
@@ -845,6 +846,7 @@ async fn faces_reuses_empty_completed_runs_and_preserves_them_after_failed_refre
             detectors: Some(vec!["faces".into()]),
             translation_provider: None,
             keep_media: false,
+            transcriber: None,
         })
     };
     assert!(matches!(
@@ -1008,6 +1010,7 @@ async fn native_voices_store_model_observations_tracks_and_survive_failed_refres
         detectors: Some(vec!["voices".into()]),
         translation_provider: None,
         keep_media: false,
+        transcriber: None,
     };
     let first = run_video_plan(request(false)).await.unwrap();
     assert!(

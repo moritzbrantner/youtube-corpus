@@ -147,6 +147,10 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
   Status: adopted 2026-10-23 (owner preference, issue #127).  
   Audio or video the corpus downloads from YouTube is deleted from local disk once every enabled stage that needs it, in every corpus plan containing the video, has durably stored current output. Metadata, source identity, captions, timestamped transcripts, annotations, producer provenance, search indexes and exports stay usable without the file, and the acquisition record (format ids, byte size, SHA-256) remains with when and why the file was deleted. Media stays while any such stage is unavailable, failed, interrupted or running, and a later plan that needs it acquires it again. An explicit keep-media request retains it for later review. User-supplied local media is never deleted.
 
+- **2.13 One reusable plan takes a list of freely licensed videos from ingest to citable export.**  
+  Status: adopted 2026-10-31 (issue #128 defaults).  
+  A workflow plan names a corpus, its videos and its enabled stages. Running it ingests metadata and captions, runs the corpus plan under 2.11 and 2.12, and writes the corpus's versioned exports with a report of every stage outcome and of the media lifecycle. A video whose stated YouTube licence does not match the plan's required licence (Creative Commons by default) is not stored. Re-running an unchanged plan reuses every stage and downloads nothing. When a run must acquire media again, every enabled media stage runs on the new file, so no stage output refers to replaced media and the new file is released afterwards.
+
 ## 3. Finding material inside videos
 
 - **3.1 Search transcript words, phrases, and passages across the corpus.**  

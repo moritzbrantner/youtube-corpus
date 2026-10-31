@@ -1,0 +1,13 @@
+{
+  "corpus": "cc-by-sample",
+  "corpusName": "CC BY sample",
+  "videos": [
+    "https://www.youtube.com/watch?v=FdbnzfjoOJU",
+    "https://www.youtube.com/watch?v=7bHleRTEmZ0"
+  ],
+  "detectors": ["captions", "asr", "scenes"],
+  "requireLicense": "Creative Commons",
+  "captionLanguages": ["en"],
+  "exports": ["source-span", "corpus-core", "belief-evidence"],
+  "keepMedia": false
+}

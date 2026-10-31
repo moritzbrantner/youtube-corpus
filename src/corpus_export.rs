@@ -206,18 +206,26 @@ impl CorpusExportSnapshot {
     /// (effective) video is `video_id`, the streams that still have segments (or belong to the
     /// video and had none), the video's runs, and every video those reference.
     pub fn retain_video(&mut self, video_id: Uuid) {
+        self.retain_videos(&BTreeSet::from([video_id]));
+    }
+
+    /// [`Self::retain_video`] for a set of videos, such as the members of one corpus.
+    pub fn retain_videos(&mut self, video_ids: &BTreeSet<Uuid>) {
         self.transcript_streams.retain_mut(|stream| {
             let had_segments = !stream.segments.is_empty();
             let stream_video = stream.video_id;
             stream
                 .segments
-                .retain(|segment| segment.video_id.unwrap_or(stream_video) == video_id);
-            !stream.segments.is_empty() || (!had_segments && stream_video == video_id)
+                .retain(|segment| video_ids.contains(&segment.video_id.unwrap_or(stream_video)));
+            !stream.segments.is_empty() || (!had_segments && video_ids.contains(&stream_video))
         });
-        self.visual_text_runs.retain(|run| run.video_id == video_id);
-        self.scenes.retain(|scene| scene.video_id == video_id);
-        self.speaker_turns.retain(|turn| turn.video_id == video_id);
-        let mut referenced = BTreeSet::from([video_id]);
+        self.visual_text_runs
+            .retain(|run| video_ids.contains(&run.video_id));
+        self.scenes
+            .retain(|scene| video_ids.contains(&scene.video_id));
+        self.speaker_turns
+            .retain(|turn| video_ids.contains(&turn.video_id));
+        let mut referenced = video_ids.clone();
         for stream in &self.transcript_streams {
             referenced.insert(stream.video_id);
             referenced.extend(

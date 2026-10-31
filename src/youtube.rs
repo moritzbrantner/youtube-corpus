@@ -45,6 +45,10 @@ pub struct VideoMetadata {
     pub age_limit: Option<i64>,
     pub categories: Vec<String>,
     pub tags: Vec<String>,
+    /// The licence YouTube states for the video, as yt-dlp reports it (for example
+    /// "Creative Commons Attribution license (reuse allowed)").
+    #[serde(default)]
+    pub license: Option<String>,
     pub yt_dlp_version: Option<String>,
     pub metadata_downloaded_at: Option<String>,
     pub metadata_source: Option<String>,
@@ -88,6 +92,7 @@ struct YtDlpEntryJson {
     age_limit: Option<i64>,
     categories: Option<Vec<String>>,
     tags: Option<Vec<String>>,
+    license: Option<String>,
     entries: Option<Vec<Option<YtDlpEntryJson>>>,
 }
 
@@ -119,6 +124,7 @@ impl VideoMetadata {
             age_limit: entry.age_limit,
             categories: clean_strings(entry.categories.clone().unwrap_or_default()),
             tags: clean_strings(entry.tags.clone().unwrap_or_default()),
+            license: clean_string(entry.license.clone()),
             yt_dlp_version: None,
             metadata_downloaded_at: None,
             metadata_source: None,
@@ -249,7 +255,8 @@ pub async fn enrich_video_metadata(
     metadata_dir: &Path,
     yt_dlp: &YtDlpConfig,
 ) -> anyhow::Result<()> {
-    if item.local_video_path.is_some() {
+    // Local files have no YouTube metadata; an item enriched earlier in this run keeps its own.
+    if item.local_video_path.is_some() || item.metadata.metadata_downloaded_at.is_some() {
         return Ok(());
     }
     tokio::fs::create_dir_all(metadata_dir).await?;

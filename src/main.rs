@@ -1,8 +1,6 @@
 use anyhow::Context;
 use std::time::Duration;
-use youtube_corpus::cli::{
-    Cli, Command, ExportArgs, ExportFormat, OutputFormat, SpanArgs, SubscriptionsCommand,
-};
+use youtube_corpus::cli::{Cli, Command, ExportArgs, OutputFormat, SpanArgs, SubscriptionsCommand};
 use youtube_corpus::config::AppConfig;
 use youtube_corpus::web::WebServerConfig;
 
@@ -207,6 +205,31 @@ async fn run_command(
             println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Command::Export(args) => run_export(args, database_url).await?,
+        Command::Process(args) => {
+            let config = AppConfig::from_env_and_cli(database_url)?;
+            let report =
+                youtube_corpus::workflow::run_workflow(youtube_corpus::workflow::WorkflowRequest {
+                    database_url: config.database_url,
+                    plan: youtube_corpus::workflow::WorkflowPlan::load(&args.plan)?,
+                    out_dir: args.out_dir,
+                    work_dir: args.work_dir,
+                    model_dir: args.model_dir,
+                    yt_dlp,
+                    producer_revision: args
+                        .producer_revision
+                        .unwrap_or_else(|| format!("youtube-corpus@{}", env!("CARGO_PKG_VERSION"))),
+                    refresh: args.refresh,
+                    migrate: args.migrate,
+                })
+                .await
+                .context("workflow failed")?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            anyhow::ensure!(
+                report.failures == 0,
+                "workflow finished with {} failure(s); see workflow-report.json",
+                report.failures
+            );
+        }
         Command::Events(args) => match args.command {
             youtube_corpus::cli::EventsCommand::Extract(args) => {
                 let config = AppConfig::from_env_and_cli(database_url)?;
@@ -329,10 +352,7 @@ async fn run_span(args: SpanArgs, database_url: Option<String>) -> anyhow::Resul
 
 async fn run_export(args: ExportArgs, database_url: Option<String>) -> anyhow::Result<()> {
     use std::io::Write as _;
-    use youtube_corpus::corpus_export::{
-        export_belief_evidence, export_corpus_core_jsonl, export_source_span, load_export_snapshot,
-        CorpusExportSnapshot,
-    };
+    use youtube_corpus::corpus_export::{load_export_snapshot, CorpusExportSnapshot};
 
     anyhow::ensure!(
         !args.producer_revision.trim().is_empty(),
@@ -355,17 +375,25 @@ async fn run_export(args: ExportArgs, database_url: Option<String>) -> anyhow::R
             if args.migrate {
                 youtube_corpus::db::migrate(&pool).await?;
             }
-            load_export_snapshot(&pool, args.video_id)
+            let mut snapshot = load_export_snapshot(&pool, args.video_id)
                 .await
-                .context("failed to load the export snapshot")?
+                .context("failed to load the export snapshot")?;
+            if let Some(corpus) = &args.corpus {
+                let corpus_id = resolve_corpus(&pool, corpus).await?;
+                snapshot.retain_videos(
+                    &youtube_corpus::corpora::corpus_video_ids(&pool, corpus_id)
+                        .await?
+                        .into_iter()
+                        .collect(),
+                );
+            }
+            snapshot
         }
     };
-    let output = match args.format {
-        ExportFormat::SourceSpan => export_source_span(&snapshot, &args.producer_revision),
-        ExportFormat::CorpusCore => export_corpus_core_jsonl(&snapshot, &args.producer_revision),
-        ExportFormat::BeliefEvidence => export_belief_evidence(&snapshot, &args.producer_revision),
-    }
-    .context("export failed")?;
+    let output = args
+        .format
+        .render(&snapshot, &args.producer_revision)
+        .context("export failed")?;
     match &args.output {
         Some(path) => std::fs::write(path, output.as_bytes())
             .with_context(|| format!("failed to write {}", path.display()))?,

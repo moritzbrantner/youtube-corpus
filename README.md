@@ -185,6 +185,47 @@ never deleted. Pass `ingest --keep-media` (or `keepMedia: true` when running a
 plan through the API) to keep the media of that run. A later plan that needs the
 media again acquires it again.
 
+## Process a list of videos (workflow plan)
+
+`process` takes a list of videos from ingest to citable export in one command. A
+plan file names the corpus, the videos and the stages:
+
+```bash
+cargo run -- process --plan workflows/cc-by-sample.plan.json \
+  --out-dir use-case-output/cc-by-sample --migrate
+```
+
+For every video it downloads the metadata, and drops the video unless its stated
+YouTube licence contains `requireLicense` (default `Creative Commons`; `""`
+accepts any). It then ingests the captions, adds the video to the corpus and runs
+the corpus plan: the detectors listed under `detectors` become the corpus default,
+media is acquired once for the stages that run, and it is deleted after they stored
+their output. Finally it writes the corpus's exports (`source-span.json`,
+`corpus-core.jsonl`, `belief-evidence.json`) and `workflow-report.json` into
+`--out-dir`. The report lists each video's licence, every stage outcome, the
+deleted or retained media, and each export's SHA-256. The command exits non-zero
+when a video or an enabled stage failed. Unavailable producers, such as OCR, are
+reported but are not failures.
+
+| Plan field         | Default            | Meaning                                                                                         |
+| ------------------ | ------------------ | ----------------------------------------------------------------------------------------------- |
+| `corpus`           | required           | Corpus slug; created on first use                                                               |
+| `corpusName`       | the slug           | Name of a newly created corpus                                                                  |
+| `videos`           | required           | YouTube video URLs                                                                              |
+| `detectors`        | required           | Enabled detectors, as ids or `{"detector": "translate_spoken", "targetLanguages": ["de"]}`      |
+| `requireLicense`   | `Creative Commons` | Text the video's YouTube licence must contain                                                   |
+| `captionLanguages` | `["en"]`           | Caption languages to fetch                                                                      |
+| `transcriber`      | `whisper` on PATH  | `{"command": "...", "args": [...], "timeoutSeconds": n}` for ASR of videos no source configures |
+| `exports`          | all three          | `source-span`, `corpus-core`, `belief-evidence`                                                 |
+| `keepMedia`        | `false`            | Keep downloaded media after processing                                                          |
+
+Running the same plan again reuses every stored stage, downloads nothing and
+writes byte-identical exports. If a stage has to run again (for example after a
+transcriber change) and the media must be downloaded again, every enabled media
+stage runs on the new file, and that file is deleted afterwards. `--refresh`
+re-ingests and reruns every stage. `export --corpus <slug>` writes one corpus's
+exports later without a plan.
+
 ## Subscriptions
 
 Store channels or playlists and check them later for new videos:

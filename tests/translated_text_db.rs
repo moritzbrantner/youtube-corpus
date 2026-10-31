@@ -240,6 +240,7 @@ impl Ctx {
             refresh: false,
             detectors: None,
             keep_media: false,
+            transcriber: None,
             translation_provider: Some(TranslationProviderFactory(Arc::new(move || {
                 ProviderHandle {
                     provider: Box::new(Fixture {
@@ -773,6 +774,7 @@ async fn native_opus_mt_translation_is_indexed_and_searchable() {
         detectors: None,
         translation_provider: None,
         keep_media: false,
+        transcriber: None,
     })
     .await
     .unwrap();

@@ -312,6 +312,7 @@ impl Release {
             detectors: None,
             translation_provider: None,
             keep_media,
+            transcriber: None,
         }
     }
 
