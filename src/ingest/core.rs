@@ -372,6 +372,7 @@ async fn ingest_item(
                 detectors: None,
                 translation_provider: None,
                 keep_media: request.keep_media,
+                transcriber: None,
             },
         )
         .await;

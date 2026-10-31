@@ -158,6 +158,42 @@ impl MediaAcquisition {
     }
 }
 
+/// Whether the video's present media already serves `need`, so [`ensure_media`] would not
+/// download. Local inputs and media retained before acquisitions were recorded count as
+/// serving.
+pub async fn media_serves(pool: &PgPool, video_id: Uuid, need: MediaNeed) -> anyhow::Result<bool> {
+    if need == MediaNeed::Nothing {
+        return Ok(true);
+    }
+    let row = sqlx::query(
+        "SELECT source_url, local_video_path, media_acquisition FROM videos WHERE id = $1",
+    )
+    .bind(video_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("video not found"))?;
+    let source_url: String = row.try_get("source_url")?;
+    if !is_remote(&source_url) {
+        return Ok(true);
+    }
+    let local_path: Option<String> = row.try_get("local_video_path")?;
+    let local_path = local_path
+        .filter(|path| !path.trim().is_empty())
+        .map(PathBuf::from);
+    let recorded: Option<serde_json::Value> = row.try_get("media_acquisition")?;
+    Ok(
+        match recorded.map(serde_json::from_value::<MediaAcquisition>) {
+            Some(Ok(acquired)) => {
+                need.is_covered_by(acquired.need)
+                    && local_path.as_deref() == Some(acquired.path.as_path())
+                    && acquired.file_present()
+            }
+            None => local_path.is_some_and(|path| path.is_file()),
+            Some(Err(_)) => false,
+        },
+    )
+}
+
 /// Makes sure the video's source media serves `need`, downloading it when the recorded
 /// acquisition is missing, insufficient or its file was removed. Returns the media path, or
 /// None when nothing is needed. Local input files are returned as they are.

@@ -136,6 +136,33 @@ pub enum Command {
     Entities(EntitiesArgs),
     /// Suggests unreviewed dated historical event claims from transcripts and visible text.
     Events(EventsArgs),
+    /// Runs a workflow plan: ingest its videos into a corpus, run the enabled stages, write
+    /// the citable exports and release downloaded media (#128).
+    Process(ProcessArgs),
+}
+
+#[derive(Debug, Parser)]
+#[command(args_override_self = true)]
+pub struct ProcessArgs {
+    /// Workflow plan JSON (see `workflows/cc-by-sample.plan.json`).
+    #[arg(long)]
+    pub plan: PathBuf,
+    /// Directory for the exports and `workflow-report.json`.
+    #[arg(long)]
+    pub out_dir: PathBuf,
+    #[arg(long, default_value = "use-case-output/youtube-corpus")]
+    pub work_dir: PathBuf,
+    /// Model cache for the faces, voices, entities and translation stages.
+    #[arg(long, default_value = crate::entities::DEFAULT_MODEL_DIR)]
+    pub model_dir: PathBuf,
+    /// Revision recorded in the exports; defaults to `youtube-corpus@<version>`.
+    #[arg(long)]
+    pub producer_revision: Option<String>,
+    /// Re-run stages even when matching output exists.
+    #[arg(long)]
+    pub refresh: bool,
+    #[arg(long)]
+    pub migrate: bool,
 }
 
 #[derive(Debug, Parser)]
@@ -844,7 +871,8 @@ pub struct ApiSchemaArgs {
 }
 
 /// Downstream export formats (see `youtube_corpus::corpus_export`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ExportFormat {
     /// `source_span_interchange@1` source and span records.
     SourceSpan,
@@ -852,6 +880,32 @@ pub enum ExportFormat {
     CorpusCore,
     /// `belief_evidence_interchange@1` evidence references for belief-lab.
     BeliefEvidence,
+}
+
+impl ExportFormat {
+    pub fn render(
+        self,
+        snapshot: &crate::corpus_export::CorpusExportSnapshot,
+        producer_revision: &str,
+    ) -> anyhow::Result<String> {
+        use crate::corpus_export::{
+            export_belief_evidence, export_corpus_core_jsonl, export_source_span,
+        };
+        match self {
+            Self::SourceSpan => export_source_span(snapshot, producer_revision),
+            Self::CorpusCore => export_corpus_core_jsonl(snapshot, producer_revision),
+            Self::BeliefEvidence => export_belief_evidence(snapshot, producer_revision),
+        }
+    }
+
+    /// The file name `process` writes this export to.
+    pub fn file_name(self) -> &'static str {
+        match self {
+            Self::SourceSpan => "source-span.json",
+            Self::CorpusCore => "corpus-core.jsonl",
+            Self::BeliefEvidence => "belief-evidence.json",
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
@@ -862,8 +916,11 @@ pub struct ExportArgs {
     /// Revision of the producing code recorded in the export (for example `git:<sha>`).
     #[arg(long)]
     pub producer_revision: String,
-    #[arg(long)]
+    #[arg(long, conflicts_with = "corpus")]
     pub video_id: Option<Uuid>,
+    /// Exports only the videos of this corpus (id or slug); reads the database.
+    #[arg(long, conflicts_with = "snapshot")]
+    pub corpus: Option<String>,
     /// Writes the export to this file instead of stdout.
     #[arg(long)]
     pub output: Option<PathBuf>,

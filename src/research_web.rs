@@ -991,6 +991,7 @@ async fn run_video_plan(
         detectors: input.detectors,
         translation_provider: None,
         keep_media: input.keep_media.unwrap_or(false),
+        transcriber: None,
     })
     .await
     .map(Json)

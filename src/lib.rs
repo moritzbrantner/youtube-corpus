@@ -47,6 +47,7 @@ pub mod visual_timeline;
 pub mod voice_matching;
 pub mod voice_processing;
 pub mod web;
+pub mod workflow;
 pub mod youtube;
 pub mod yt_dlp;
 pub mod yt_dlp_bridge_web;

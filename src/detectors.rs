@@ -552,6 +552,21 @@ pub struct PlanRunRequest {
     /// Keep downloaded media after processing instead of deleting it once every enabled
     /// media stage stored current output (#127).
     pub keep_media: bool,
+    /// ASR transcriber for videos no tracked source configures one for; None falls back to
+    /// `whisper` on PATH.
+    pub transcriber: Option<TranscriberConfig>,
+}
+
+/// A Whisper-compatible transcriber command (called as `<command> <media> <args…>
+/// --output_dir <dir> --output_format json`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TranscriberConfig {
+    pub command: PathBuf,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub timeout_seconds: Option<u64>,
 }
 
 /// Runs every enabled detector of a video's effective plan, reusing existing output of the
@@ -635,12 +650,40 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
         });
     }
     // Acquire once, for everything that runs (#126): nothing, audio, or one video.
-    let need = crate::media_acquisition::MediaNeed::for_detectors(
-        decided
-            .iter()
-            .filter_map(|stage| stage.as_ref().err().copied())
-            .filter_map(|(detector, needs_media)| needs_media.then_some(detector)),
-    );
+    use crate::media_acquisition::MediaNeed;
+    let need_of = |decided: &[Result<StageReport, (&str, bool)>]| {
+        MediaNeed::for_detectors(
+            decided
+                .iter()
+                .filter_map(|stage| stage.as_ref().err().copied())
+                .filter_map(|(detector, needs_media)| needs_media.then_some(detector)),
+        )
+    };
+    let mut need = need_of(&decided);
+    // A new download replaces the media that reused media stages were computed from, which
+    // would leave their output stale and the new file held forever (#128). Run them on the
+    // new file as well, so one acquisition serves every media stage and is released after.
+    if need != MediaNeed::Nothing
+        && !crate::media_acquisition::media_serves(&pool, request.video_id, need).await?
+    {
+        for stage in &mut decided {
+            let detector = match stage {
+                Ok(report) if report.outcome == StageOutcome::Reused => plan
+                    .detectors
+                    .iter()
+                    .find(|planned| planned.detector == report.detector)
+                    .map(|planned| planned.detector.as_str()),
+                Err((detector, false)) => Some(*detector),
+                _ => None,
+            };
+            if let Some(detector) =
+                detector.filter(|detector| MediaNeed::for_detector(detector) != MediaNeed::Nothing)
+            {
+                *stage = Err((detector, true));
+            }
+        }
+        need = need_of(&decided);
+    }
     let media_error = crate::media_acquisition::ensure_media(
         &pool,
         request.video_id,
@@ -906,7 +949,15 @@ async fn stage_request(
         "Multiple source ASR configurations request this video; configure a single compatibility provider before retrying (#73).");
     let config: serde_json::Value = match asr_configs.into_iter().next() {
         Some(value) => serde_json::from_str(&value)?,
-        None => serde_json::Value::Null,
+        // No tracked source configures ASR (a directly added video): use the run's own.
+        None => match &request.transcriber {
+            Some(transcriber) => serde_json::json!({
+                "command": transcriber.command,
+                "args": transcriber.args,
+                "timeout": transcriber.timeout_seconds,
+            }),
+            None => serde_json::Value::Null,
+        },
     };
     Ok(ReprocessRequest {
         database_url: request.database_url.clone(),
