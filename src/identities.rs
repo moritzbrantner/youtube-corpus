@@ -375,13 +375,15 @@ pub async fn resolve_identities(pool: &PgPool) -> anyhow::Result<ResolutionRepor
     })
 }
 
-/// Identities without units go; merge redirects stay while their target lives.
+/// Identities without units go; merge redirects stay while their target lives, and so do
+/// identities a historical event claim (#106) names, so the claim keeps its referent.
 async fn delete_orphans(tx: &mut Transaction<'_, Postgres>) -> anyhow::Result<()> {
     loop {
         let deleted = sqlx::query(
             "DELETE FROM canonical_identities i
              WHERE i.merged_into IS NULL
-               AND NOT EXISTS (SELECT 1 FROM canonical_identity_links l WHERE l.identity_id = i.id)",
+               AND NOT EXISTS (SELECT 1 FROM canonical_identity_links l WHERE l.identity_id = i.id)
+               AND NOT EXISTS (SELECT 1 FROM historical_event_claims c WHERE c.identity_id = i.id)",
         )
         .execute(&mut **tx)
         .await?
@@ -667,7 +669,7 @@ pub struct IdentityProfile {
     pub kept_apart: Vec<IdentitySummary>,
 }
 
-async fn live_identity(pool: &PgPool, id: Uuid) -> anyhow::Result<Option<Uuid>> {
+pub async fn live_identity(pool: &PgPool, id: Uuid) -> anyhow::Result<Option<Uuid>> {
     let mut current = id;
     for _ in 0..64 {
         let row: Option<Option<Uuid>> =

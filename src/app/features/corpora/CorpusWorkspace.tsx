@@ -30,12 +30,14 @@ import { CorpusSearch } from "./CorpusSearch";
 import { CorpusSourcesPage } from "./CorpusSourcesPage";
 import { CorpusVideoPage } from "./CorpusVideoPage";
 import { CorpusVideos } from "./CorpusVideos";
+import { EventPages } from "./EventPages";
 import { IdentityPages } from "./IdentityPages";
 import { corpusKeys } from "./query-keys";
 import {
   corpusPageUrl,
   directoryUrl,
   type CorpusPage,
+  readEventRoute,
   readIdentityRoute,
   readProcessingRoute,
   readVideoRoute,
@@ -50,6 +52,7 @@ const pageTitles: Record<CorpusPage, string> = {
   processing: "Processing",
   people: "People",
   entities: "Entities",
+  events: "Events",
 };
 
 export function CorpusWorkspace({ page }: { page: CorpusPage }) {
@@ -59,6 +62,7 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
     page === "people" || page === "entities"
       ? readIdentityRoute(new URL(window.location.href))
       : null;
+  const eventRoute = page === "events" ? readEventRoute(new URL(window.location.href)) : null;
   const processingRoute =
     page === "processing" ? readProcessingRoute(new URL(window.location.href)) : null;
   const corporaQuery = useQuery({
@@ -115,6 +119,11 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
                 id: "entities",
                 label: "Entities",
                 href: corpusPageUrl(new URL(window.location.href), "entities").href,
+              },
+              {
+                id: "events",
+                label: "Events",
+                href: corpusPageUrl(new URL(window.location.href), "events").href,
               },
               {
                 id: "processing",
@@ -292,6 +301,16 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
                   corpusId={selectedCorpus.id}
                   corpusName={selectedCorpus.name}
                   identityId={identityRoute.identityId}
+                  state={state}
+                  onUpdate={update}
+                />
+              ) : null}
+              {page === "events" && eventRoute ? (
+                <EventPages
+                  key={`${selectedCorpus.id}:${eventRoute.eventId ?? ""}:${new URLSearchParams(window.location.search).get("moment") ?? ""}`}
+                  corpusId={selectedCorpus.id}
+                  corpusName={selectedCorpus.name}
+                  eventId={eventRoute.eventId}
                   state={state}
                   onUpdate={update}
                 />

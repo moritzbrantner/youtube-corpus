@@ -211,7 +211,46 @@ export type CorpusPage =
   | "videos"
   | "processing"
   | "people"
-  | "entities";
+  | "entities"
+  | "events";
+
+/** Parses `/events` and `/events/:eventId`. */
+export function readEventRoute(url: URL): { eventId: string | null } | null {
+  const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (parts[0] !== "events") {
+    return null;
+  }
+  if (parts.length === 1) {
+    return { eventId: null };
+  }
+  return parts.length === 2 ? { eventId: parts[1] } : null;
+}
+
+/** An event's profile; keeps the corpus, scope and a pending claim moment. */
+export function eventUrl(current: URL, eventId: string): URL {
+  const url = corpusPageUrl(current, "events");
+  url.pathname = `/events/${encodeURIComponent(eventId)}`;
+  return url;
+}
+
+/**
+ * The Events directory holding one video moment as the evidence for a claim to record, either on
+ * a new event or on an existing one (`moment=<videoId>/<modality>/<evidenceId>`).
+ */
+export function eventsForMomentUrl(current: URL, moment: MomentLocator): URL {
+  const url = corpusPageUrl(current, "events");
+  url.searchParams.set("moment", `${moment.videoId}/${moment.modality}/${moment.evidenceId}`);
+  return url;
+}
+
+export function readMomentParam(url: URL): MomentLocator | null {
+  const [videoId, modality, evidenceId, ...rest] = (url.searchParams.get("moment") ?? "").split(
+    "/",
+  );
+  if (!videoId || !evidenceId || rest.length > 0) return null;
+  if (modality !== "spoken" && modality !== "visible") return null;
+  return { videoId, modality, evidenceId };
+}
 
 export type IdentityPage = "people" | "entities";
 
@@ -265,6 +304,9 @@ export function corpusPageUrl(current: URL, page: CorpusPage): URL {
   const url = new URL(current);
   url.pathname = `/${page}`;
   url.hash = "";
+  if (page !== "events") {
+    url.searchParams.delete("moment");
+  }
   return url;
 }
 
