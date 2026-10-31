@@ -23,6 +23,10 @@ OWNERS = {
 }
 FULL_REV = re.compile(r"^[0-9a-f]{40}$")
 ALLOWED_KEYS = {"package", "git", "rev", "features", "default-features", "optional"}
+# Crates their owner repository has removed, pinned at the last revision that has them, so they
+# are exempt from the one-rev-per-repository rule. moenarch-text-model-runtime: native-whisperx
+# still needs it (native-whisperx#424); nlp-stack main dropped it (nlp-stack#17).
+RETIRED_PINS = {"moenarch-text-model-runtime": "50dd68521e425d2ce734d1f2df1d8c818a659f12"}
 
 
 def main() -> int:
@@ -45,7 +49,7 @@ def main() -> int:
         if package.startswith("moenarch-"):
             entries.append((f"[patch.crates-io] {key}", package, spec))
 
-    for label, _package, spec in entries:
+    for label, package, spec in entries:
         if not isinstance(spec, dict):
             errors.append(f"{label}: must be a git table, not a version string")
             continue
@@ -57,7 +61,10 @@ def main() -> int:
         extra = set(spec) - ALLOWED_KEYS
         if extra:
             errors.append(f"{label}: unexpected keys {sorted(extra)}")
-        if git in OWNERS and isinstance(rev, str):
+        if package in RETIRED_PINS:
+            if rev != RETIRED_PINS[package]:
+                errors.append(f"{label}: retired crate must stay at {RETIRED_PINS[package]}")
+        elif git in OWNERS and isinstance(rev, str):
             pins.setdefault(git, set()).add(rev)
 
     for git, revs in sorted(pins.items()):
@@ -71,7 +78,11 @@ def main() -> int:
             seen.setdefault(package["name"], []).append(package.get("source", "<path>"))
     allowed_sources = {f"git+{git}?rev={rev}#{rev}" for git, revs in pins.items() for rev in revs}
     for name, sources in sorted(seen.items()):
-        if len(sources) != 1 or sources[0] not in allowed_sources:
+        allowed = allowed_sources
+        if name in RETIRED_PINS:
+            rev = RETIRED_PINS[name]
+            allowed = {f"git+{git}?rev={rev}#{rev}" for git in OWNERS}
+        if len(sources) != 1 or sources[0] not in allowed:
             errors.append(f"Cargo.lock: {name} must resolve once from a pinned git source, found {sources}")
 
     for error in errors:

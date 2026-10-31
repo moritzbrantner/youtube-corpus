@@ -1,14 +1,10 @@
 //! Automatically suggested, unreviewed historical event claims (Atlas 7.1; issue #107).
 //!
-//! The canonical NLP producer (nlp-stack `text-linguistics`) has no temporal normalizer: its
-//! `DATE` entities are untyped token spans and the local `bert-base-NER` model has no date label.
-//! Until nlp-stack owns historical temporal normalization (nlp-stack#156), this module is the
-//! bounded producer adapter for it: a deterministic recognizer of dated expressions (days, months,
-//! years, ranges, decades, centuries, BC/AD, approximation) in transcript segments and visual
-//! text (OCR) tracks.
-//! Everything else stays with the existing owners: participants and places come from the nlp-stack
-//! entity mentions already linked to canonical identities (#104), and claims, events and review
-//! are `crate::events` (#106).
+//! Dated expressions in transcript segments and visual text (OCR) tracks come from the nlp-stack
+//! temporal normalizer (`text_linguistics::normalize_temporal_expressions`, nlp-stack#156).
+//! This module turns them into claims: it names the event each date is about, and it pairs dates
+//! with participants and places from the nlp-stack entity mentions already linked to canonical
+//! identities (#104). Claims, events and review belong to `crate::events` (#106).
 //!
 //! A suggestion is always `unverified`: it records its producer, run, the exact matched text and
 //! byte range, and a confidence, and is never presented as an established fact. Reruns keep
@@ -18,93 +14,57 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
-use regex::{Captures, Regex};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
+use text_linguistics::{
+    normalize_temporal_expressions, HistoricalDate, TemporalCertainty, TemporalExpression,
+    TemporalPolarity, TEMPORAL_MIN_CONFIDENCE, TEMPORAL_NORMALIZER_PRODUCER,
+};
 use uuid::Uuid;
 
 use crate::entities::{video_text_sources, EntityModality};
 use crate::events::{insert_claim, ClaimExtraction, ClaimInput, ClaimPredicate, EventDate};
 
 /// Producer identity recorded on every extraction run and suggested claim.
-pub const EVENT_CLAIM_PRODUCER: &str = "youtube-corpus/historical-date-mentions";
-/// Bumped whenever the recognizer's rules change, so reruns are attributable.
-pub const EVENT_CLAIM_PRODUCER_VERSION: &str = "1";
-/// Date expressions below this confidence (e.g. a bare four-digit number) are not suggested.
-pub const MIN_DATE_CONFIDENCE: f32 = 0.6;
+pub const EVENT_CLAIM_PRODUCER: &str = TEMPORAL_NORMALIZER_PRODUCER;
+/// The pinned nlp-stack revision of the producer (`text-linguistics` in Cargo.toml).
+pub const EVENT_CLAIM_PRODUCER_VERSION: &str = crate::entities::ENTITY_PRODUCER_VERSION;
 /// Longest fallback event label taken from the evidence text.
 const LABEL_CHARS: usize = 72;
 
-/// One dated expression found in a piece of evidence text.
-#[derive(Debug, Clone, PartialEq)]
-pub struct DateMention {
-    pub byte_start: usize,
-    pub byte_end: usize,
-    /// The expression exactly as it appears in the text.
-    pub text: String,
-    pub date: EventDate,
-    pub confidence: f32,
-    /// `stated` or `hedged` (the text hedges, e.g. "probably").
-    pub certainty: &'static str,
-    /// `affirms` or `denies` (e.g. "not in 1066").
-    pub polarity: &'static str,
-}
-
-/// Mentions at or above [`MIN_DATE_CONFIDENCE`], and how many weaker ones were dropped.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct DateMentions {
-    pub mentions: Vec<DateMention>,
-    pub low_confidence_dropped: usize,
-}
-
-const MONTH: &str = r"((?:january|february|march|april|may|june|july|august|september|october|november|december|januar|februar|märz|maerz|mai|juni|juli|oktober|dezember|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|okt|nov|dec|dez)\b)\.?";
-const ERA: &str = r"(b\.\s?c\.(?:e\.)?|(?:bce|bc|ad|ce)\b|a\.\s?d\.|c\.e\.|v\.\s?chr\.?|vor christus\b|n\.\s?chr\.?|nach christus\b)";
-
-fn ci(pattern: &str) -> Regex {
-    Regex::new(&format!(r"(?i)\b(?:{pattern})")).expect("valid date pattern")
-}
-
-static FULL_DAY_FIRST: LazyLock<Regex> = LazyLock::new(|| {
-    ci(&format!(
-        r"(\d{{1,2}})(?:st|nd|rd|th|\.)?\s+(?:of\s+)?{MONTH},?\s+(\d{{1,4}})(?:\s*{ERA})?"
-    ))
-});
-static FULL_MONTH_FIRST: LazyLock<Regex> = LazyLock::new(|| {
-    ci(&format!(
-        r"{MONTH}\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{1,4}})(?:\s*{ERA})?"
-    ))
-});
-static MONTH_YEAR: LazyLock<Regex> =
-    LazyLock::new(|| ci(&format!(r"{MONTH}\s+(?:of\s+)?(\d{{1,4}})(?:\s*{ERA})?")));
-static RANGE: LazyLock<Regex> = LazyLock::new(|| {
-    ci(&format!(
-        r"(?:(from|between|von|zwischen)\s+)?(?:the\s+years?\s+)?(\d{{1,4}})(?:\s*{ERA})?\s*(-|–|—|to|until|till|and|bis|und)\s*(\d{{1,4}})(?:\s*{ERA})?"
-    ))
-});
-static CENTURY: LazyLock<Regex> = LazyLock::new(|| {
-    ci(&format!(
-        r"(?:(early|mid|late|frühen|fruehen|späten|spaeten)[\s-]+)?(\d{{1,2}}(?:st|nd|rd|th|\.)|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|twenty-first)\s*-?\s*(century|centuries|jahrhunderts?)(?:\s*{ERA})?"
-    ))
-});
-static DECADE: LazyLock<Regex> =
-    LazyLock::new(|| ci(r"(?:(early|mid|late)[\s-]+)?(\d{3})0(?:'?s|er(?:\s+jahren?)?)"));
-static ERA_YEAR: LazyLock<Regex> = LazyLock::new(|| {
-    ci(&format!(
-        r"(\d{{1,4}})\s*{ERA}|(?:a\.\s?d\.|ad\b|anno domini)\s+(\d{{1,4}})"
-    ))
-});
-static CUE_YEAR: LazyLock<Regex> = LazyLock::new(|| {
-    ci(&format!(
-        r"(in the year|the year|im jahre?|in|since|until|till|before|after|during|from|around|about|circa|ca\.|c\.|approximately|roughly|seit|bis|um|etwa|anno)\s+(\d{{1,4}})(?:\s*{ERA})?"
-    ))
-});
-static BARE_YEAR: LazyLock<Regex> = LazyLock::new(|| ci(r"(1\d{3}|20\d{2})"));
-
 static NAMED_EVENT: LazyLock<Regex> = LazyLock::new(|| {
-    ci(
-        r"(?:(?:first|second|third|fourth|great|holy)\s+)?(?:battle|siege|treaty|council|fall|sack|war|revolution|conquest|crusade|edict|peace|massacre|coronation|crucifixion|destruction|founding|invasion|discovery|death|birth|assassination|schism|exile|burning|schlacht|belagerung|konzil|vertrag|frieden|zerstörung|eroberung|tod|geburt)\s+(?:of|at|on|von|der|des|bei|zu)\s+(?:the\s+)?[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,2}|world\s+war\s+(?:one|two|i{1,2}|1|2)|(?:the\s+)?(?:protestant\s+)?reformation|(?:the\s+)?(?:french|american|russian|industrial|glorious)\s+revolution|(?:the\s+)?great\s+schism|(?:the\s+)?black\s+death|(?:the\s+)?holocaust|(?:the\s+)?cold\s+war",
+    Regex::new(
+        r"(?i)\b(?:(?:(?:first|second|third|fourth|great|holy)\s+)?(?:battle|siege|treaty|council|fall|sack|war|revolution|conquest|crusade|edict|peace|massacre|coronation|crucifixion|destruction|founding|invasion|discovery|death|birth|assassination|schism|exile|burning|schlacht|belagerung|konzil|vertrag|frieden|zerstörung|eroberung|tod|geburt)\s+(?:of|at|on|von|der|des|bei|zu)\s+(?:the\s+)?[\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,2}|world\s+war\s+(?:one|two|i{1,2}|1|2)|(?:the\s+)?(?:protestant\s+)?reformation|(?:the\s+)?(?:french|american|russian|industrial|glorious)\s+revolution|(?:the\s+)?great\s+schism|(?:the\s+)?black\s+death|(?:the\s+)?holocaust|(?:the\s+)?cold\s+war)",
     )
+    .expect("valid named-event pattern")
 });
+
+fn event_date(date: &HistoricalDate) -> EventDate {
+    EventDate {
+        start_year: date.start_year,
+        start_month: date.start_month.map(i16::from),
+        start_day: date.start_day.map(i16::from),
+        end_year: date.end_year,
+        end_month: date.end_month.map(i16::from),
+        end_day: date.end_day.map(i16::from),
+        approximate: date.approximate,
+    }
+}
+
+fn certainty(certainty: TemporalCertainty) -> &'static str {
+    match certainty {
+        TemporalCertainty::Stated => "stated",
+        TemporalCertainty::Hedged => "hedged",
+    }
+}
+
+fn polarity(polarity: TemporalPolarity) -> &'static str {
+    match polarity {
+        TemporalPolarity::Affirms => "affirms",
+        TemporalPolarity::Denies => "denies",
+    }
+}
 
 /// Words that end a named-event phrase (`Battle of Hastings in 1066` → `Battle of Hastings`).
 const LABEL_STOP: &[&str] = &[
@@ -115,527 +75,6 @@ const LABEL_STOP: &[&str] = &[
 ];
 /// Lower-case connecting words of a label.
 const LABEL_LOWER: &[&str] = &["of", "the", "at", "on", "von", "der", "des", "bei", "zu"];
-
-/// A number followed by one of these is a quantity, time or reference, never a date.
-const UNIT_WORDS: &[&str] = &[
-    "people",
-    "persons",
-    "person",
-    "years",
-    "year",
-    "yrs",
-    "percent",
-    "%",
-    "dollars",
-    "euros",
-    "euro",
-    "pounds",
-    "mark",
-    "marks",
-    "timestamp",
-    "times",
-    "subscribers",
-    "subs",
-    "followers",
-    "views",
-    "likes",
-    "comments",
-    "meters",
-    "metres",
-    "feet",
-    "foot",
-    "miles",
-    "km",
-    "kilometers",
-    "kilometres",
-    "pages",
-    "page",
-    "words",
-    "verses",
-    "manuscripts",
-    "copies",
-    "men",
-    "women",
-    "soldiers",
-    "troops",
-    "members",
-    "students",
-    "o'clock",
-    "minutes",
-    "minute",
-    "seconds",
-    "second",
-    "hours",
-    "hour",
-    "days",
-    "day",
-    "am",
-    "pm",
-    "a.m.",
-    "p.m.",
-    "point",
-    "plus",
-    "k",
-    "million",
-    "billion",
-    "thousand",
-    "hundred",
-    "calories",
-    "degrees",
-    "menschen",
-    "leute",
-    "jahre",
-    "jahren",
-    "prozent",
-    "seiten",
-    "stunden",
-    "minuten",
-    "uhr",
-];
-/// A number preceded by one of these is a reference or amount, never a date.
-const REFERENCE_WORDS: &[&str] = &[
-    "number", "no.", "nr.", "page", "verse", "chapter", "room", "#", "$", "€", "£", "at", "over",
-    "under", "past", "top", "psalm", "seite", "kapitel",
-];
-const HEDGES: &[&str] = &[
-    "probably",
-    "possibly",
-    "perhaps",
-    "maybe",
-    "might",
-    "may have",
-    "supposedly",
-    "allegedly",
-    "reportedly",
-    "apparently",
-    "i think",
-    "i believe",
-    "some say",
-    "traditionally",
-    "wahrscheinlich",
-    "vermutlich",
-    "vielleicht",
-    "angeblich",
-    "möglicherweise",
-];
-const NEGATIONS: &[&str] = &["not", "never", "nicht", "nie", "kein", "keine"];
-const APPROXIMATE: &[&str] = &[
-    "around",
-    "about",
-    "circa",
-    "ca.",
-    "c.",
-    "approximately",
-    "roughly",
-    "um",
-    "etwa",
-    "ungefähr",
-    "gegen",
-];
-
-fn month_number(name: &str) -> Option<i16> {
-    let name = name.trim_end_matches('.').to_lowercase();
-    Some(match name.as_str() {
-        "january" | "januar" | "jan" => 1,
-        "february" | "februar" | "feb" => 2,
-        "march" | "märz" | "maerz" | "mar" => 3,
-        "april" | "apr" => 4,
-        "may" | "mai" => 5,
-        "june" | "juni" | "jun" => 6,
-        "july" | "juli" | "jul" => 7,
-        "august" | "aug" => 8,
-        "september" | "sept" | "sep" => 9,
-        "october" | "oktober" | "oct" | "okt" => 10,
-        "november" | "nov" => 11,
-        "december" | "dezember" | "dec" | "dez" => 12,
-        _ => return None,
-    })
-}
-
-fn is_bc(era: &str) -> bool {
-    let era = era.to_lowercase();
-    era.starts_with('b') || era.starts_with('v')
-}
-
-fn ordinal(word: &str) -> Option<i32> {
-    let digits: String = word.chars().take_while(char::is_ascii_digit).collect();
-    if !digits.is_empty() {
-        return digits.parse().ok();
-    }
-    const WORDS: &[&str] = &[
-        "first",
-        "second",
-        "third",
-        "fourth",
-        "fifth",
-        "sixth",
-        "seventh",
-        "eighth",
-        "ninth",
-        "tenth",
-        "eleventh",
-        "twelfth",
-        "thirteenth",
-        "fourteenth",
-        "fifteenth",
-        "sixteenth",
-        "seventeenth",
-        "eighteenth",
-        "nineteenth",
-        "twentieth",
-        "twenty-first",
-    ];
-    let word = word.to_lowercase();
-    WORDS.iter().position(|w| *w == word).map(|i| i as i32 + 1)
-}
-
-/// Words before `start` (lower-case, nearest last).
-fn words_before(text: &str, start: usize, n: usize) -> Vec<String> {
-    let mut words: Vec<String> = text[..start]
-        .split_whitespace()
-        .rev()
-        .take(n)
-        .map(|w| {
-            w.trim_matches(|c: char| c == ',' || c == '(' || c == '"')
-                .to_lowercase()
-        })
-        .collect();
-    words.reverse();
-    words
-}
-
-fn next_word(text: &str, end: usize) -> String {
-    let rest = text[end..].trim_start();
-    if rest.starts_with('%') {
-        return "%".into();
-    }
-    rest.split_whitespace()
-        .next()
-        .unwrap_or("")
-        .trim_end_matches([',', '.', ';', ':', '!', '?', ')'])
-        .to_lowercase()
-}
-
-fn is_word_char(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
-
-/// The match does not start or end inside a word or number.
-fn on_boundaries(text: &str, start: usize, end: usize) -> bool {
-    let before = text[..start].chars().next_back();
-    let after = text[end..].chars().next();
-    !before.is_some_and(|c| is_word_char(c) || c == '.' && start >= 2)
-        && !after.is_some_and(|c| is_word_char(c) || c == ':')
-        && !before.is_some_and(|c| c == '$' || c == '#' || c == ':')
-}
-
-struct Candidate {
-    start: usize,
-    end: usize,
-    date: EventDate,
-    confidence: f32,
-}
-
-fn point(year: i32, month: Option<i16>, day: Option<i16>) -> EventDate {
-    EventDate {
-        start_year: year,
-        start_month: month,
-        start_day: day,
-        ..EventDate::default()
-    }
-}
-
-fn era_year(year: i32, era: Option<&str>) -> i32 {
-    match era {
-        Some(era) if is_bc(era) => -year,
-        _ => year,
-    }
-}
-
-fn plausible(year: i32, era: bool) -> bool {
-    year != 0 && (era || (100..=2100).contains(&year))
-}
-
-fn full_date(
-    caps: &Captures,
-    day: usize,
-    month: usize,
-    year: usize,
-    era: usize,
-) -> Option<EventDate> {
-    let day: i16 = caps[day].parse().ok()?;
-    let month = month_number(&caps[month])?;
-    let era = caps.get(era).map(|m| m.as_str());
-    let year: i32 = caps[year].parse().ok()?;
-    if !(1..=31).contains(&day) || !plausible(year, era.is_some()) {
-        return None;
-    }
-    Some(point(era_year(year, era), Some(month), Some(day)))
-}
-
-fn century_range(n: i32, bc: bool, part: Option<&str>) -> Option<EventDate> {
-    if !(1..=21).contains(&n) {
-        return None;
-    }
-    let (from, to, approximate) = match part.map(str::to_lowercase).as_deref() {
-        Some("early" | "frühen" | "fruehen") => (1, 33, true),
-        Some("mid") => (34, 66, true),
-        Some("late" | "späten" | "spaeten") => (67, 100, true),
-        _ => (1, 100, false),
-    };
-    let base = (n - 1) * 100;
-    let (start, end) = if bc {
-        // The 5th century BC runs from 500 BC down to 401 BC.
-        (-(base + 101 - from), -(base + 101 - to))
-    } else {
-        (base + from, base + to)
-    };
-    Some(EventDate {
-        start_year: start,
-        end_year: Some(end),
-        approximate,
-        ..EventDate::default()
-    })
-}
-
-fn candidates(text: &str) -> Vec<Candidate> {
-    let mut found = Vec::new();
-    let mut push = |m: regex::Match, date: Option<EventDate>, confidence: f32| {
-        if let Some(date) = date {
-            found.push(Candidate {
-                start: m.start(),
-                end: m.end(),
-                date,
-                confidence,
-            });
-        }
-    };
-    for caps in FULL_DAY_FIRST.captures_iter(text) {
-        push(caps.get(0).unwrap(), full_date(&caps, 1, 2, 3, 4), 0.95);
-    }
-    for caps in FULL_MONTH_FIRST.captures_iter(text) {
-        push(caps.get(0).unwrap(), full_date(&caps, 2, 1, 3, 4), 0.95);
-    }
-    for caps in MONTH_YEAR.captures_iter(text) {
-        let era = caps.get(3).map(|m| m.as_str());
-        let date = caps[2].parse::<i32>().ok().and_then(|year| {
-            let month = month_number(&caps[1])?;
-            // "May 12" is a day, not a year; months only take three- or four-digit years.
-            (plausible(year, era.is_some()) && (era.is_some() || caps[2].len() >= 3))
-                .then(|| point(era_year(year, era), Some(month), None))
-        });
-        push(caps.get(0).unwrap(), date, 0.9);
-    }
-    for caps in RANGE.captures_iter(text) {
-        let keyword = caps.get(1).map(|m| m.as_str().to_lowercase());
-        let separator = caps[4].to_lowercase();
-        let (start_text, end_text) = (&caps[2], &caps[5]);
-        let (start_era, end_era) = (
-            caps.get(3).map(|m| m.as_str()),
-            caps.get(6).map(|m| m.as_str()),
-        );
-        let with_era = start_era.is_some() || end_era.is_some();
-        let joins = matches!(separator.as_str(), "and" | "und");
-        if joins && !matches!(keyword.as_deref(), Some("between" | "zwischen")) {
-            continue;
-        }
-        if keyword.is_none() && !with_era && (start_text.len() < 4 || separator == "until") {
-            continue;
-        }
-        if !with_era && start_text.len() < 3 {
-            continue;
-        }
-        let Ok(start) = start_text.parse::<i32>() else {
-            continue;
-        };
-        let Ok(mut end) = end_text.parse::<i32>() else {
-            continue;
-        };
-        let dash = matches!(separator.as_str(), "-" | "–" | "—");
-        if !with_era && end_text.len() < start_text.len() && (!dash || end_text.len() > 2) {
-            continue;
-        }
-        // "1914-18": an abbreviated end keeps the start's leading digits.
-        if !with_era && end_text.len() < start_text.len() {
-            let scale = 10_i32.pow(end_text.len() as u32);
-            end += start - start % scale;
-        }
-        let start_era = start_era.or(end_era);
-        let end_era = end_era.or(start_era);
-        let (start, end) = (era_year(start, start_era), era_year(end, end_era));
-        if !plausible(start.abs(), with_era) || !plausible(end.abs(), with_era) || end <= start {
-            continue;
-        }
-        let confidence = if keyword.is_some() || with_era {
-            0.9
-        } else {
-            0.8
-        };
-        push(
-            caps.get(0).unwrap(),
-            Some(EventDate {
-                start_year: start,
-                end_year: Some(end),
-                ..EventDate::default()
-            }),
-            confidence,
-        );
-    }
-    for caps in CENTURY.captures_iter(text) {
-        let bc = caps.get(4).is_some_and(|m| is_bc(m.as_str()));
-        let date =
-            ordinal(&caps[2]).and_then(|n| century_range(n, bc, caps.get(1).map(|m| m.as_str())));
-        push(caps.get(0).unwrap(), date, 0.85);
-    }
-    for caps in DECADE.captures_iter(text) {
-        let decade: i32 = caps[2].parse().unwrap_or(0) * 10;
-        let (from, to, approximate) =
-            match caps.get(1).map(|m| m.as_str().to_lowercase()).as_deref() {
-                Some("early") => (0, 3, true),
-                Some("mid") => (3, 6, true),
-                Some("late") => (6, 9, true),
-                _ => (0, 9, false),
-            };
-        // "1000s of people" is a quantity.
-        let quantity = next_word(text, caps.get(0).unwrap().end()) == "of";
-        let date = ((1000..=2090).contains(&decade) && !quantity).then(|| EventDate {
-            start_year: decade + from,
-            end_year: Some(decade + to),
-            approximate,
-            ..EventDate::default()
-        });
-        push(caps.get(0).unwrap(), date, 0.8);
-    }
-    for caps in ERA_YEAR.captures_iter(text) {
-        let date = match (caps.get(1), caps.get(3)) {
-            (Some(year), _) => year
-                .as_str()
-                .parse::<i32>()
-                .ok()
-                .filter(|y| *y > 0)
-                .map(|y| point(era_year(y, Some(&caps[2])), None, None)),
-            (None, Some(year)) => year
-                .as_str()
-                .parse::<i32>()
-                .ok()
-                .filter(|y| *y > 0)
-                .map(|y| point(y, None, None)),
-            _ => None,
-        };
-        push(caps.get(0).unwrap(), date, 0.95);
-    }
-    for caps in CUE_YEAR.captures_iter(text) {
-        let cue = caps[1].to_lowercase();
-        let year_cue = cue.contains("year") || cue.starts_with("im jahr") || cue == "anno";
-        let year: i32 = caps[2].parse().unwrap_or(0);
-        let era = caps.get(3).map(|m| m.as_str());
-        let ok = if era.is_some() {
-            year > 0
-        } else if year_cue {
-            (100..=2100).contains(&year)
-        } else {
-            caps[2].len() == 4 && (1000..=2100).contains(&year)
-        };
-        // A plain cue ("in") only lends confidence; "the year" is part of the expression.
-        let whole = caps.get(0).unwrap();
-        if ok {
-            found.push(Candidate {
-                start: if year_cue {
-                    whole.start()
-                } else {
-                    caps.get(2).unwrap().start()
-                },
-                end: whole.end(),
-                date: point(era_year(year, era), None, None),
-                confidence: if year_cue || era.is_some() { 0.9 } else { 0.8 },
-            });
-        }
-    }
-    for m in BARE_YEAR.find_iter(text) {
-        let year: i32 = m.as_str().parse().unwrap_or(0);
-        found.push(Candidate {
-            start: m.start(),
-            end: m.end(),
-            date: point(year, None, None),
-            confidence: 0.45,
-        });
-    }
-    found
-}
-
-/// Finds dated expressions in one piece of evidence text.
-pub fn find_date_mentions(text: &str) -> DateMentions {
-    let lower = text.to_lowercase();
-    // "the 1148 timestamp", "in 1148": four-digit numbers next to video timestamps are times.
-    let timestamps = contains_phrase(&lower, "timestamp") || contains_phrase(&lower, "time stamp");
-    let mut all: Vec<Candidate> = candidates(text)
-        .into_iter()
-        .filter(|c| on_boundaries(text, c.start, c.end) && c.date.is_valid())
-        .filter(|c| !(timestamps && c.date.end_year.is_none() && c.date.start_month.is_none()))
-        .filter(|c| {
-            let next = next_word(text, c.end);
-            let before = words_before(text, c.start, 1);
-            !UNIT_WORDS.contains(&next.as_str())
-                && !before
-                    .last()
-                    .is_some_and(|w| REFERENCE_WORDS.contains(&w.as_str()))
-        })
-        .collect();
-    // Longest, then most confident expression wins; overlapping weaker readings are dropped.
-    all.sort_by(|a, b| {
-        (b.end - b.start)
-            .cmp(&(a.end - a.start))
-            .then(b.confidence.total_cmp(&a.confidence))
-            .then(a.start.cmp(&b.start))
-    });
-    let mut chosen: Vec<Candidate> = Vec::new();
-    for candidate in all {
-        if chosen
-            .iter()
-            .all(|c| candidate.end <= c.start || c.end <= candidate.start)
-        {
-            chosen.push(candidate);
-        }
-    }
-    chosen.sort_by_key(|c| c.start);
-
-    let hedged = HEDGES.iter().any(|hedge| contains_phrase(&lower, hedge));
-    let mut result = DateMentions::default();
-    for mut candidate in chosen {
-        if candidate.confidence < MIN_DATE_CONFIDENCE {
-            result.low_confidence_dropped += 1;
-            continue;
-        }
-        let before = words_before(text, candidate.start, 3);
-        if before
-            .last()
-            .is_some_and(|w| APPROXIMATE.contains(&w.as_str()))
-        {
-            candidate.date.approximate = true;
-        }
-        let denies = before
-            .iter()
-            .any(|w| NEGATIONS.contains(&w.as_str()) || w.ends_with("n't") || w.ends_with("n’t"));
-        result.mentions.push(DateMention {
-            byte_start: candidate.start,
-            byte_end: candidate.end,
-            text: text[candidate.start..candidate.end].to_string(),
-            date: candidate.date,
-            confidence: candidate.confidence,
-            certainty: if hedged { "hedged" } else { "stated" },
-            polarity: if denies { "denies" } else { "affirms" },
-        });
-    }
-    result
-}
-
-fn contains_phrase(lower: &str, phrase: &str) -> bool {
-    lower.match_indices(phrase).any(|(i, _)| {
-        let before = lower[..i].chars().next_back();
-        let after = lower[i + phrase.len()..].chars().next();
-        !before.is_some_and(is_word_char) && !after.is_some_and(is_word_char)
-    })
-}
 
 fn title_case(phrase: &str) -> String {
     phrase
@@ -659,15 +98,16 @@ fn title_case(phrase: &str) -> String {
 
 /// The event a date mention is about: the nearest named event in the same text
 /// (`Battle of Hastings`), else the evidence text around the mention, quoted.
-pub fn event_label(text: &str, mention: &DateMention) -> String {
+pub fn event_label(text: &str, mention: &TemporalExpression) -> String {
+    let (start, end) = (mention.span.byte_start, mention.span.byte_end);
     let named = NAMED_EVENT
         .find_iter(text)
-        .filter(|m| m.end() <= mention.byte_start || m.start() >= mention.byte_end)
+        .filter(|m| m.end() <= start || m.start() >= end)
         .min_by_key(|m| {
-            if m.end() <= mention.byte_start {
-                mention.byte_start - m.end()
+            if m.end() <= start {
+                start - m.end()
             } else {
-                m.start() - mention.byte_end
+                m.start() - end
             }
         });
     if let Some(m) = named {
@@ -862,9 +302,9 @@ pub async fn extract_video_event_claims(
 
     let mut suggestions = Vec::new();
     for source in &sources.sources {
-        let found = find_date_mentions(&source.text);
+        let found = normalize_temporal_expressions(&source.text);
         report.low_confidence_dropped += found.low_confidence_dropped;
-        if found.mentions.is_empty() {
+        if found.expressions.is_empty() {
             continue;
         }
         let modality = match source.modality {
@@ -884,21 +324,21 @@ pub async fn extract_video_event_claims(
         };
         let linked = linked_mentions(pool, source.record_id).await?;
         let mut labels = Vec::new();
-        for mention in &found.mentions {
+        for mention in &found.expressions {
             let label = event_label(&source.text, mention);
             suggestions.push(Suggestion {
                 label: label.clone(),
                 claim: base(
                     ClaimPredicate::Date,
-                    Some(mention.date.clone()),
+                    Some(event_date(&mention.date)),
                     None,
-                    mention.polarity,
-                    mention.certainty,
+                    polarity(mention.polarity),
+                    certainty(mention.certainty),
                 ),
                 extraction: ClaimExtraction::new(
                     &mention.text,
-                    mention.byte_start,
-                    mention.byte_end,
+                    mention.span.byte_start,
+                    mention.span.byte_end,
                     mention.confidence,
                 ),
             });
@@ -962,7 +402,7 @@ pub async fn extract_video_event_claims(
     .bind(video_id)
     .bind(EVENT_CLAIM_PRODUCER)
     .bind(EVENT_CLAIM_PRODUCER_VERSION)
-    .bind(format!("min-confidence={MIN_DATE_CONFIDENCE}"))
+    .bind(format!("min-confidence={TEMPORAL_MIN_CONFIDENCE}"))
     .bind(sources.stream_id)
     .bind(report.segments_analyzed as i32)
     .bind(report.visual_text_tracks_analyzed as i32)
@@ -1107,180 +547,50 @@ pub async fn extract_corpus_event_claims(
 mod tests {
     use super::*;
 
-    fn dates(text: &str) -> Vec<(String, EventDate)> {
-        find_date_mentions(text)
-            .mentions
-            .into_iter()
-            .map(|m| (m.text, m.date))
-            .collect()
-    }
-
-    fn year(y: i32) -> EventDate {
-        point(y, None, None)
-    }
-
-    fn range(a: i32, b: i32) -> EventDate {
-        EventDate {
-            start_year: a,
-            end_year: Some(b),
-            ..EventDate::default()
-        }
-    }
-
-    // Lines below are excerpts of real YouTube auto-captions from the local evaluation corpus.
-    #[test]
-    fn real_caption_lines_yield_dates_and_reject_numbers() {
-        assert_eq!(
-            dates("In 2010, he did a missions trip to"),
-            vec![("2010".into(), year(2010))]
-        );
-        assert_eq!(
-            dates("miracles. Hume was an 18th century"),
-            vec![("18th century".into(), range(1701, 1800))]
-        );
-        assert_eq!(
-            dates("everybody's favorite 6th century"),
-            vec![("6th century".into(), range(501, 600))]
-        );
-        assert_eq!(
-            dates("as in someone writing i a first century"),
-            vec![("first century".into(), range(1, 100))]
-        );
-        assert_eq!(
-            dates("population in 2010 to 29% in 2020."),
-            vec![("2010".into(), year(2010)), ("2020".into(), year(2020))]
-        );
-        assert_eq!(
-            dates("on the timeline there's the year 2022 ad"),
-            vec![("the year 2022 ad".into(), year(2022))]
-        );
-        // False dates: timestamps, counts and amounts.
-        for line in [
-            "to the 1148 timestamp if you actually",
-            "the 1130 reaper did not kill fred",
-            "went to the 1148 Mark of palegia's",
-            "heads and you're one of 1000 people or",
-            "celebration video for having past 1500",
-            "and 11 o'clock at 1107 in 30 seconds",
-            "been going on for 2000 years is",
-            "At this rate, in a century, -21% of the",
-            "divided by 1001 roughly 99.9 percent uh",
-            "timestamp in 1148 if there's any shred",
-        ] {
-            assert_eq!(dates(line), vec![], "{line}");
-        }
+    fn first(text: &str) -> TemporalExpression {
+        normalize_temporal_expressions(text).expressions.remove(0)
     }
 
     #[test]
-    fn bare_years_are_low_confidence_and_dropped() {
-        let found = find_date_mentions("of skeptical atheism Paul Draper 2015");
-        assert!(found.mentions.is_empty());
-        assert_eq!(found.low_confidence_dropped, 1);
-    }
-
-    #[test]
-    fn days_months_eras_and_ranges() {
-        assert_eq!(
-            dates("The Battle of Hastings was fought on 14 October 1066."),
-            vec![("14 October 1066".into(), point(1066, Some(10), Some(14)))]
-        );
-        assert_eq!(
-            dates("on March 15, 44 BC Caesar died"),
-            vec![("March 15, 44 BC".into(), point(-44, Some(3), Some(15)))]
-        );
-        assert_eq!(dates("in 586 BC"), vec![("586 BC".into(), year(-586))]);
-        assert_eq!(
-            dates("around AD 70"),
-            vec![(
-                "AD 70".into(),
-                EventDate {
-                    approximate: true,
-                    ..year(70)
-                }
-            )]
-        );
-        assert_eq!(
-            dates("the war lasted from 1914 to 1918"),
-            vec![("from 1914 to 1918".into(), range(1914, 1918))]
-        );
-        assert_eq!(
-            dates("in 1914-18"),
-            vec![("1914-18".into(), range(1914, 1918))]
-        );
-        assert_eq!(
-            dates("from 500 to 300 BC"),
-            vec![("from 500 to 300 BC".into(), range(-500, -300))]
-        );
-        assert_eq!(
-            dates("in the 1960s"),
-            vec![("1960s".into(), range(1960, 1969))]
-        );
-        assert_eq!(
-            dates("the 5th century BC"),
-            vec![("5th century BC".into(), range(-500, -401))]
-        );
-        assert_eq!(
-            dates("late 15th century"),
-            vec![(
-                "late 15th century".into(),
-                EventDate {
-                    approximate: true,
-                    ..range(1467, 1500)
-                }
-            )]
-        );
-        assert_eq!(dates("between 2 and 3 people"), vec![]);
-    }
-
-    #[test]
-    fn german_dates() {
-        assert_eq!(
-            dates("Die Schlacht fand am 14. Oktober 1066 statt"),
-            vec![("14. Oktober 1066".into(), point(1066, Some(10), Some(14)))]
-        );
-        assert_eq!(
-            dates("im 4. Jahrhundert"),
-            vec![("4. Jahrhundert".into(), range(301, 400))]
-        );
-        assert_eq!(
-            dates("um 44 v. Chr."),
-            vec![(
-                "44 v. Chr.".into(),
-                EventDate {
-                    approximate: true,
-                    ..year(-44)
-                }
-            )]
-        );
-        assert_eq!(
-            dates("im Jahr 1517"),
-            vec![("im Jahr 1517".into(), year(1517))]
+    fn producer_version_is_the_pinned_nlp_stack_revision() {
+        let manifest = include_str!("../Cargo.toml");
+        let line = manifest
+            .lines()
+            .find(|l| l.starts_with("text-linguistics ="))
+            .expect("text-linguistics dependency");
+        assert!(
+            line.contains(&format!("rev = \"{EVENT_CLAIM_PRODUCER_VERSION}\"")),
+            "{line}"
         );
     }
 
     #[test]
-    fn approximation_hedging_and_negation() {
-        let found = find_date_mentions("it was probably written around 1450");
-        let mention = &found.mentions[0];
-        assert!(mention.date.approximate);
-        assert_eq!(mention.certainty, "hedged");
-        let found = find_date_mentions("the council did not meet in 1054");
-        assert_eq!(found.mentions[0].polarity, "denies");
-        assert_eq!(found.mentions[0].certainty, "stated");
+    fn readings_map_to_claim_dates() {
+        let mention = first("on March 15, 44 BC Caesar died");
+        assert_eq!(
+            event_date(&mention.date),
+            EventDate {
+                start_year: -44,
+                start_month: Some(3),
+                start_day: Some(15),
+                ..EventDate::default()
+            }
+        );
+        let mention = first("it was probably not written around 1450");
+        assert_eq!(certainty(mention.certainty), "hedged");
+        assert_eq!(polarity(mention.polarity), "denies");
+        assert!(event_date(&mention.date).approximate);
     }
 
     #[test]
     fn labels_name_the_event_or_quote_the_evidence() {
         let text = "The Battle of Hastings was fought on 14 October 1066.";
-        let found = find_date_mentions(text);
-        assert_eq!(event_label(text, &found.mentions[0]), "Battle of Hastings");
+        assert_eq!(event_label(text, &first(text)), "Battle of Hastings");
         let text = "the council of nicaea in 325 ad settled it";
-        let found = find_date_mentions(text);
-        assert_eq!(event_label(text, &found.mentions[0]), "Council of Nicaea");
+        assert_eq!(event_label(text, &first(text)), "Council of Nicaea");
         let text = "In 2010, he did a missions trip to";
-        let found = find_date_mentions(text);
         assert_eq!(
-            event_label(text, &found.mentions[0]),
+            event_label(text, &first(text)),
             "“In 2010, he did a missions trip to”"
         );
     }

@@ -44,10 +44,6 @@ pub struct EventDate {
 }
 
 impl EventDate {
-    pub(crate) fn is_valid(&self) -> bool {
-        self.validate().is_ok()
-    }
-
     fn validate(&self) -> anyhow::Result<()> {
         if self.start_year == 0 || self.end_year == Some(0) {
             return Err(input("there is no year 0; use -1 for 1 BC"));
