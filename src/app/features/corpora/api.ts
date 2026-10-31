@@ -1110,7 +1110,8 @@ export type NameEvidence = {
   videoId: string;
   title: string | null;
   sourceUrl: string;
-  modality: "visible_text";
+  /** `visible_text`: an on-screen name tag aligned with one face; `spoken`: a self-introduction aligned with one voice. */
+  modality: "visible_text" | "spoken";
   startSeconds: number;
   endSeconds: number;
   surfaceText: string;
@@ -1119,8 +1120,10 @@ export type NameEvidence = {
   byteEnd: number;
   confidence: number | null;
   entityMentionId: string;
-  visualTextTrackId: string;
-  faceTrackId: string;
+  visualTextTrackId: string | null;
+  faceTrackId: string | null;
+  transcriptSegmentId: string | null;
+  voiceTrackId: string | null;
   provenance: unknown;
 };
 export type PersonNameReview = {

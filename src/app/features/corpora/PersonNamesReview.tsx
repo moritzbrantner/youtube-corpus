@@ -146,7 +146,9 @@ function PersonName({
         <ul className="grid gap-1" aria-label="Name evidence">
           {name.evidence.map((item) => (
             <li key={item.entityMentionId} className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">On-screen name tag</Badge>
+              <Badge variant="outline">
+                {item.modality === "spoken" ? "Spoken self-introduction" : "On-screen name tag"}
+              </Badge>
               <a
                 className="underline"
                 href={timestampUrl(item.sourceUrl, item.startSeconds)}
@@ -161,8 +163,15 @@ function PersonName({
                 <pre className="whitespace-pre-wrap break-all">
                   {JSON.stringify(
                     {
-                      faceTrack: item.faceTrackId,
-                      visibleTextTrack: item.visualTextTrackId,
+                      ...(item.modality === "spoken"
+                        ? {
+                            voiceTrack: item.voiceTrackId,
+                            transcriptSegment: item.transcriptSegmentId,
+                          }
+                        : {
+                            faceTrack: item.faceTrackId,
+                            visibleTextTrack: item.visualTextTrackId,
+                          }),
                       mention: item.entityMentionId,
                       confidence: item.confidence,
                       producers: item.provenance,

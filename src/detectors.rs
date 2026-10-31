@@ -949,6 +949,13 @@ async fn run_stage_inner(
                         "voice observations are retained, but cross-video voice matching failed: {error:#}"
                     )
                 })?;
+            crate::person_names::infer_person_names(pool, request.corpus_id)
+                .await
+                .map_err(|error| {
+                    anyhow::anyhow!(
+                        "voice matches are retained, but person name inference failed: {error:#}"
+                    )
+                })?;
             Ok((
                 if report.reused {
                     StageOutcome::Reused
