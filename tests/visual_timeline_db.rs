@@ -228,6 +228,9 @@ async fn visual_timeline_is_idempotent_scene_linked_and_searchable() {
         metadata_query: None,
         view_count_min: None,
         view_count_max: None,
+        youtube_id: None,
+        corpus_id: None,
+        speaker_label: None,
     })
     .await
     .unwrap();

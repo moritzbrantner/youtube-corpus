@@ -377,7 +377,12 @@ async fn loader_keeps_segment_video_scope_and_database_track_order() {
     )
     .await
     .unwrap();
-    let snapshot = load_export_snapshot(&pool, None).await.unwrap();
+    // Whole-corpus scope so scenes of every video are loaded, restricted to this test's stream:
+    // other suites (db_behavior) leave legacy streams the belief export rightly refuses.
+    let mut snapshot = load_export_snapshot(&pool, None).await.unwrap();
+    snapshot
+        .transcript_streams
+        .retain(|stream| stream.id == stream_id);
     let belief: Value =
         serde_json::from_str(&export_belief_evidence(&snapshot, "git:scenes").unwrap()).unwrap();
     let reference = |segment: Uuid| {

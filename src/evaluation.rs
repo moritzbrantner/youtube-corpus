@@ -271,6 +271,9 @@ pub async fn run_evaluation(
             metadata_query: None,
             view_count_min: None,
             view_count_max: None,
+            youtube_id: None,
+            corpus_id: None,
+            speaker_label: None,
         })
         .await?;
         let results = report
@@ -548,6 +551,7 @@ mod tests {
             semantic_score: 0.0,
             ocr_evidence: None,
             translation: None,
+            citation: None,
         }
     }
 

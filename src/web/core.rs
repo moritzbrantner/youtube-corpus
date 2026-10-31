@@ -316,6 +316,9 @@ async fn search_transcripts(
         metadata_query: input.metadata_query,
         view_count_min: input.view_count_min,
         view_count_max: input.view_count_max,
+        youtube_id: None,
+        corpus_id: None,
+        speaker_label: None,
     };
     if let Some(index) = &state.search_index {
         crate::search_index::check_supported(&request)
@@ -422,6 +425,7 @@ async fn transcript_context(
             .map_err(ApiError::internal)?,
         ocr_evidence: None,
         translation: None,
+        citation: None,
     };
 
     let context_rows = sqlx::query(
@@ -552,6 +556,7 @@ async fn visual_text_context(
         semantic_score: 0.0,
         ocr_evidence: None,
         translation: None,
+        citation: None,
     };
     // Same producer/run/observation/scene provenance as the search response.
     crate::search::attach_ocr_evidence(pool, std::slice::from_mut(&mut match_segment))

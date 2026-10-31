@@ -183,6 +183,9 @@ async fn tantivy_pilot_matches_literal_terms_and_follows_postgres_edits() {
             metadata_query: None,
             view_count_min: None,
             view_count_max: None,
+            youtube_id: None,
+            corpus_id: None,
+            speaker_label: None,
         },
     )
     .await
