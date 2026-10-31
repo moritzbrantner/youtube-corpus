@@ -299,7 +299,11 @@ are kept separately from identity confidence; speaker labels are not verified pe
 Short/noisy spans, overlapping speakers and music can make these inferences unreliable.
 A short single-speaker tail producing an extra track is tracked in
 [audio-analysis#154](https://github.com/moritzbrantner/audio-analysis/issues/154).
-No cross-video matching, naming or face-to-voice association is performed here.
+Cross-video voice matching (#134) and naming from spoken self-introductions (#135) build on
+these tracks: a person mention right after "I'm", "my name is" or "Hi, this is" (or "ich bin",
+"mein Name ist", "hier ist") in a transcript segment that one voice track clearly speaks names that
+voice's corpus person, as an inferred name to confirm in **Entities → Person names**. A host's
+"joining me is …" never names the speaker.
 
 The free [WeSpeaker model](https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34-LM)
 (CC-BY-4.0, attribution: WeSpeaker) downloads into the configured cache under `voices/`

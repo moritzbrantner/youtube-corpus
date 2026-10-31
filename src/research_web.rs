@@ -1134,10 +1134,14 @@ async fn run_voice_matches(
     AxumPath(corpus): AxumPath<Uuid>,
 ) -> VoiceReview {
     let pool = pool(&state).await?;
-    crate::voice_matching::match_corpus_voices(&pool, corpus)
+    let report = crate::voice_matching::match_corpus_voices(&pool, corpus)
         .await
-        .map(Json)
-        .map_err(map_corpus_error)
+        .map_err(map_corpus_error)?;
+    // Voice people can now take names from spoken self-introductions.
+    crate::person_names::infer_person_names(&pool, corpus)
+        .await
+        .map_err(map_corpus_error)?;
+    Ok(Json(report))
 }
 async fn correct_voice_matches(
     State(state): State<ResearchState>,
@@ -1156,10 +1160,14 @@ async fn review_face_voice_link(
     Json(input): Json<crate::voice_matching::FaceLinkRequest>,
 ) -> VoiceReview {
     let pool = pool(&state).await?;
-    crate::voice_matching::review_face_voice_link(&pool, corpus, input)
+    let report = crate::voice_matching::review_face_voice_link(&pool, corpus, input)
         .await
-        .map(Json)
-        .map_err(map_voice_error)
+        .map_err(map_voice_error)?;
+    // A confirmed link merges two people, whose names are then recomputed together.
+    crate::person_names::infer_person_names(&pool, corpus)
+        .await
+        .map_err(map_corpus_error)?;
+    Ok(Json(report))
 }
 
 async fn person_occurrences(
