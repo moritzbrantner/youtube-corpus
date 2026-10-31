@@ -363,6 +363,7 @@ fn to_result(document: &Document) -> anyhow::Result<SearchResult> {
         semantic_score: 0.0,
         ocr_evidence: None,
         translation: None,
+        citation: None,
     })
 }
 
@@ -392,6 +393,14 @@ fn plan(request: &SearchRequest) -> anyhow::Result<Plan> {
         .is_some_and(|q| !q.trim().is_empty())
     {
         anyhow::bail!("the Tantivy pilot does not support the raw metadata filter");
+    }
+    if request.youtube_id.is_some()
+        || request.corpus_id.is_some()
+        || request.speaker_label.is_some()
+    {
+        anyhow::bail!(
+            "the Tantivy pilot does not support the youtube id, corpus or speaker label filters"
+        );
     }
     let terms: Vec<Predicate> = request
         .query
@@ -611,6 +620,9 @@ mod tests {
             metadata_query: None,
             view_count_min: None,
             view_count_max: None,
+            youtube_id: None,
+            corpus_id: None,
+            speaker_label: None,
         }
     }
 

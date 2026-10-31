@@ -223,6 +223,9 @@ async fn preferred_search(
         metadata_query: input.metadata_query,
         view_count_min: input.view_count_min,
         view_count_max: input.view_count_max,
+        youtube_id: None,
+        corpus_id: Some(corpus_id),
+        speaker_label: None,
     })
     .await
     .map_err(ResearchQualityError::internal)?;

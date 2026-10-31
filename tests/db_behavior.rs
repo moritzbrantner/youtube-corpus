@@ -193,6 +193,9 @@ async fn search(
         metadata_query: None,
         view_count_min: None,
         view_count_max: None,
+        youtube_id: None,
+        corpus_id: None,
+        speaker_label: None,
     })
     .await
     .unwrap()
@@ -221,6 +224,9 @@ async fn assert_filter(database_url: &str, query: &str, update: impl FnOnce(&mut
         metadata_query: None,
         view_count_min: None,
         view_count_max: None,
+        youtube_id: None,
+        corpus_id: None,
+        speaker_label: None,
     };
     update(&mut request);
     let report = search_corpus(request).await.unwrap();

@@ -1,6 +1,8 @@
 use anyhow::Context;
 use std::time::Duration;
-use youtube_corpus::cli::{Cli, Command, ExportArgs, ExportFormat, SubscriptionsCommand};
+use youtube_corpus::cli::{
+    Cli, Command, ExportArgs, ExportFormat, OutputFormat, SpanArgs, SubscriptionsCommand,
+};
 use youtube_corpus::config::AppConfig;
 use youtube_corpus::web::WebServerConfig;
 
@@ -145,19 +147,39 @@ async fn run_command(
         }
         Command::Search(args) => {
             let config = AppConfig::from_env_and_cli(database_url)?;
+            let pool = youtube_corpus::db::connect(&config.database_url).await?;
             let index_dir = args.tantivy_index_dir.clone();
-            let request = args.try_into_request(&config)?;
-            let report = match index_dir {
+            let (context, format) = (args.context, args.format);
+            let corpus_id = match &args.corpus {
+                Some(corpus) => Some(resolve_corpus(&pool, corpus).await?),
+                None => None,
+            };
+            let mut request = args.try_into_request(&config)?;
+            request.corpus_id = corpus_id;
+            let mut report = match index_dir {
                 Some(dir) => {
                     let index = youtube_corpus::search_index::TantivySearch::open(&dir)?;
-                    let pool = youtube_corpus::db::connect(&config.database_url).await?;
                     index.search(&pool, &request).await
                 }
                 None => youtube_corpus::search_corpus(request).await,
             }
             .context("search failed")?;
-            println!("{}", serde_json::to_string_pretty(&report)?);
+            youtube_corpus::citations::attach_citations(
+                &pool,
+                &mut report.results,
+                corpus_id,
+                context,
+            )
+            .await
+            .context("failed to attach citations")?;
+            match format {
+                OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
+                OutputFormat::Text => {
+                    print!("{}", youtube_corpus::citations::render_search_text(&report))
+                }
+            }
         }
+        Command::Span(args) => run_span(args, database_url).await?,
         Command::SearchIndex(args) => {
             use youtube_corpus::cli::SearchIndexCommand;
             use youtube_corpus::search_index::{compare, TantivySearch};
@@ -192,15 +214,9 @@ async fn run_command(
                 if args.migrate {
                     youtube_corpus::db::migrate(&pool).await?;
                 }
-                let corpus = youtube_corpus::corpora::list_corpora(&pool)
-                    .await?
-                    .into_iter()
-                    .find(|corpus| {
-                        corpus.id.to_string() == args.corpus || corpus.slug == args.corpus
-                    })
-                    .with_context(|| format!("corpus {} not found", args.corpus))?;
+                let corpus_id = resolve_corpus(&pool, &args.corpus).await?;
                 let report =
-                    youtube_corpus::event_extraction::extract_corpus_event_claims(&pool, corpus.id)
+                    youtube_corpus::event_extraction::extract_corpus_event_claims(&pool, corpus_id)
                         .await?;
                 println!("{}", serde_json::to_string_pretty(&report)?);
             }
@@ -212,22 +228,16 @@ async fn run_command(
                 if args.migrate {
                     youtube_corpus::db::migrate(&pool).await?;
                 }
-                let corpus = youtube_corpus::corpora::list_corpora(&pool)
-                    .await?
-                    .into_iter()
-                    .find(|corpus| {
-                        corpus.id.to_string() == args.corpus || corpus.slug == args.corpus
-                    })
-                    .with_context(|| format!("corpus {} not found", args.corpus))?;
+                let corpus_id = resolve_corpus(&pool, &args.corpus).await?;
                 let report = youtube_corpus::entities::extract_corpus_entities(
                     &pool,
-                    corpus.id,
+                    corpus_id,
                     args.model_dir,
                     !args.no_download,
                 )
                 .await?;
-                youtube_corpus::person_names::infer_person_names(&pool, corpus.id).await?;
-                youtube_corpus::event_extraction::extract_corpus_event_claims(&pool, corpus.id)
+                youtube_corpus::person_names::infer_person_names(&pool, corpus_id).await?;
+                youtube_corpus::event_extraction::extract_corpus_event_claims(&pool, corpus_id)
                     .await?;
                 println!("{}", serde_json::to_string_pretty(&report)?);
             }
@@ -240,6 +250,79 @@ async fn run_command(
                 println!("{}", serde_json::to_string_pretty(&surface)?);
             }
         }
+    }
+    Ok(())
+}
+
+/// A corpus id or slug.
+async fn resolve_corpus(pool: &sqlx::PgPool, corpus: &str) -> anyhow::Result<uuid::Uuid> {
+    youtube_corpus::corpora::list_corpora(pool)
+        .await?
+        .into_iter()
+        .find(|candidate| candidate.id.to_string() == corpus || candidate.slug == corpus)
+        .map(|candidate| candidate.id)
+        .with_context(|| format!("corpus {corpus} not found"))
+}
+
+async fn run_span(args: SpanArgs, database_url: Option<String>) -> anyhow::Result<()> {
+    use youtube_corpus::citations::{media_spans, render_span_text, SpanQuery};
+    use youtube_corpus::corpus_export::{load_export_snapshot, CorpusExportSnapshot};
+
+    anyhow::ensure!(
+        !args.producer_revision.trim().is_empty(),
+        "--producer-revision must be a non-empty revision"
+    );
+    let snapshot = match &args.snapshot {
+        Some(path) => {
+            let json = std::fs::read_to_string(path)
+                .with_context(|| format!("failed to read snapshot {}", path.display()))?;
+            let mut snapshot: CorpusExportSnapshot = serde_json::from_str(&json)
+                .with_context(|| format!("failed to parse snapshot {}", path.display()))?;
+            let video_id = snapshot
+                .videos
+                .iter()
+                .find(|video| video.youtube_id.as_deref() == Some(args.youtube_id.as_str()))
+                .map(|video| video.id)
+                .with_context(|| format!("video {} is not in the snapshot", args.youtube_id))?;
+            snapshot.retain_video(video_id);
+            snapshot
+        }
+        None => {
+            let config = AppConfig::from_env_and_cli(database_url)?;
+            let pool = youtube_corpus::db::connect(&config.database_url).await?;
+            let video_id: uuid::Uuid =
+                sqlx::query_scalar("SELECT id FROM videos WHERE youtube_id = $1")
+                    .bind(&args.youtube_id)
+                    .fetch_optional(&pool)
+                    .await?
+                    .with_context(|| format!("video {} is not in the corpus", args.youtube_id))?;
+            load_export_snapshot(&pool, Some(video_id))
+                .await
+                .context("failed to load the export snapshot")?
+        }
+    };
+    let report = media_spans(
+        &snapshot,
+        &args.producer_revision,
+        &SpanQuery {
+            youtube_id: args.youtube_id,
+            start_seconds: args.start,
+            end_seconds: args.end,
+            stream_id: args.stream,
+            transcript_source: args.transcript_source.map(|kind| kind.as_str().to_string()),
+            language: args.language,
+        },
+    )?;
+    anyhow::ensure!(
+        !report.spans.is_empty(),
+        "no transcript segment of {} overlaps [{}, {})",
+        report.youtube_id,
+        report.start_seconds,
+        report.end_seconds
+    );
+    match args.format {
+        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
+        OutputFormat::Text => print!("{}", render_span_text(&report)),
     }
     Ok(())
 }

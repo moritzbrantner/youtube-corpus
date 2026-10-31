@@ -160,6 +160,7 @@ pub async fn inspect_video(
                 semantic_score: 0.0,
                 ocr_evidence: None,
                 translation: None,
+                citation: None,
             })
         })
         .collect::<anyhow::Result<Vec<_>>>()?;

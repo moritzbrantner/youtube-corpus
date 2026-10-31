@@ -21,6 +21,7 @@ cargo test --test visual_provenance_db -- --ignored
 cargo test --test corpus_exports -- --ignored
 cargo test --test corpus_export_db -- --ignored
 cargo test --test unified_evidence_search_db -- --ignored
+cargo test --test citation_search_db -- --ignored
 cargo test --test tantivy_search_pilot_db -- --ignored
 cargo test --test review_regressions_db -- --ignored
 cargo test --test user_labels_db -- --ignored

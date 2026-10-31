@@ -126,6 +126,8 @@ pub enum Command {
     Status(StatusArgs),
     Benchmark(BenchmarkArgs),
     Search(SearchArgs),
+    /// Pins a citation: the segments overlapping `[start, end)` and their `span_sha256`.
+    Span(SpanArgs),
     /// Opt-in Tantivy literal search pilot index (#76).
     SearchIndex(SearchIndexArgs),
     Diagnostics(DiagnosticsArgs),
@@ -718,10 +720,62 @@ pub struct SearchArgs {
     pub view_count_min: Option<i64>,
     #[arg(long)]
     pub view_count_max: Option<i64>,
+    /// YouTube video id (for example `dQw4w9WgXcQ`), the alternative to the `--video-id` UUID.
+    #[arg(long)]
+    pub youtube_id: Option<String>,
+    /// Corpus id or slug; hits and speaker labels are limited to this corpus.
+    #[arg(long)]
+    pub corpus: Option<String>,
+    /// Raw diarization label of a stored speaker turn (for example `SPEAKER_00`), not an
+    /// identity.
+    #[arg(long)]
+    pub speaker_label: Option<String>,
+    /// Neighbouring transcript segments around each hit: a count per side (`2`) or seconds
+    /// per side (`30s`).
+    #[arg(long)]
+    pub context: Option<crate::citations::ContextWindow>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    pub format: OutputFormat,
     /// Answer from this Tantivy pilot index (literal substring terms, `--mode fts` only)
     /// instead of Postgres. Run `search-index sync` first; the index is not refreshed here.
     #[arg(long)]
     pub tantivy_index_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    /// Pretty JSON report.
+    Json,
+    /// `[mm:ss–mm:ss] speaker: text` lines per hit, the hit marked `>`.
+    Text,
+}
+
+/// Prints the segments overlapping `[start, end)` of a video's transcript streams with the
+/// `span_sha256` truth-core pins a `media_span` passage with.
+#[derive(Debug, Parser)]
+#[command(args_override_self = true)]
+pub struct SpanArgs {
+    #[arg(long)]
+    pub youtube_id: String,
+    #[arg(long)]
+    pub start: f64,
+    #[arg(long)]
+    pub end: f64,
+    /// Transcript stream UUID.
+    #[arg(long)]
+    pub stream: Option<Uuid>,
+    #[arg(long, value_enum)]
+    pub transcript_source: Option<SourceKind>,
+    #[arg(long)]
+    pub language: Option<String>,
+    /// Revision of the producing code recorded in the citation (for example `git:<sha>`).
+    #[arg(long)]
+    pub producer_revision: String,
+    /// Reads the corpus snapshot from this JSON file instead of Postgres.
+    #[arg(long)]
+    pub snapshot: Option<PathBuf>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    pub format: OutputFormat,
 }
 
 impl SearchArgs {
@@ -769,6 +823,10 @@ impl SearchArgs {
             metadata_query: self.metadata,
             view_count_min: self.view_count_min,
             view_count_max: self.view_count_max,
+            youtube_id: self.youtube_id,
+            // Resolved from `--corpus` (an id or slug) against the database by the caller.
+            corpus_id: None,
+            speaker_label: self.speaker_label,
         })
     }
 }
