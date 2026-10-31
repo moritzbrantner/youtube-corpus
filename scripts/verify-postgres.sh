@@ -32,6 +32,7 @@ cargo test --test entity_explorer_db -- --ignored
 cargo test --test detector_profiles_db -- --ignored
 cargo test --test face_matching_db -- --ignored
 cargo test --test face_matching_acceptance_db -- --ignored
+cargo test --test voice_matching_db -- --ignored
 cargo test --test person_names_db -- --ignored
 cargo test --test identities_db -- --ignored
 cargo test --test events_db -- --ignored

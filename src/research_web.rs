@@ -160,6 +160,22 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
             post(correct_face_matches),
         )
         .route(
+            "/api/corpora/{corpus_id}/voice-matches",
+            get(get_voice_matches),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/voice-matches/run",
+            post(run_voice_matches),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/voice-matches/corrections",
+            post(correct_voice_matches),
+        )
+        .route(
+            "/api/corpora/{corpus_id}/voice-matches/face-links",
+            post(review_face_voice_link),
+        )
+        .route(
             "/api/corpora/{corpus_id}/person-names",
             get(get_person_names),
         )
@@ -1093,6 +1109,57 @@ async fn correct_face_matches(
                 map_corpus_error(error)
             }
         })
+}
+
+type VoiceReview = Result<Json<crate::voice_matching::VoiceMatchReview>, ResearchError>;
+fn map_voice_error(error: anyhow::Error) -> ResearchError {
+    if error.is::<crate::voice_matching::VoiceCorrectionInputError>() {
+        ResearchError::bad_request(error.to_string())
+    } else {
+        map_corpus_error(error)
+    }
+}
+async fn get_voice_matches(
+    State(state): State<ResearchState>,
+    AxumPath(corpus): AxumPath<Uuid>,
+) -> VoiceReview {
+    let pool = pool(&state).await?;
+    crate::voice_matching::review_voice_matches(&pool, corpus)
+        .await
+        .map(Json)
+        .map_err(map_corpus_error)
+}
+async fn run_voice_matches(
+    State(state): State<ResearchState>,
+    AxumPath(corpus): AxumPath<Uuid>,
+) -> VoiceReview {
+    let pool = pool(&state).await?;
+    crate::voice_matching::match_corpus_voices(&pool, corpus)
+        .await
+        .map(Json)
+        .map_err(map_corpus_error)
+}
+async fn correct_voice_matches(
+    State(state): State<ResearchState>,
+    AxumPath(corpus): AxumPath<Uuid>,
+    Json(input): Json<crate::voice_matching::VoiceCorrectionRequest>,
+) -> VoiceReview {
+    let pool = pool(&state).await?;
+    crate::voice_matching::correct_voice_matches(&pool, corpus, input)
+        .await
+        .map(Json)
+        .map_err(map_voice_error)
+}
+async fn review_face_voice_link(
+    State(state): State<ResearchState>,
+    AxumPath(corpus): AxumPath<Uuid>,
+    Json(input): Json<crate::voice_matching::FaceLinkRequest>,
+) -> VoiceReview {
+    let pool = pool(&state).await?;
+    crate::voice_matching::review_face_voice_link(&pool, corpus, input)
+        .await
+        .map(Json)
+        .map_err(map_voice_error)
 }
 
 async fn person_occurrences(
