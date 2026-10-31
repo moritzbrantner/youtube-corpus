@@ -942,6 +942,13 @@ async fn run_stage_inner(
                 },
             )
             .await?;
+            crate::voice_matching::match_corpus_voices(pool, request.corpus_id)
+                .await
+                .map_err(|error| {
+                    anyhow::anyhow!(
+                        "voice observations are retained, but cross-video voice matching failed: {error:#}"
+                    )
+                })?;
             Ok((
                 if report.reused {
                     StageOutcome::Reused
@@ -972,6 +979,14 @@ async fn run_stage_inner(
                 .map_err(|error| {
                     anyhow::anyhow!(
                         "face matches are retained, but person name inference failed: {error:#}"
+                    )
+                })?;
+            // New face people can change face-to-voice link suggestions.
+            crate::voice_matching::match_corpus_voices(pool, request.corpus_id)
+                .await
+                .map_err(|error| {
+                    anyhow::anyhow!(
+                        "face matches are retained, but face-to-voice suggestions failed: {error:#}"
                     )
                 })?;
             Ok((

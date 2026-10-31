@@ -35,6 +35,7 @@ import { errorMessage } from "./CorpusLabels";
 import { timestampUrl } from "./evidence";
 import { corpusKeys } from "./query-keys";
 import { FaceMatchingReview } from "./FaceMatchingReview";
+import { VoiceMatchingReview } from "./VoiceMatchingReview";
 import { nameStatusLabel, PersonNamesReview } from "./PersonNamesReview";
 import { identityUrl, navigateInApp, patchCorpusUrl, videoUrl } from "./url-state";
 
@@ -103,6 +104,12 @@ export function CorpusEntities({ corpusId }: { corpusId: string }) {
       </SurfaceHeader>
       <SurfaceContent className="grid gap-4">
         <FaceMatchingReview
+          corpusId={corpusId}
+          onSelectPerson={(personId, label) => {
+            setSelection({ kind: "person", personId, name: label });
+          }}
+        />
+        <VoiceMatchingReview
           corpusId={corpusId}
           onSelectPerson={(personId, label) => {
             setSelection({ kind: "person", personId, name: label });

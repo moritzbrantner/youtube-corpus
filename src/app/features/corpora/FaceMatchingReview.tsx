@@ -64,7 +64,7 @@ export function FaceMatchingReview({
       <p className="text-sm text-muted-foreground">
         High-confidence face matches are grouped automatically after face processing. These are
         inferred corpus people, not verified real-world identities. Weak, incompatible or ambiguous
-        evidence stays unresolved. Face-to-voice association is not performed here.
+        evidence stays unresolved. Face-to-voice links are suggested under Voice matches.
       </p>
       <p className="text-sm text-muted-foreground">
         Unlink rejects the current association; a different supported person may still match

@@ -43,6 +43,7 @@ pub mod video_analysis_web;
 pub mod video_inspection;
 pub mod visual_processing;
 pub mod visual_timeline;
+pub mod voice_matching;
 pub mod voice_processing;
 pub mod web;
 pub mod youtube;

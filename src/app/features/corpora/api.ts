@@ -1022,6 +1022,89 @@ export function correctFaceMatches(corpusId: string, correction: FaceCorrection)
   });
 }
 
+export type VoiceEvidence = {
+  trackId: string;
+  videoId: string;
+  title: string | null;
+  sourceUrl: string;
+  startSeconds: number;
+  endSeconds: number;
+  observations: number;
+  speechSeconds: number;
+  processor: string;
+  processorVersion: string;
+  model: string;
+  modelVersion: string;
+  inputHash: string;
+  producerConfig: unknown;
+  similarity: number | null;
+  /** `suggested` until a researcher confirms or places the track. */
+  status: "suggested" | "confirmed" | null;
+  assignmentSource: string | null;
+  matchingConfiguration: unknown;
+  protected: boolean;
+  reason: string | null;
+  note: string | null;
+};
+export type VoicePersonGroup = {
+  personId: string;
+  label: string;
+  identitySource: string | null;
+  tracks: VoiceEvidence[];
+};
+export type FaceVoiceLink = {
+  facePersonId: string;
+  faceLabel: string;
+  voicePersonId: string;
+  voiceLabel: string;
+  status: "unverified";
+  sharedVideos: number;
+  voiceSeconds: number;
+  overlapSeconds: number;
+  coverage: number;
+  margin: number;
+  videos: {
+    videoId: string;
+    title: string | null;
+    sourceUrl: string;
+    overlapSeconds: number;
+    voiceSeconds: number;
+  }[];
+};
+export type VoiceMatchReview = {
+  configuration: unknown;
+  groups: VoicePersonGroup[];
+  unresolved: VoiceEvidence[];
+  faceLinks: FaceVoiceLink[];
+};
+export type VoiceCorrection = FaceCorrection;
+export type FaceLinkReview = {
+  action: "confirm" | "reject";
+  facePersonId: string;
+  voicePersonId: string;
+};
+export function getVoiceMatches(corpusId: string) {
+  return apiFetch<VoiceMatchReview>(`/api/corpora/${corpusId}/voice-matches`);
+}
+export function runVoiceMatches(corpusId: string) {
+  return apiFetch<VoiceMatchReview>(`/api/corpora/${corpusId}/voice-matches/run`, {
+    method: "POST",
+  });
+}
+function postVoiceMatches(corpusId: string, path: string, body: unknown) {
+  return apiFetch<VoiceMatchReview>(`/api/corpora/${corpusId}/voice-matches/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+export function correctVoiceMatches(corpusId: string, correction: VoiceCorrection) {
+  return postVoiceMatches(corpusId, "corrections", correction);
+}
+export function reviewFaceVoiceLink(corpusId: string, review: FaceLinkReview) {
+  return postVoiceMatches(corpusId, "face-links", review);
+}
+
 export type PersonNameStatus = "inferred" | "confirmed" | "user_provided";
 export type NameEvidence = {
   videoId: string;
