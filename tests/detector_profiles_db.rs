@@ -516,8 +516,8 @@ async fn status_tracks_effective_selection_failures_review_and_each_translation_
         "caption provider failed"
     );
 
-    // Retry exactly scenes: no caption network call and no ASR invocation. A real missing
-    // media failure persists across subsequent status reads instead of disappearing.
+    // Retry exactly scenes: no caption call and no ASR invocation. Acquiring video for the
+    // fixture id fails, and that real failure persists across subsequent status reads.
     let (code, report) = call(
         &seed.app,
         Method::POST,
@@ -533,7 +533,7 @@ async fn status_tracks_effective_selection_failures_review_and_each_translation_
     assert!(stage(&failed, "scenes")["message"]
         .as_str()
         .unwrap()
-        .contains("no retained local media"));
+        .contains("could not acquire the source media"));
     // A corpus-scoped override disables the same failed detector without deleting its history.
     put_settings(
         &seed.app,
@@ -963,7 +963,7 @@ async fn voices_without_retained_audio_report_a_real_failure() {
     assert!(body["stages"][0]["message"]
         .as_str()
         .unwrap()
-        .contains("retained local media"));
+        .contains("could not acquire the source media"));
     assert_eq!(
         stage(&processing_status(&seed, seed.direct).await, "voices")["state"],
         "failed"

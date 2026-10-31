@@ -235,12 +235,16 @@ async fn ingest_item(
             let media_path = match &video_path {
                 Some(path) => path.clone(),
                 None => {
-                    let path = crate::youtube::download_video(
-                        &mut item,
-                        &item_dir.join("media"),
+                    // ASR needs audio only; reuses any already acquired media that serves it.
+                    let path = crate::media_acquisition::ensure_media(
+                        pool,
+                        video_id,
+                        crate::media_acquisition::MediaNeed::Audio,
+                        &request.work_dir,
                         &request.yt_dlp,
                     )
-                    .await?;
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("no source media is available for ASR"))?;
                     video_path = Some(path.clone());
                     path
                 }
@@ -387,7 +391,8 @@ async fn upsert_video(
           $15, $16, $17, $18, $19, $20,
           $21, $22, $23, $24, $25, $26, $27)
          ON CONFLICT (id) DO UPDATE SET youtube_id = EXCLUDED.youtube_id, source_url = EXCLUDED.source_url,
-           title = EXCLUDED.title, local_video_path = EXCLUDED.local_video_path,
+           title = EXCLUDED.title,
+           local_video_path = COALESCE(EXCLUDED.local_video_path, videos.local_video_path),
            duration_seconds = EXCLUDED.duration_seconds, upload_date = EXCLUDED.upload_date,
            description = EXCLUDED.description, channel = EXCLUDED.channel, channel_id = EXCLUDED.channel_id,
            channel_url = EXCLUDED.channel_url, uploader = EXCLUDED.uploader, uploader_id = EXCLUDED.uploader_id,

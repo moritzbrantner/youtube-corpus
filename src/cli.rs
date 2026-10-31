@@ -69,8 +69,6 @@ pub struct Cli {
     pub yt_dlp_retries: Option<u32>,
     #[arg(long, global = true)]
     pub yt_dlp_fragment_retries: Option<u32>,
-    #[arg(long, global = true)]
-    pub yt_dlp_format: Option<String>,
     #[arg(long)]
     pub migrate: bool,
     #[command(subcommand)]
@@ -670,12 +668,6 @@ fn yt_dlp_config(cli: &Cli) -> YtDlpConfig {
             .map(str::to_string),
         retries: cli.yt_dlp_retries,
         fragment_retries: cli.yt_dlp_fragment_retries,
-        format: cli
-            .yt_dlp_format
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string),
     }
 }
 

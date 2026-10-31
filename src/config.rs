@@ -80,8 +80,6 @@ pub struct YtDlpConfig {
     pub retries: Option<u32>,
     #[serde(default)]
     pub fragment_retries: Option<u32>,
-    #[serde(default)]
-    pub format: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

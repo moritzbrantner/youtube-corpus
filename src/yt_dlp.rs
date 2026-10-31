@@ -11,7 +11,7 @@ use tokio::process::Command;
 
 use crate::config::{BrowserCookieSource, YtDlpConfig};
 
-type CommandFuture<'a> =
+pub type CommandFuture<'a> =
     Pin<Box<dyn Future<Output = Result<CommandRunnerOutput, CommandRunnerError>> + Send + 'a>>;
 
 #[derive(Clone)]
@@ -238,14 +238,19 @@ impl YtDlpClient {
         .map(|(_, report)| report)
     }
 
+    /// Downloads one item's media with a plan-derived `format` selector (#126). There is no
+    /// download archive: whether media is already present is decided from the recorded
+    /// acquisition and the file on disk, so a removed file can always be acquired again.
     pub async fn download_media(
         &self,
         url: &str,
         output_template: impl Into<PathBuf>,
-        download_archive: Option<PathBuf>,
+        format: &str,
     ) -> Result<(Vec<u8>, YtDlpRunReport), YtDlpError> {
         let mut args = vec![
             "--no-playlist".to_string(),
+            "--format".to_string(),
+            format.to_string(),
             "--merge-output-format".to_string(),
             "mp4".to_string(),
             "--write-info-json".to_string(),
@@ -254,10 +259,6 @@ impl YtDlpClient {
             "-o".to_string(),
             output_template.into().to_string_lossy().into_owned(),
         ];
-        if let Some(archive) = download_archive {
-            args.push("--download-archive".to_string());
-            args.push(archive.to_string_lossy().into_owned());
-        }
         args.extend(self.global_args().args);
         args.push(url.to_string());
         self.run_args(
@@ -434,7 +435,6 @@ fn build_global_args(config: &YtDlpConfig) -> BuiltArgs {
         "--fragment-retries",
         config.fragment_retries,
     );
-    push_value(&mut built.args, "--format", config.format.as_deref());
     built
         .args
         .extend(config.args.iter().filter_map(|arg| clean_arg(arg)));
@@ -612,7 +612,6 @@ mod tests {
                 fragment_retries: Some(5),
                 sleep_interval_seconds: Some(1.5),
                 max_sleep_interval_seconds: Some(4.0),
-                format: Some("bv*+ba/b".to_string()),
                 ..YtDlpConfig::default()
             },
             runner.clone(),
@@ -641,8 +640,6 @@ mod tests {
                 "4",
                 "--fragment-retries",
                 "5",
-                "--format",
-                "bv*+ba/b",
                 "--extractor-args",
                 "youtube:player_client=ios",
                 "https://www.youtube.com/watch?v=jNQXAC9IVRw"
@@ -704,21 +701,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn builds_media_download_args_with_archive_and_after_move_print() {
+    async fn builds_media_download_args_with_plan_format_and_after_move_print() {
         let runner = Arc::new(FakeRunner::new(CommandRunnerOutput::default()));
-        let client = YtDlpClient::with_runner(
-            YtDlpConfig {
-                format: Some("ba".to_string()),
-                ..YtDlpConfig::default()
-            },
-            runner.clone(),
-        );
+        let client = YtDlpClient::with_runner(YtDlpConfig::default(), runner.clone());
 
         client
             .download_media(
                 "https://www.youtube.com/watch?v=jNQXAC9IVRw",
                 "/tmp/%(id)s.%(ext)s",
-                Some("/tmp/archive.txt".into()),
+                "ba/wa*",
             )
             .await
             .unwrap();
@@ -727,6 +718,8 @@ mod tests {
             runner.calls()[0].args,
             vec![
                 "--no-playlist",
+                "--format",
+                "ba/wa*",
                 "--merge-output-format",
                 "mp4",
                 "--write-info-json",
@@ -734,10 +727,6 @@ mod tests {
                 "after_move:filepath",
                 "-o",
                 "/tmp/%(id)s.%(ext)s",
-                "--download-archive",
-                "/tmp/archive.txt",
-                "--format",
-                "ba",
                 "https://www.youtube.com/watch?v=jNQXAC9IVRw"
             ]
         );
