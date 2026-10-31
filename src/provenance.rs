@@ -127,6 +127,7 @@ mod tests {
             duration_min: None,
             duration_max: None,
             migrate: false,
+            keep_media: false,
         };
         let provenance = IngestProvenance::from_request(&request);
         assert_eq!(provenance.source_url, "https://youtu.be/example");

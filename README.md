@@ -169,6 +169,22 @@ language, the file's byte size and its SHA-256. A later plan that needs more
 recorded file was removed. Local `--input` files are used as they are and never
 re-acquired.
 
+Downloaded media is temporary by default. Once every enabled stage that needs it
+(ASR, voices, scenes, faces, OCR) in every corpus plan containing the video has
+committed current output, the file and its yt-dlp info JSON are deleted,
+`local_video_path` is cleared and the acquisition record keeps `deletedAt`,
+`deletionReason` and the scene fingerprint, so captions, transcripts, search,
+exports and stage reuse keep working without the file. Media stays while a stage
+is unavailable, failed, interrupted or still running, or while another run holds
+it. Files a later acquisition superseded (audio after video was fetched) are
+deleted at the same point. Only files proven to be this corpus's downloads are
+touched: a recorded acquisition of a remote source inside its own
+`<item>/media/` directory, not a symlink, with the recorded size and SHA-256.
+Local `--input` files and media downloaded before acquisitions were recorded are
+never deleted. Pass `ingest --keep-media` (or `keepMedia: true` when running a
+plan through the API) to keep the media of that run. A later plan that needs the
+media again acquires it again.
+
 ## Subscriptions
 
 Store channels or playlists and check them later for new videos:

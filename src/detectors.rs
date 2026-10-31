@@ -520,6 +520,18 @@ pub struct StageReport {
 pub struct PlanRunReport {
     pub video_id: Uuid,
     pub stages: Vec<StageReport>,
+    #[serde(default)]
+    pub media: MediaCleanup,
+}
+
+/// What happened to the video's downloaded media after a run (#127).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaCleanup {
+    /// Files deleted: the processed media and any files a later acquisition superseded.
+    pub deleted: Vec<PathBuf>,
+    /// Why acquired media was kept, when it was.
+    pub kept: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -537,6 +549,9 @@ pub struct PlanRunRequest {
     /// Translation provider; None uses the native OPUS-MT provider with models under
     /// `model_dir/translation`.
     pub translation_provider: Option<crate::translation::TranslationProviderFactory>,
+    /// Keep downloaded media after processing instead of deleting it once every enabled
+    /// media stage stored current output (#127).
+    pub keep_media: bool,
 }
 
 /// Runs every enabled detector of a video's effective plan, reusing existing output of the
@@ -569,8 +584,11 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
             "Approve this video in its source before running detectors.".to_string(),
         ));
     }
-    // Decide every stage first: only stages that will actually run shape the media to acquire.
-    let mut decided: Vec<Result<StageReport, &str>> = Vec::new();
+    // Hold the media for the whole run so a concurrent release cannot delete it under us.
+    let lease = crate::media_acquisition::lease(&pool, request.video_id).await?;
+    // Decide every stage first: only stages that will actually run shape the media to
+    // acquire. A stage to run carries whether it needs the source media.
+    let mut decided: Vec<Result<StageReport, (&str, bool)>> = Vec::new();
     for planned in plan.detectors.iter().filter(|planned| {
         planned.enabled
             && request
@@ -601,7 +619,14 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
                 outcome: StageOutcome::Reused,
                 message: None,
             }),
-            Ok(_) => Err(detector),
+            // Faces always runs for corpus matching, but reuses current observations
+            // without media.
+            Ok(current) => Err((
+                detector,
+                !(current && !request.refresh && !failed)
+                    && crate::media_acquisition::MediaNeed::for_detector(detector)
+                        != crate::media_acquisition::MediaNeed::Nothing,
+            )),
             Err(error) => Ok(StageReport {
                 detector: detector.to_string(),
                 outcome: StageOutcome::Failed,
@@ -613,7 +638,8 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
     let need = crate::media_acquisition::MediaNeed::for_detectors(
         decided
             .iter()
-            .filter_map(|stage| stage.as_ref().err().copied()),
+            .filter_map(|stage| stage.as_ref().err().copied())
+            .filter_map(|(detector, needs_media)| needs_media.then_some(detector)),
     );
     let media_error = crate::media_acquisition::ensure_media(
         &pool,
@@ -627,15 +653,16 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
     .map(|error| format!("could not acquire the source media this stage needs: {error:#}"));
     let mut stages = Vec::new();
     for stage in decided {
-        let detector = match stage {
+        let (detector, needs_media) = match stage {
             Ok(report) => {
                 stages.push(report);
                 continue;
             }
-            Err(detector) => detector,
+            Err(stage) => stage,
         };
+        let media_error = media_error.as_deref().filter(|_| needs_media);
         stages.push(
-            match run_stage(&pool, &request, detector, media_error.as_deref()).await {
+            match run_stage(&pool, &request, detector, media_error).await {
                 Ok((outcome, message)) => StageReport {
                     detector: detector.to_string(),
                     outcome,
@@ -649,10 +676,98 @@ pub async fn run_video_plan(request: PlanRunRequest) -> Result<PlanRunReport, De
             },
         );
     }
+    // Every stage committed its outputs (or failed) above; only then may media go.
+    lease.end().await?;
+    let media = release_processed_media(&pool, &request).await?;
     Ok(PlanRunReport {
         video_id: request.video_id,
         stages,
+        media,
     })
+}
+
+/// Deletes the video's downloaded source media once no enabled media stage of any corpus
+/// plan containing it still needs it, and files a later acquisition superseded (#127).
+/// Does nothing while another run holds the media; that run releases it when it ends.
+/// Local input files and media without an acquisition record are never deleted.
+pub async fn release_processed_media(
+    pool: &PgPool,
+    request: &PlanRunRequest,
+) -> anyhow::Result<MediaCleanup> {
+    let Some(lock) = crate::media_acquisition::try_release_lock(pool, request.video_id).await?
+    else {
+        return Ok(MediaCleanup {
+            deleted: Vec::new(),
+            kept: Some("another run is using this media".to_string()),
+        });
+    };
+    let kept = if request.keep_media {
+        Some("kept on request".to_string())
+    } else {
+        media_still_needed(pool, request)
+            .await
+            .unwrap_or_else(|error| Some(format!("{error:#}")))
+    };
+    let deleted = lock
+        .finish(
+            kept.is_none()
+                .then_some("every enabled media stage stored current output"),
+        )
+        .await?;
+    Ok(MediaCleanup { deleted, kept })
+}
+
+/// Why the video's media must stay: an enabled media stage of some corpus plan containing
+/// it is unavailable, unfinished, failed, or lacks current stored output.
+async fn media_still_needed(
+    pool: &PgPool,
+    request: &PlanRunRequest,
+) -> anyhow::Result<Option<String>> {
+    use crate::detector_status::StageState;
+    use crate::media_acquisition::MediaNeed;
+    let corpora: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM corpora ORDER BY id")
+        .fetch_all(pool)
+        .await?;
+    for corpus_id in corpora {
+        if !crate::corpora::corpus_video_ids(pool, corpus_id)
+            .await?
+            .contains(&request.video_id)
+        {
+            continue;
+        }
+        let plan = video_plan(pool, corpus_id, request.video_id)
+            .await
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
+        let status =
+            crate::detector_status::video_status(pool, corpus_id, request.video_id).await?;
+        let request = PlanRunRequest {
+            corpus_id,
+            ..request.clone()
+        };
+        for planned in plan.detectors.iter().filter(|planned| {
+            planned.enabled && MediaNeed::for_detector(&planned.detector) != MediaNeed::Nothing
+        }) {
+            let detector = planned.detector.as_str();
+            if !planned.available {
+                return Ok(Some(format!(
+                    "{detector} is enabled but has no producer yet"
+                )));
+            }
+            if status.stages.iter().any(|stage| {
+                stage.detector == detector
+                    && matches!(
+                        stage.state,
+                        StageState::Failed | StageState::Interrupted | StageState::Running
+                    )
+            }) {
+                return Ok(Some(format!("{detector} has not finished successfully")));
+            }
+            if !existing_output(pool, &request, detector).await? {
+                return Ok(Some(format!("{detector} has no current stored output")));
+            }
+        }
+    }
+    Ok(None)
 }
 
 async fn existing_output(
@@ -699,14 +814,6 @@ async fn existing_output(
                 };
                 if matching {
                     if detector == "asr" {
-                        let media: Option<String> =
-                            sqlx::query_scalar("SELECT local_video_path FROM videos WHERE id = $1")
-                                .bind(request.video_id)
-                                .fetch_one(pool)
-                                .await?;
-                        if media.as_deref() != stored["input"]["path"].as_str() {
-                            continue;
-                        }
                         let Some(command) = reprocess
                             .transcriber_command
                             .clone()
@@ -720,6 +827,15 @@ async fn existing_output(
                         if stored.get("transcriberExecutable") != Some(&current) {
                             continue;
                         }
+                        // The transcribed media: the present file, or downloaded media
+                        // released after processing (#127).
+                        let media =
+                            crate::media_acquisition::source_identity(pool, request.video_id)
+                                .await?;
+                        if media.is_some() && stored.get("input") == media.as_ref() {
+                            return Ok(true);
+                        }
+                        continue;
                     }
                     if let Some(path) = stored["input"]["path"].as_str() {
                         if let Ok(current) =

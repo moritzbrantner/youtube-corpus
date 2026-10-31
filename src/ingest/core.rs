@@ -29,6 +29,8 @@ pub struct IngestRequest {
     pub duration_min: Option<f64>,
     pub duration_max: Option<f64>,
     pub migrate: bool,
+    /// Keep downloaded media instead of deleting it once nothing still needs it (#127).
+    pub keep_media: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -221,7 +223,9 @@ async fn ingest_item(
     let mut asr_attempt = None;
     let mut asr_state = "skipped";
     let mut asr_message = None;
+    let mut media_lease = None;
     if request.asr_enabled {
+        media_lease = Some(crate::media_acquisition::lease(pool, video_id).await?);
         asr_attempt = Some(
             crate::detector_status::Attempt::begin(
                 pool,
@@ -348,6 +352,32 @@ async fn ingest_item(
         attempt
             .finish(pool, asr_state, asr_message.as_deref())
             .await?;
+    }
+    if let Some(lease) = media_lease {
+        lease.end().await?;
+    }
+    // The transcript is committed: release downloaded audio no corpus plan still needs. A
+    // failed or empty transcription keeps it for the retry.
+    if asr_state == "completed" && item.local_video_path.is_none() {
+        let cleanup = crate::detectors::release_processed_media(
+            pool,
+            &crate::detectors::PlanRunRequest {
+                database_url: request.database_url.clone(),
+                corpus_id: Uuid::nil(),
+                video_id,
+                work_dir: request.work_dir.clone(),
+                yt_dlp: request.yt_dlp.clone(),
+                model_dir: PathBuf::from(crate::entities::DEFAULT_MODEL_DIR),
+                refresh: false,
+                detectors: None,
+                translation_provider: None,
+                keep_media: request.keep_media,
+            },
+        )
+        .await;
+        if let Err(error) = cleanup {
+            tracing::warn!(%video_id, error = %format!("{error:#}"), "media cleanup failed");
+        }
     }
     let mut stage_messages = stage_messages;
     if let Some(message) = asr_message {

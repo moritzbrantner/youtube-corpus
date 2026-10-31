@@ -6,11 +6,17 @@
 //! downloaded file is recorded with its yt-dlp format ids, audio track language, byte size
 //! and SHA-256, and a later plan that needs more, or finds the file removed, acquires again.
 //! Local input files are a read-only source and are never acquired or replaced.
+//!
+//! Acquired media is temporary (#127): once every enabled stage that consumes it has durably
+//! stored current output, [`ReleaseLock::finish`] deletes the file and keeps its record with
+//! `deletedAt` and `deletionReason`. Files a later acquisition superseded are deleted the
+//! same way. Runs that read media hold a shared [`MediaLease`]; release needs the exclusive
+//! lock, so it never races a live reader.
 
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use crate::config::YtDlpConfig;
@@ -129,6 +135,19 @@ pub struct MediaAcquisition {
     pub duration_seconds: Option<f64>,
     pub yt_dlp_args_redacted: Vec<String>,
     pub acquired_at: String,
+    /// When the corpus deleted this file (#127). The record stays as the provenance of every
+    /// output produced from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deletion_reason: Option<String>,
+    /// The scene stage's FNV-1a input fingerprint, taken just before deletion so its output
+    /// stays reusable without the file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content_fnv1a64: Option<String>,
+    /// Earlier acquisitions of this video that this one replaced, oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub superseded: Vec<MediaAcquisition>,
 }
 
 impl MediaAcquisition {
@@ -185,6 +204,7 @@ pub async fn ensure_media_with(
         return Ok(local_path);
     }
     let recorded: Option<serde_json::Value> = row.try_get("media_acquisition")?;
+    let mut previous = None;
     match recorded.map(serde_json::from_value::<MediaAcquisition>) {
         Some(Ok(acquired)) => {
             if need.is_covered_by(acquired.need)
@@ -193,6 +213,7 @@ pub async fn ensure_media_with(
             {
                 return Ok(Some(acquired.path));
             }
+            previous = Some(acquired);
         }
         // Media retained before acquisitions were recorded was a full-quality download.
         None => {
@@ -204,7 +225,17 @@ pub async fn ensure_media_with(
     }
     let item_id = crate::youtube::sanitize_id(&source_url);
     let media_dir = work_dir.join(&item_id).join("media");
-    let acquisition = download(client, &source_url, &media_dir, &item_id, need).await?;
+    let mut acquisition = download(client, &source_url, &media_dir, &item_id, need).await?;
+    if let Some(mut previous) = previous {
+        // Keep the history flat; the superseded file is deleted at the next release.
+        acquisition.superseded = std::mem::take(&mut previous.superseded);
+        acquisition.superseded.push(previous);
+        for earlier in &mut acquisition.superseded {
+            if earlier.deleted_at.is_none() && earlier.path == acquisition.path {
+                earlier.mark_deleted("overwritten by a later acquisition", None);
+            }
+        }
+    }
     sqlx::query(
         "UPDATE videos SET local_video_path = $2, media_acquisition = $3, updated_at = now()
         WHERE id = $1",
@@ -219,6 +250,298 @@ pub async fn ensure_media_with(
 
 fn is_remote(source_url: &str) -> bool {
     source_url.starts_with("https://") || source_url.starts_with("http://")
+}
+
+impl MediaAcquisition {
+    fn mark_deleted(&mut self, reason: &str, content_fnv1a64: Option<String>) {
+        self.deleted_at = Some(chrono::Utc::now().to_rfc3339());
+        self.deletion_reason = Some(reason.to_string());
+        self.content_fnv1a64 = content_fnv1a64;
+    }
+}
+
+fn lock_key(video: Uuid) -> String {
+    format!("media:{video}")
+}
+
+/// A shared hold on a video's source media for a run that may read it. While any lease is
+/// held, release cannot take its exclusive lock. Dropping the lease (including cancellation
+/// or a crash) releases it; [`MediaLease::end`] releases it immediately.
+pub struct MediaLease {
+    lock: Transaction<'static, Postgres>,
+}
+
+impl MediaLease {
+    pub async fn end(self) -> anyhow::Result<()> {
+        self.lock.rollback().await?;
+        Ok(())
+    }
+}
+
+/// Waits while a release is deleting this video's media, then holds it shared.
+pub async fn lease(pool: &PgPool, video: Uuid) -> anyhow::Result<MediaLease> {
+    let mut lock = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))")
+        .bind(lock_key(video))
+        .execute(&mut *lock)
+        .await?;
+    Ok(MediaLease { lock })
+}
+
+/// Exclusive ownership of a video's media for deleting it; see [`try_release_lock`].
+pub struct ReleaseLock {
+    tx: Transaction<'static, Postgres>,
+    video: Uuid,
+}
+
+/// The exclusive release lock, or None while any run still holds a [`MediaLease`].
+pub async fn try_release_lock(pool: &PgPool, video: Uuid) -> anyhow::Result<Option<ReleaseLock>> {
+    let mut tx = pool.begin().await?;
+    let acquired: bool =
+        sqlx::query_scalar("SELECT pg_try_advisory_xact_lock(hashtextextended($1, 0))")
+            .bind(lock_key(video))
+            .fetch_one(&mut *tx)
+            .await?;
+    Ok(acquired.then_some(ReleaseLock { tx, video }))
+}
+
+impl ReleaseLock {
+    /// Deletes the files of superseded acquisitions and, when `current_reason` is given, the
+    /// current acquisition, recording each deletion in `videos.media_acquisition` and
+    /// clearing `local_video_path`. Only files positively identified as this corpus's
+    /// downloads are touched: a recorded acquisition of a remote source, inside its own
+    /// `<item>/media/` directory, not a symlink, with the recorded size and SHA-256. Local
+    /// input files and media without a record are never deleted. Returns the deleted paths.
+    pub async fn finish(mut self, current_reason: Option<&str>) -> anyhow::Result<Vec<PathBuf>> {
+        let row = sqlx::query(
+            "SELECT source_url, local_video_path, media_acquisition FROM videos
+            WHERE id = $1 FOR UPDATE",
+        )
+        .bind(self.video)
+        .fetch_optional(&mut *self.tx)
+        .await?;
+        let Some(row) = row else {
+            return Ok(Vec::new());
+        };
+        let source_url: String = row.try_get("source_url")?;
+        let local_path: Option<String> = row.try_get("local_video_path")?;
+        let recorded: Option<serde_json::Value> = row.try_get("media_acquisition")?;
+        if !is_remote(&source_url) {
+            return Ok(Vec::new());
+        }
+        let Some(Ok(mut record)) = recorded.map(serde_json::from_value::<MediaAcquisition>) else {
+            return Ok(Vec::new());
+        };
+        let item_id = crate::youtube::sanitize_id(&source_url);
+        let mut deleted = Vec::new();
+        let mut changed = false;
+        for earlier in record
+            .superseded
+            .iter_mut()
+            .filter(|earlier| earlier.deleted_at.is_none())
+        {
+            if earlier.path == record.path {
+                earlier.mark_deleted("overwritten by a later acquisition", None);
+                changed = true;
+                continue;
+            }
+            match remove_acquired(earlier, &item_id, false).await? {
+                Removal::Deleted(_) => {
+                    deleted.push(earlier.path.clone());
+                    earlier.mark_deleted("superseded by a later acquisition", None);
+                    changed = true;
+                }
+                Removal::Missing => {
+                    earlier.mark_deleted("superseded by a later acquisition", None);
+                    changed = true;
+                }
+                Removal::Refused(why) => {
+                    tracing::warn!(path = %earlier.path.display(), why, "kept superseded media");
+                }
+            }
+        }
+        let mut cleared = false;
+        if let Some(reason) = current_reason {
+            if record.deleted_at.is_none()
+                && local_path.as_deref().map(Path::new) == Some(&record.path)
+            {
+                match remove_acquired(&record, &item_id, true).await? {
+                    Removal::Deleted(fnv) => {
+                        deleted.push(record.path.clone());
+                        record.mark_deleted(reason, fnv);
+                        cleared = true;
+                    }
+                    // Deleted before a crash could record it.
+                    Removal::Missing => {
+                        record.mark_deleted(reason, None);
+                        cleared = true;
+                    }
+                    Removal::Refused(why) => {
+                        tracing::warn!(path = %record.path.display(), why, "kept acquired media");
+                    }
+                }
+            }
+        }
+        if changed || cleared {
+            sqlx::query(
+                "UPDATE videos SET media_acquisition = $2,
+                  local_video_path = CASE WHEN $3 THEN NULL ELSE local_video_path END,
+                  updated_at = now()
+                WHERE id = $1",
+            )
+            .bind(self.video)
+            .bind(serde_json::to_value(&record)?)
+            .bind(cleared)
+            .execute(&mut *self.tx)
+            .await?;
+        }
+        self.tx.commit().await?;
+        Ok(deleted)
+    }
+}
+
+enum Removal {
+    /// Deleted; carries the scene fingerprint when one was requested.
+    Deleted(Option<String>),
+    Missing,
+    Refused(&'static str),
+}
+
+async fn remove_acquired(
+    record: &MediaAcquisition,
+    item_id: &str,
+    fingerprint: bool,
+) -> anyhow::Result<Removal> {
+    let path = record.path.clone();
+    let item_id = item_id.to_string();
+    let (bytes, sha256) = (record.bytes, record.sha256.clone());
+    tokio::task::spawn_blocking(move || {
+        remove_acquired_file(&path, &item_id, bytes, &sha256, fingerprint)
+    })
+    .await?
+}
+
+fn remove_acquired_file(
+    path: &Path,
+    item_id: &str,
+    bytes: u64,
+    sha256: &str,
+    fingerprint: bool,
+) -> anyhow::Result<Removal> {
+    use std::io::ErrorKind;
+    if path
+        .components()
+        .any(|part| matches!(part, std::path::Component::ParentDir))
+    {
+        return Ok(Removal::Refused("path leaves its directory"));
+    }
+    let name = path.file_name().and_then(|name| name.to_str());
+    if !name.is_some_and(|name| name.starts_with(&format!("{item_id}-"))) {
+        return Ok(Removal::Refused("not named as this video's download"));
+    }
+    let Some(media_dir) = path.parent() else {
+        return Ok(Removal::Refused("no media directory"));
+    };
+    let item_dir = media_dir.parent();
+    if media_dir.file_name().and_then(|n| n.to_str()) != Some("media")
+        || item_dir
+            .and_then(|dir| dir.file_name())
+            .and_then(|n| n.to_str())
+            != Some(item_id)
+    {
+        return Ok(Removal::Refused("outside this video's media directory"));
+    }
+    for dir in [Some(media_dir), item_dir].into_iter().flatten() {
+        match std::fs::symlink_metadata(dir) {
+            Ok(meta) if meta.file_type().is_dir() => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Removal::Missing),
+            _ => return Ok(Removal::Refused("media directory is not a plain directory")),
+        }
+    }
+    let meta = match std::fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Removal::Missing),
+        Err(error) => return Err(error.into()),
+    };
+    if !meta.file_type().is_file() {
+        return Ok(Removal::Refused("not a regular file"));
+    }
+    if meta.len() != bytes
+        || crate::detector_status::file_identity(path)?["sha256"].as_str() != Some(sha256)
+    {
+        return Ok(Removal::Refused(
+            "content differs from the recorded acquisition",
+        ));
+    }
+    let fnv = fingerprint
+        .then(|| crate::visual_processing::fingerprint_file(path))
+        .transpose()?;
+    std::fs::remove_file(path)?;
+    // The info JSON yt-dlp wrote next to it; its formats are in the record.
+    if let Some(info) = info_json_path(path) {
+        if std::fs::symlink_metadata(&info).is_ok_and(|meta| meta.file_type().is_file()) {
+            let _ = std::fs::remove_file(info);
+        }
+    }
+    Ok(Removal::Deleted(fnv))
+}
+
+/// The record of downloaded media the corpus deleted after processing, while no file has
+/// replaced it. Stages compare their stored input against it instead of a missing file.
+pub(crate) async fn released(
+    pool: &PgPool,
+    video: Uuid,
+) -> anyhow::Result<Option<MediaAcquisition>> {
+    let row = sqlx::query("SELECT local_video_path, media_acquisition FROM videos WHERE id = $1")
+        .bind(video)
+        .fetch_optional(pool)
+        .await?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    let local_path: Option<String> = row.try_get("local_video_path")?;
+    let recorded: Option<serde_json::Value> = row.try_get("media_acquisition")?;
+    if local_path.is_some_and(|path| !path.trim().is_empty()) {
+        return Ok(None);
+    }
+    Ok(recorded
+        .and_then(|value| serde_json::from_value::<MediaAcquisition>(value).ok())
+        .filter(|record| record.deleted_at.is_some()))
+}
+
+/// The `{path, sha256}` identity of the video's source media: hashed from the file while it
+/// exists, else the recorded identity of released downloaded media.
+pub(crate) async fn source_identity(
+    pool: &PgPool,
+    video: Uuid,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let path: Option<String> =
+        sqlx::query_scalar("SELECT local_video_path FROM videos WHERE id = $1")
+            .bind(video)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
+    if let Some(path) = path.map(PathBuf::from).filter(|path| path.is_file()) {
+        return Ok(Some(
+            tokio::task::spawn_blocking(move || crate::detector_status::file_identity(&path))
+                .await??,
+        ));
+    }
+    Ok(released(pool, video)
+        .await?
+        .map(|record| serde_json::json!({ "path": record.path, "sha256": record.sha256 })))
+}
+
+/// [`source_identity`]'s digest as the `sha256:<hex>` input hash media runs record.
+pub(crate) async fn source_input_hash(
+    pool: &PgPool,
+    video: Uuid,
+) -> anyhow::Result<Option<String>> {
+    Ok(source_identity(pool, video).await?.and_then(|identity| {
+        identity["sha256"]
+            .as_str()
+            .map(|hash| format!("sha256:{hash}"))
+    }))
 }
 
 /// Downloads the media `need` asks for into `media_dir` and describes the stored file.
@@ -328,6 +651,10 @@ async fn download_into(
         duration_seconds: probe.duration_seconds,
         yt_dlp_args_redacted: report.args_redacted,
         acquired_at: chrono::Utc::now().to_rfc3339(),
+        deleted_at: None,
+        deletion_reason: None,
+        content_fnv1a64: None,
+        superseded: Vec::new(),
     })
 }
 

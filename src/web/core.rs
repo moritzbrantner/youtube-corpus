@@ -807,6 +807,7 @@ async fn add_source(
             duration_min: input.duration_min,
             duration_max: input.duration_max,
             migrate: false,
+            keep_media: false,
         };
         let failure_database_url = database_url.clone();
         let failure_source_url = source_url.clone();
@@ -857,6 +858,7 @@ async fn add_source(
                 duration_min: input.duration_min,
                 duration_max: input.duration_max,
                 migrate: migrate && !subscribe,
+                keep_media: false,
             })
             .await
             .map_err(ApiError::internal)?,

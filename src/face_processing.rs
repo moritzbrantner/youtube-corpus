@@ -220,11 +220,10 @@ async fn existing_run(
 }
 
 pub(crate) async fn has_current_face_output(pool: &PgPool, video: Uuid) -> anyhow::Result<bool> {
-    let path = match media_path(pool, video).await {
-        Ok(path) => path,
-        Err(_) => return Ok(false),
+    let Some(hash) = crate::media_acquisition::source_input_hash(pool, video).await? else {
+        return Ok(false);
     };
-    let identity = provenance(input_hash(path).await?, &FaceAnalysisConfig::default())?;
+    let identity = provenance(hash, &FaceAnalysisConfig::default())?;
     Ok(existing_run(pool, video, &identity).await?.is_some())
 }
 
@@ -235,13 +234,19 @@ pub async fn analyze_stored_video_faces(
     request: FaceAnalysisRequest,
 ) -> anyhow::Result<FaceAnalysisReport> {
     request.config.validate()?;
-    let path = media_path(pool, request.video_id).await?;
-    let identity = provenance(input_hash(path.clone()).await?, &request.config)?;
+    // Reuse needs no file: released downloaded media keeps its recorded digest (#127).
     if !request.refresh {
-        if let Some(report) = existing_run(pool, request.video_id, &identity).await? {
-            return Ok(report);
+        if let Some(hash) =
+            crate::media_acquisition::source_input_hash(pool, request.video_id).await?
+        {
+            let identity = provenance(hash, &request.config)?;
+            if let Some(report) = existing_run(pool, request.video_id, &identity).await? {
+                return Ok(report);
+            }
         }
     }
+    let path = media_path(pool, request.video_id).await?;
+    let identity = provenance(input_hash(path.clone()).await?, &request.config)?;
     let token = CancellationToken::new();
     let _cancel_on_drop = CancelOnDrop(token.clone());
     let config = request.config.clone();

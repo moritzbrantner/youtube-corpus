@@ -540,6 +540,7 @@ async fn add_source(
         duration_min: None,
         duration_max: None,
         migrate: false,
+        keep_media: false,
     })
     .await
     .map_err(ResearchError::internal)?;
@@ -965,6 +966,7 @@ struct RunPlanInput {
     detectors: Option<Vec<String>>,
     refresh: Option<bool>,
     work_dir: Option<String>,
+    keep_media: Option<bool>,
 }
 
 async fn run_video_plan(
@@ -988,6 +990,7 @@ async fn run_video_plan(
         refresh: input.refresh.unwrap_or(false),
         detectors: input.detectors,
         translation_provider: None,
+        keep_media: input.keep_media.unwrap_or(false),
     })
     .await
     .map(Json)

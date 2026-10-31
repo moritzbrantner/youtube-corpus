@@ -260,6 +260,11 @@ pub struct IngestArgs {
     pub duration_max: Option<f64>,
     #[arg(long)]
     pub migrate: bool,
+    /// Keep downloaded YouTube media after processing. By default it is deleted once every
+    /// enabled stage that needs it stored current output; local `--input` files are never
+    /// deleted.
+    #[arg(long)]
+    pub keep_media: bool,
 }
 
 impl IngestArgs {
@@ -312,6 +317,7 @@ impl IngestArgs {
             duration_min: self.duration_min,
             duration_max: self.duration_max,
             migrate: self.migrate,
+            keep_media: self.keep_media,
         })
     }
 }

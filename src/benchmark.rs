@@ -64,6 +64,7 @@ pub async fn run_distinguo_benchmark(request: BenchmarkRequest) -> anyhow::Resul
         duration_min: None,
         duration_max: None,
         migrate: request.migrate,
+        keep_media: false,
     };
 
     let ingest_start = Instant::now();

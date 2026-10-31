@@ -143,6 +143,10 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
   Status: adopted 2026-10-31 (issue #126 defaults).  
   Metadata, captions, entities and translations download no media. ASR and voices acquire an audio-only stream, preferring the original-language track over auto-dubs. Video stages acquire one video with audio at the lowest sufficient height (scenes 360p; faces and OCR 720p), shared by every stage of the plan. Each acquisition records its yt-dlp format ids, audio track language, byte size and SHA-256. A later plan that needs more, or finds the recorded file removed, acquires again; missing media is reported as a stage failure, never as processed. Local input files are used as they are and never acquired or replaced.
 
+- **2.12 Downloaded media is temporary; processed evidence is kept.**  
+  Status: adopted 2026-10-23 (owner preference, issue #127).  
+  Audio or video the corpus downloads from YouTube is deleted from local disk once every enabled stage that needs it, in every corpus plan containing the video, has durably stored current output. Metadata, source identity, captions, timestamped transcripts, annotations, producer provenance, search indexes and exports stay usable without the file, and the acquisition record (format ids, byte size, SHA-256) remains with when and why the file was deleted. Media stays while any such stage is unavailable, failed, interrupted or running, and a later plan that needs it acquires it again. An explicit keep-media request retains it for later review. User-supplied local media is never deleted.
+
 ## 3. Finding material inside videos
 
 - **3.1 Search transcript words, phrases, and passages across the corpus.**  
