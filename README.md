@@ -294,11 +294,11 @@ separate work.
 Enable **Voices and within-video speaker tracks** in a detector profile and run its plan
 on retained media with an audio stream. The canonical audio-analysis pipeline decodes and
 resamples audio, finds energy-based speech spans, produces 256-dimensional WeSpeaker
-embeddings, and groups similar spans into inferred speaker tracks. Energy activity scores
+embeddings for speech windows of at most 3 s, and clusters them per video (average-linkage,
+with clusters under 2 s or 5 % of the speech folded into their nearest speaker) into
+inferred speaker tracks. Each window is one stored voice observation. Energy activity scores
 are kept separately from identity confidence; speaker labels are not verified people.
 Short/noisy spans, overlapping speakers and music can make these inferences unreliable.
-A short single-speaker tail producing an extra track is tracked in
-[audio-analysis#154](https://github.com/moritzbrantner/audio-analysis/issues/154).
 Cross-video voice matching (#134) and naming from spoken self-introductions (#135) build on
 these tracks: a person mention right after "I'm", "my name is" or "Hi, this is" (or "ich bin",
 "mein Name ist", "hier ist") in a transcript segment that one voice track clearly speaks names that

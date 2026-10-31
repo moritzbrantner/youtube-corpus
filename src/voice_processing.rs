@@ -7,9 +7,11 @@ use audio_analysis_core::{interleaved_to_mono, AudioClip, ChannelMix};
 use audio_analysis_io::{AudioFrameSource, FfmpegAudioSource};
 use audio_analysis_processing::OfflineAudioProcessor;
 use audio_analysis_speakers::{
-    DiarizedSpeaker, EnergyVoiceActivityDetector, OnnxSpeakerEmbedder, OnnxSpeakerEmbeddingConfig,
-    SpeakerAudio, SpeakerDiarizer, SpeakerEmbedding, SpeakerEmbeddingExtractor, VadOptions,
-    WindowedSpeakerDiarizer,
+    DiarizationSegment, DiarizedSpeaker, EnergyVoiceActivityDetector, OnnxSpeakerEmbedder,
+    OnnxSpeakerEmbeddingConfig, SpeakerAudio, SpeakerDiarizer, SpeakerEmbedding,
+    SpeakerEmbeddingExtractor, VadOptions, WindowedSpeakerDiarizer, DEFAULT_CLUSTER_THRESHOLD,
+    DEFAULT_EMBEDDING_WINDOW_SECONDS, DEFAULT_MIN_CLUSTER_FRACTION, DEFAULT_MIN_CLUSTER_SECONDS,
+    DEFAULT_MIN_SPEAKER_EVIDENCE_SECONDS,
 };
 use model_runtime::{HuggingFaceDownloader, HuggingFaceModelSpec, ModelBundleStore, ModelTask};
 use runtime_core::CancellationToken;
@@ -25,7 +27,7 @@ use crate::multimodal::{
     UpsertVoiceObservationRequest, UpsertVoiceTrackRequest,
 };
 
-pub const AUDIO_ANALYSIS_REVISION: &str = "d9586adcc4240d08320019de8407f5ee5d2f1426";
+pub const AUDIO_ANALYSIS_REVISION: &str = "7bd22d0d0efde1f8b836f4941de60f53862fe7f5";
 pub const VOICE_PROCESSOR: &str = "youtube-corpus/voices";
 pub const VOICE_MODEL: &str = "Wespeaker/wespeaker-voxceleb-resnet34-LM";
 pub const VOICE_MODEL_VERSION: &str = "f0c48c298fd835726c27956a5d617bad7115627e";
@@ -82,7 +84,9 @@ fn vad_options() -> VadOptions {
 pub(crate) fn settings() -> Value {
     let vad = vad_options();
     json!({"sampleRate":16000,"channelMix":"average","diarizer":"audio-analysis/WindowedSpeakerDiarizer",
-        "clusterThreshold":0.72,"vad":{"kind":"energy","rmsThreshold":vad.rms_threshold,"frameSeconds":vad.frame_seconds,
+        "clustering":"average-linkage","clusterThreshold":DEFAULT_CLUSTER_THRESHOLD,
+        "embeddingWindowSeconds":DEFAULT_EMBEDDING_WINDOW_SECONDS,"minClusterSeconds":DEFAULT_MIN_CLUSTER_SECONDS,
+        "minClusterFraction":DEFAULT_MIN_CLUSTER_FRACTION,"minSpeakerEvidenceSeconds":DEFAULT_MIN_SPEAKER_EVIDENCE_SECONDS,"vad":{"kind":"energy","rmsThreshold":vad.rms_threshold,"frameSeconds":vad.frame_seconds,
         "hopSeconds":vad.hop_seconds,"minSpeechSeconds":vad.min_speech_seconds,"mergeGapSeconds":vad.merge_gap_seconds}})
 }
 
@@ -199,11 +203,11 @@ struct Batch {
     observations: Vec<Observation>,
 }
 
-/// Record the actual canonical extractor outputs without running inference twice or
-/// reconstructing speaker embeddings in this application.
+/// Record the actual canonical extractor outputs, with each embedded window's sample count,
+/// without running inference twice or reconstructing speaker embeddings in this application.
 struct RecordingEmbedder {
     inner: OnnxSpeakerEmbedder,
-    embeddings: Vec<SpeakerEmbedding>,
+    embeddings: Vec<(SpeakerEmbedding, usize)>,
     token: CancellationToken,
 }
 impl SpeakerEmbeddingExtractor for RecordingEmbedder {
@@ -220,7 +224,8 @@ impl SpeakerEmbeddingExtractor for RecordingEmbedder {
             ));
         }
         let embedding = self.inner.embed_speaker(audio)?;
-        self.embeddings.push(embedding.clone());
+        self.embeddings
+            .push((embedding.clone(), audio.samples_per_channel()));
         Ok(embedding)
     }
 }
@@ -283,29 +288,60 @@ fn analyze_media(path: &Path, models: &Path, token: &CancellationToken) -> anyho
     let audio = SpeakerAudio::mono(&clip.samples, 16000)?;
     let result = diarizer.diarize(&audio)?;
     anyhow::ensure!(!token.is_cancelled(), "voice analysis cancelled");
-    anyhow::ensure!(
-        result.segments.len() == diarizer.extractor.embeddings.len(),
-        "canonical speaker result/embedding count differs"
-    );
+    let observations = window_observations(result.segments, diarizer.extractor.embeddings, 16000)?;
+    Ok(Batch { observations })
+}
+
+/// One observation per embedded diarizer window. The diarizer splits long speech spans into
+/// windows and rejoins neighbouring windows that land on one speaker, so a segment covers one or
+/// more consecutive recorded windows; each window keeps its own embedding and time range.
+/// Unresolved spans were never embedded and yield no observation.
+fn window_observations(
+    segments: Vec<DiarizationSegment>,
+    windows: Vec<(SpeakerEmbedding, usize)>,
+    sample_rate: u32,
+) -> anyhow::Result<Vec<Observation>> {
+    let rate = f64::from(sample_rate);
+    // Window boundaries are rounded to samples, so allow a little slack per segment.
+    let slack = rate / 10.0;
+    let mut windows = windows.into_iter();
     let mut observations = Vec::new();
-    for (segment, embedding) in result
-        .segments
-        .into_iter()
-        .zip(diarizer.extractor.embeddings)
-    {
+    for segment in segments {
         let speaker = match segment.speaker {
             DiarizedSpeaker::Unknown(label) => label,
             DiarizedSpeaker::Known(id) => id.as_str().into(),
+            DiarizedSpeaker::Unresolved => continue,
         };
-        observations.push(Observation {
-            start: segment.start_seconds,
-            end: segment.end_seconds,
-            speaker,
-            activity_score: segment.score,
-            embedding: embedding.values().to_vec(),
-        });
+        let length = (segment.end_seconds - segment.start_seconds) * rate;
+        let mut covered = 0.0;
+        loop {
+            let (embedding, samples) = windows
+                .next()
+                .context("canonical speaker segment has no recorded embedding")?;
+            let start = segment.start_seconds + covered / rate;
+            covered += samples as f64;
+            let last = length - covered <= slack;
+            observations.push(Observation {
+                start,
+                end: if last {
+                    segment.end_seconds
+                } else {
+                    segment.start_seconds + covered / rate
+                },
+                speaker: speaker.clone(),
+                activity_score: segment.score,
+                embedding: embedding.values().to_vec(),
+            });
+            if last {
+                break;
+            }
+        }
     }
-    Ok(Batch { observations })
+    anyhow::ensure!(
+        windows.next().is_none(),
+        "canonical speaker result/embedding count differs"
+    );
+    Ok(observations)
 }
 
 async fn persist_batch(
@@ -372,4 +408,69 @@ async fn persist_batch(
         tracks: u64::try_from(track_ids.len())?,
         reused: false,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn segment(start: f64, end: f64, speaker: DiarizedSpeaker) -> DiarizationSegment {
+        DiarizationSegment {
+            start_seconds: start,
+            end_seconds: end,
+            speaker,
+            score: 1.0,
+        }
+    }
+
+    fn window(value: f32, seconds: f64) -> (SpeakerEmbedding, usize) {
+        let model = audio_analysis_speakers::SpeakerEmbeddingModel::spectral_baseline(2).unwrap();
+        let embedding = SpeakerEmbedding::new(vec![value, 1.0], model, 100).unwrap();
+        (embedding, (seconds * 100.0).round() as usize)
+    }
+
+    #[test]
+    fn rejoined_windows_keep_their_own_embeddings_and_times() {
+        let a = || DiarizedSpeaker::Unknown("speaker_0".into());
+        // A 7.5 s span cut into three 2.5 s windows: the first two rejoined on speaker_0,
+        // the third went to speaker_1. A short unresolved span carries no embedding.
+        let segments = vec![
+            segment(1.0, 6.0, a()),
+            segment(6.0, 8.5, DiarizedSpeaker::Unknown("speaker_1".into())),
+            segment(9.0, 9.15, DiarizedSpeaker::Unresolved),
+            segment(10.0, 11.0, a()),
+        ];
+        let windows = vec![
+            window(0.1, 2.5),
+            window(0.2, 2.5),
+            window(0.3, 2.5),
+            window(0.4, 1.0),
+        ];
+        let observations = window_observations(segments, windows, 100).unwrap();
+        let spans = observations
+            .iter()
+            .map(|o| (o.start, o.end, o.speaker.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            spans,
+            [
+                (1.0, 3.5, "speaker_0"),
+                (3.5, 6.0, "speaker_0"),
+                (6.0, 8.5, "speaker_1"),
+                (10.0, 11.0, "speaker_0")
+            ]
+        );
+        assert!(observations[1].embedding[0] > observations[0].embedding[0]);
+    }
+
+    #[test]
+    fn missing_or_extra_windows_fail() {
+        let one = vec![segment(
+            0.0,
+            1.0,
+            DiarizedSpeaker::Unknown("speaker_0".into()),
+        )];
+        assert!(window_observations(one.clone(), vec![], 100).is_err());
+        assert!(window_observations(one, vec![window(0.1, 1.0), window(0.2, 1.0)], 100).is_err());
+    }
 }
