@@ -497,6 +497,7 @@ async fn native_face_output_matches_across_videos_and_honors_a_correction_after_
             refresh: false,
             detectors: Some(vec!["faces".into()]),
             translation_provider: None,
+            keep_media: false,
         };
         let native = run_video_plan(request.clone()).await.unwrap();
         assert!(

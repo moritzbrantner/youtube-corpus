@@ -190,7 +190,7 @@ fn validate_scene_config(threshold: f32, min_scene_len: u64) -> anyhow::Result<(
     Ok(())
 }
 
-fn fingerprint_file(path: &Path) -> anyhow::Result<String> {
+pub(crate) fn fingerprint_file(path: &Path) -> anyhow::Result<String> {
     let mut file = File::open(path)?;
     let mut state = FNV1A_OFFSET;
     let mut buffer = [0_u8; 64 * 1024];
@@ -227,10 +227,17 @@ pub(crate) async fn has_current_scene_output(pool: &PgPool, video: Uuid) -> anyh
             .bind(video)
             .fetch_one(pool)
             .await?;
-    let Some(path) = path.filter(|p| Path::new(p).is_file()) else {
-        return Ok(false);
+    let input = match path.filter(|p| Path::new(p).is_file()) {
+        Some(path) => fingerprint_file(Path::new(&path))?,
+        // Downloaded media released after processing keeps its fingerprint (#127).
+        None => match crate::media_acquisition::released(pool, video)
+            .await?
+            .and_then(|record| record.content_fnv1a64)
+        {
+            Some(input) => input,
+            None => return Ok(false),
+        },
     };
-    let input = fingerprint_file(Path::new(&path))?;
     let config = fingerprint_bytes(
         format!(
             "content-threshold={:08x};min-scene-len={}",

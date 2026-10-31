@@ -135,6 +135,7 @@ pub async fn reprocess_video(request: ReprocessRequest) -> anyhow::Result<Reproc
             duration_min: None,
             duration_max: None,
             migrate: false,
+            keep_media: false,
         })
         .await?;
 

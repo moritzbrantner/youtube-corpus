@@ -268,6 +268,7 @@ impl Subscription {
             duration_min: self.duration_min,
             duration_max: self.duration_max,
             migrate: false,
+            keep_media: false,
         }
     }
 }

@@ -161,10 +161,10 @@ async fn existing_run(
 }
 
 pub(crate) async fn has_current_voice_output(pool: &PgPool, video: Uuid) -> anyhow::Result<bool> {
-    let Ok(path) = media_path(pool, video).await else {
+    let Some(hash) = crate::media_acquisition::source_input_hash(pool, video).await? else {
         return Ok(false);
     };
-    let identity = provenance(input_hash(path).await?)?;
+    let identity = provenance(hash)?;
     Ok(existing_run(pool, video, &identity).await?.is_some())
 }
 
