@@ -1127,14 +1127,15 @@ export type IdentityCorrection = {
   unitKeys?: string[];
 };
 export type IdentityListFilter = {
-  kind: IdentityKind;
+  kind?: IdentityKind;
   entityType?: string;
   /** Restricts to one corpus; omitted lists all corpora. */
   corpusId?: string | null;
   q?: string;
 };
 export function listIdentities(filter: IdentityListFilter) {
-  const params = new URLSearchParams({ kind: filter.kind });
+  const params = new URLSearchParams();
+  if (filter.kind) params.set("kind", filter.kind);
   if (filter.entityType) params.set("entityType", filter.entityType);
   if (filter.corpusId) params.set("corpusId", filter.corpusId);
   if (filter.q) params.set("q", filter.q);
@@ -1159,5 +1160,103 @@ export function correctIdentity(identityId: string, correction: IdentityCorrecti
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(correction),
     },
+  );
+}
+
+/** Historical events and their separate source-backed claims (#106, Atlas 7.2-7.3). */
+export type EventDate = {
+  /** Historical year: negative is BC; there is no year 0. */
+  startYear: number;
+  startMonth?: number | null;
+  startDay?: number | null;
+  endYear?: number | null;
+  endMonth?: number | null;
+  endDay?: number | null;
+  approximate: boolean;
+};
+export type ClaimPredicate = "date" | "participant" | "place";
+export type EventSummary = {
+  id: string;
+  label: string;
+  claimCount: number;
+  videoCount: number;
+  dateReadings: number;
+  disputed: boolean;
+  earliestYear: number | null;
+  latestYear: number | null;
+  preferredDate: EventDate | null;
+  corpora: { id: string; name: string }[];
+};
+export type EventClaim = {
+  id: string;
+  videoId: string;
+  videoTitle: string | null;
+  modality: "spoken" | "visible";
+  evidenceId: string;
+  evidenceText: string | null;
+  startSeconds: number | null;
+  endSeconds: number | null;
+  predicate: ClaimPredicate;
+  date: EventDate | null;
+  identityId: string | null;
+  identity: IdentitySummary | null;
+  polarity: "affirms" | "denies";
+  certainty: "stated" | "hedged" | "inferred";
+  qualification: string;
+  reviewStatus: "unverified" | "confirmed" | "rejected";
+  preferred: boolean;
+};
+export type EventProfile = {
+  requestedId: string;
+  event: EventSummary;
+  claims: EventClaim[];
+  claimsOutsideScope: number;
+};
+export type ClaimInput = {
+  videoId: string;
+  modality: "spoken" | "visible";
+  evidenceId: string;
+  predicate: ClaimPredicate;
+  date?: EventDate | null;
+  identityId?: string | null;
+  polarity?: "affirms" | "denies";
+  certainty?: "stated" | "hedged" | "inferred";
+  qualification?: string;
+};
+export type EventCorrection = {
+  action: "review" | "prefer" | "unprefer" | "rename" | "merge" | "split";
+  claimIds?: string[];
+  reviewStatus?: EventClaim["reviewStatus"];
+  otherEventId?: string;
+  label?: string;
+};
+export function listEvents(filter: { corpusId?: string | null; q?: string }) {
+  const params = new URLSearchParams();
+  if (filter.corpusId) params.set("corpusId", filter.corpusId);
+  if (filter.q) params.set("q", filter.q);
+  return apiFetch<EventSummary[]>(`/api/events?${params}`);
+}
+export function getEventProfile(eventId: string, corpusId?: string | null) {
+  const params = new URLSearchParams();
+  if (corpusId) params.set("corpusId", corpusId);
+  return apiFetch<EventProfile>(`/api/events/${eventId}?${params}`);
+}
+function postJson<T>(path: string, body: unknown) {
+  return apiFetch<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+export function createEvent(label: string, claim: ClaimInput) {
+  return postJson<{ id: string }>("/api/events", { label, claim });
+}
+export function addEventClaim(eventId: string, claim: ClaimInput) {
+  return postJson<{ id: string }>(`/api/events/${eventId}/claims`, claim);
+}
+export function correctEvent(eventId: string, correction: EventCorrection) {
+  return postJson<{ eventId: string; createdEventId: string | null }>(
+    `/api/events/${eventId}/corrections`,
+    correction,
   );
 }

@@ -21,6 +21,7 @@ const corpusRoutes: readonly AppRoute[] = [
   "processing",
   "people",
   "entities",
+  "events",
 ];
 
 function isCorpusRoute(route: AppRoute): route is CorpusRoute {
@@ -31,7 +32,7 @@ function routeFromLocation(): AppRoute {
   if (typeof window === "undefined") {
     return "analyzer";
   }
-  for (const page of ["people", "entities"] as const) {
+  for (const page of ["people", "entities", "events"] as const) {
     const path = window.location.pathname;
     if (path === `/${page}` || path.startsWith(`/${page}/`)) {
       return page;

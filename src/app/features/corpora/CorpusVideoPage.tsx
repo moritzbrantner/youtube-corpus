@@ -47,6 +47,7 @@ import {
   type MomentModality,
   type VideoRoute,
   corpusPageUrl,
+  eventsForMomentUrl,
   momentModality,
   navigateInApp,
   navigateInPlace,
@@ -398,6 +399,11 @@ function MomentPanel({
               rel="noreferrer"
             >
               Open in YouTube
+            </a>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <a href={eventsForMomentUrl(current, moment).href} onClick={navigateInApp}>
+              Record event claim
             </a>
           </Button>
         </div>

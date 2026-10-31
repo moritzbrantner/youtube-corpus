@@ -195,6 +195,10 @@ pub fn router(database_url: Option<String>, yt_dlp: YtDlpConfig) -> Router {
             "/api/identities/{identity_id}/corrections",
             post(correct_identity),
         )
+        .route("/api/events", get(list_events).post(create_event))
+        .route("/api/events/{event_id}", get(event_profile))
+        .route("/api/events/{event_id}/claims", post(add_event_claim))
+        .route("/api/events/{event_id}/corrections", post(correct_event))
         .with_state(state)
 }
 
@@ -1398,6 +1402,93 @@ async fn correct_identity(
                 map_corpus_error(error)
             }
         })
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct EventListInput {
+    corpus_id: Option<Uuid>,
+    q: Option<String>,
+    limit: Option<i64>,
+}
+
+fn map_event_error(error: anyhow::Error) -> ResearchError {
+    if error.is::<crate::events::EventInputError>() {
+        ResearchError::bad_request(error.to_string())
+    } else {
+        map_corpus_error(error)
+    }
+}
+
+async fn list_events(
+    State(state): State<ResearchState>,
+    Query(input): Query<EventListInput>,
+) -> Result<Json<Vec<crate::events::EventSummary>>, ResearchError> {
+    let pool = pool(&state).await?;
+    let filter = crate::events::EventFilter {
+        corpus: input.corpus_id,
+        query: input.q.unwrap_or_default(),
+        ids: None,
+        limit: input.limit.unwrap_or(200).clamp(1, 500),
+    };
+    crate::events::list_events(&pool, &filter)
+        .await
+        .map(Json)
+        .map_err(map_event_error)
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CreatedId {
+    id: Uuid,
+}
+
+async fn create_event(
+    State(state): State<ResearchState>,
+    Json(input): Json<crate::events::CreateEventRequest>,
+) -> Result<Json<CreatedId>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::events::create_event(&pool, input)
+        .await
+        .map(|id| Json(CreatedId { id }))
+        .map_err(map_event_error)
+}
+
+async fn event_profile(
+    State(state): State<ResearchState>,
+    AxumPath(event_id): AxumPath<Uuid>,
+    Query(input): Query<IdentityProfileInput>,
+) -> Result<Json<crate::events::EventProfile>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::events::event_profile(&pool, event_id, input.corpus_id)
+        .await
+        .map_err(map_event_error)?
+        .map(Json)
+        .ok_or_else(|| ResearchError::not_found("event not found"))
+}
+
+async fn add_event_claim(
+    State(state): State<ResearchState>,
+    AxumPath(event_id): AxumPath<Uuid>,
+    Json(input): Json<crate::events::ClaimInput>,
+) -> Result<Json<CreatedId>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::events::add_claim(&pool, event_id, input)
+        .await
+        .map(|id| Json(CreatedId { id }))
+        .map_err(map_event_error)
+}
+
+async fn correct_event(
+    State(state): State<ResearchState>,
+    AxumPath(event_id): AxumPath<Uuid>,
+    Json(input): Json<crate::events::EventCorrectionRequest>,
+) -> Result<Json<crate::events::EventCorrectionReport>, ResearchError> {
+    let pool = pool(&state).await?;
+    crate::events::correct_event(&pool, event_id, input)
+        .await
+        .map(Json)
+        .map_err(map_event_error)
 }
 
 fn map_corpus_error(error: anyhow::Error) -> ResearchError {
