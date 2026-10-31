@@ -16,6 +16,7 @@ pub mod diagnostics;
 pub mod discovery;
 pub mod entities;
 pub mod evaluation;
+pub mod event_extraction;
 pub mod events;
 pub mod face_matching;
 pub mod face_processing;

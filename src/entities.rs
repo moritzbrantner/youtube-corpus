@@ -327,12 +327,70 @@ pub struct EntityExtractionReport {
     pub mentions: usize,
 }
 
-struct TextSource {
-    modality: EntityModality,
-    record_id: Uuid,
-    start_seconds: Option<f64>,
-    end_seconds: Option<f64>,
-    text: String,
+/// One transcript segment or visible-text track to analyze.
+pub(crate) struct TextSource {
+    pub(crate) modality: EntityModality,
+    pub(crate) record_id: Uuid,
+    pub(crate) start_seconds: Option<f64>,
+    pub(crate) end_seconds: Option<f64>,
+    pub(crate) text: String,
+}
+
+/// A video's analyzable text: the segments of its preferred (or best) transcript stream first,
+/// then its visible-text tracks.
+pub(crate) struct VideoTextSources {
+    pub(crate) stream_id: Option<Uuid>,
+    pub(crate) sources: Vec<TextSource>,
+    /// How many of `sources` are transcript segments.
+    pub(crate) segments: usize,
+}
+
+pub(crate) async fn video_text_sources(
+    pool: &PgPool,
+    video_id: Uuid,
+) -> anyhow::Result<VideoTextSources> {
+    let stream_id = transcript_stream_for(pool, video_id).await?;
+    let mut sources = Vec::new();
+    if let Some(stream_id) = stream_id {
+        let rows = sqlx::query(
+            "SELECT id, start_seconds, end_seconds, text FROM transcript_segments
+             WHERE stream_id = $1 ORDER BY segment_index",
+        )
+        .bind(stream_id)
+        .fetch_all(pool)
+        .await?;
+        for row in rows {
+            sources.push(TextSource {
+                modality: EntityModality::Spoken,
+                record_id: row.try_get("id")?,
+                start_seconds: row.try_get("start_seconds")?,
+                end_seconds: row.try_get("end_seconds")?,
+                text: row.try_get("text")?,
+            });
+        }
+    }
+    let segments = sources.len();
+    let rows = sqlx::query(
+        "SELECT id, start_seconds, end_seconds, text FROM visual_text_tracks
+         WHERE video_id = $1 ORDER BY start_seconds NULLS LAST, id",
+    )
+    .bind(video_id)
+    .fetch_all(pool)
+    .await?;
+    for row in rows {
+        sources.push(TextSource {
+            modality: EntityModality::VisibleText,
+            record_id: row.try_get("id")?,
+            start_seconds: row.try_get("start_seconds")?,
+            end_seconds: row.try_get("end_seconds")?,
+            text: row.try_get("text")?,
+        });
+    }
+    Ok(VideoTextSources {
+        stream_id,
+        sources,
+        segments,
+    })
 }
 
 /// Runs the canonical NER producer over every corpus video's preferred transcript (or best
@@ -383,43 +441,11 @@ async fn extract_entities_for_videos(
     };
 
     for video_id in video_ids {
-        let stream_id = transcript_stream_for(pool, video_id).await?;
-        let mut sources = Vec::new();
-        if let Some(stream_id) = stream_id {
-            let rows = sqlx::query(
-                "SELECT id, start_seconds, end_seconds, text FROM transcript_segments
-                 WHERE stream_id = $1 ORDER BY segment_index",
-            )
-            .bind(stream_id)
-            .fetch_all(pool)
-            .await?;
-            for row in rows {
-                sources.push(TextSource {
-                    modality: EntityModality::Spoken,
-                    record_id: row.try_get("id")?,
-                    start_seconds: row.try_get("start_seconds")?,
-                    end_seconds: row.try_get("end_seconds")?,
-                    text: row.try_get("text")?,
-                });
-            }
-        }
-        let segments = sources.len();
-        let rows = sqlx::query(
-            "SELECT id, start_seconds, end_seconds, text FROM visual_text_tracks
-             WHERE video_id = $1 ORDER BY start_seconds NULLS LAST, id",
-        )
-        .bind(video_id)
-        .fetch_all(pool)
-        .await?;
-        for row in rows {
-            sources.push(TextSource {
-                modality: EntityModality::VisibleText,
-                record_id: row.try_get("id")?,
-                start_seconds: row.try_get("start_seconds")?,
-                end_seconds: row.try_get("end_seconds")?,
-                text: row.try_get("text")?,
-            });
-        }
+        let VideoTextSources {
+            stream_id,
+            sources,
+            segments,
+        } = video_text_sources(pool, video_id).await?;
         let tracks = sources.len() - segments;
         if sources.is_empty() {
             report.videos_without_text += 1;
@@ -685,7 +711,7 @@ async fn entity_coverage(
 
 /// A video's publication date as `YYYY-MM-DD`, from yt-dlp's `upload_date` (`YYYYMMDD`) or,
 /// failing that, its upload/release timestamps. Unknown or unparseable dates stay `None`.
-fn publication_date(row: &sqlx::postgres::PgRow) -> anyhow::Result<Option<String>> {
+pub(crate) fn publication_date(row: &sqlx::postgres::PgRow) -> anyhow::Result<Option<String>> {
     let upload_date: Option<String> = row.try_get("upload_date")?;
     let timestamp: Option<i64> = row.try_get("timestamp")?;
     let release_timestamp: Option<i64> = row.try_get("release_timestamp")?;

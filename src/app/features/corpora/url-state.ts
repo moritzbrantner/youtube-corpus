@@ -33,8 +33,11 @@ export type CorpusUrlState = {
   identityType: string;
   /** People and Entities name filter. */
   identityQuery: string;
-  /** Profile evidence view: empty shows the evidence list, `timeline` the publication timeline. */
-  profileView: "" | "timeline";
+  /**
+   * Profile view: empty shows the evidence (or claim) list, `timeline` the publication timeline
+   * and `historical` the claimed historical dates (#107). The two timelines never share an axis.
+   */
+  profileView: "" | "timeline" | "historical";
   /** Profile evidence type filter shared by both views; empty keeps every type. */
   evidenceKind: "" | EvidenceKind;
   /** Profile publication-date range (`YYYY-MM-DD`, inclusive), shared by both views. */
@@ -156,7 +159,7 @@ export function readUrlState(
     identityScope: params.get("scope") === "all" ? "all" : "",
     identityType: params.get("type") ?? "",
     identityQuery: params.get("name") ?? "",
-    profileView: params.get("view") === "timeline" ? "timeline" : "",
+    profileView: selected(params.get("view"), ["", "timeline", "historical"], ""),
     evidenceKind: selected(params.get("evidence"), ["", ...evidenceKinds], ""),
     publishedFrom: params.get("since") ?? "",
     publishedTo: params.get("until") ?? "",

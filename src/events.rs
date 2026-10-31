@@ -7,8 +7,8 @@
 //! stay side by side; a reviewed preferred date reading marks one claim without touching the
 //! alternatives. Merging and splitting events only move claims between events, so source
 //! evidence and corpus filtering (by the claim's video) are unaffected. Participants and places
-//! are global canonical identities (#104), not per-corpus names. Automatic claim extraction is
-//! S7, not this module.
+//! are global canonical identities (#104), not per-corpus names. Automatically suggested claims
+//! come from `crate::event_extraction` (#107) and stay unverified until reviewed here.
 
 use std::collections::HashMap;
 
@@ -44,6 +44,10 @@ pub struct EventDate {
 }
 
 impl EventDate {
+    pub(crate) fn is_valid(&self) -> bool {
+        self.validate().is_ok()
+    }
+
     fn validate(&self) -> anyhow::Result<()> {
         if self.start_year == 0 || self.end_year == Some(0) {
             return Err(input("there is no year 0; use -1 for 1 BC"));
@@ -92,7 +96,7 @@ pub enum ClaimPredicate {
 }
 
 impl ClaimPredicate {
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Date => "date",
             Self::Participant => "participant",
@@ -173,6 +177,26 @@ pub struct EventClaim {
     pub qualification: String,
     pub review_status: String,
     pub preferred: bool,
+    pub source_url: String,
+    /// The video's publication date (`YYYY-MM-DD`), never the claimed historical date.
+    pub publication_date: Option<String>,
+    /// Set for an automatically suggested claim (#107); `None` for one a researcher recorded.
+    pub extraction: Option<ClaimExtraction>,
+}
+
+/// Where an automatically suggested claim came from (#107).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimExtraction {
+    pub run_id: Uuid,
+    pub producer: String,
+    pub producer_version: String,
+    /// The matched expression exactly as it appears in the evidence text, and its byte range.
+    pub source_text: String,
+    pub source_byte_start: i32,
+    pub source_byte_end: i32,
+    pub confidence: f32,
+    pub extracted_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -244,10 +268,11 @@ fn one_of(
     }
 }
 
-async fn insert_claim(
+pub(crate) async fn insert_claim(
     tx: &mut Transaction<'_, Postgres>,
     event: Uuid,
     claim: &ClaimInput,
+    extraction: Option<&ClaimExtraction>,
 ) -> anyhow::Result<Uuid> {
     let modality = one_of(Some(&claim.modality), &["spoken", "visible"], "modality")?;
     let polarity = one_of(
@@ -308,8 +333,10 @@ async fn insert_claim(
            (id, event_id, video_id, modality, evidence_id, predicate,
             date_start_year, date_start_month, date_start_day,
             date_end_year, date_end_month, date_end_day, date_approximate,
-            identity_id, polarity, certainty, qualification)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
+            identity_id, polarity, certainty, qualification, extraction_run_id, source_text,
+            source_byte_start, source_byte_end, extraction_confidence)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                 $18, $19, $20, $21, $22)",
     )
     .bind(id)
     .bind(event)
@@ -328,6 +355,11 @@ async fn insert_claim(
     .bind(polarity)
     .bind(certainty)
     .bind(claim.qualification.trim())
+    .bind(extraction.map(|e| e.run_id))
+    .bind(extraction.map(|e| e.source_text.as_str()))
+    .bind(extraction.map(|e| e.source_byte_start))
+    .bind(extraction.map(|e| e.source_byte_end))
+    .bind(extraction.map(|e| e.confidence))
     .execute(&mut **tx)
     .await?;
     sqlx::query("UPDATE historical_events SET updated_at = now() WHERE id = $1")
@@ -378,7 +410,7 @@ pub async fn create_event(pool: &PgPool, request: CreateEventRequest) -> anyhow:
         .bind(&label)
         .execute(&mut *tx)
         .await?;
-    insert_claim(&mut tx, id, &request.claim).await?;
+    insert_claim(&mut tx, id, &request.claim, None).await?;
     tx.commit().await?;
     Ok(id)
 }
@@ -406,7 +438,7 @@ pub async fn add_claim(pool: &PgPool, event: Uuid, claim: ClaimInput) -> anyhow:
         .await?
         .ok_or_else(|| anyhow::anyhow!("event not found"))?;
     let mut tx = pool.begin().await?;
-    let id = insert_claim(&mut tx, event, &claim).await?;
+    let id = insert_claim(&mut tx, event, &claim, None).await?;
     tx.commit().await?;
     Ok(id)
 }
@@ -422,7 +454,10 @@ macro_rules! scoped_claims {
     };
 }
 
-fn date_from_row(row: &sqlx::postgres::PgRow, prefix: &str) -> anyhow::Result<Option<EventDate>> {
+pub(crate) fn date_from_row(
+    row: &sqlx::postgres::PgRow,
+    prefix: &str,
+) -> anyhow::Result<Option<EventDate>> {
     let col = |name: &str| format!("{prefix}{name}");
     let Some(start_year) = row.try_get::<Option<i32>, _>(col("date_start_year").as_str())? else {
         return Ok(None);
@@ -552,12 +587,16 @@ pub async fn event_profile(
     let rows = sqlx::query(concat!(
         scoped_claims!(),
         "
-         SELECT c.*, v.title AS video_title,
+         SELECT c.*, v.title AS video_title, v.source_url, v.upload_date, v.timestamp,
+                v.release_timestamp,
+                r.producer AS extraction_producer, r.producer_version AS extraction_version,
+                r.created_at AS extracted_at,
                 coalesce(ts.text, vt.text) AS evidence_text,
                 coalesce(ts.start_seconds, vt.start_seconds) AS start_seconds,
                 coalesce(ts.end_seconds, vt.end_seconds) AS end_seconds
          FROM scoped c
          JOIN videos v ON v.id = c.video_id
+         LEFT JOIN historical_event_extraction_runs r ON r.id = c.extraction_run_id
          LEFT JOIN transcript_segments ts ON c.modality = 'spoken' AND ts.id = c.evidence_id
          LEFT JOIN visual_text_tracks vt ON c.modality = 'visible' AND vt.id = c.evidence_id
          WHERE c.event_id = $2
@@ -607,7 +646,24 @@ pub async fn event_profile(
             let predicate: String = row.try_get("predicate")?;
             let recorded: Option<Uuid> = row.try_get("identity_id")?;
             let current = recorded.and_then(|id| live_ids.get(&id).copied().flatten());
+            let run: Option<Uuid> = row.try_get("extraction_run_id")?;
+            let extraction = match run {
+                None => None,
+                Some(run_id) => Some(ClaimExtraction {
+                    run_id,
+                    producer: row.try_get("extraction_producer")?,
+                    producer_version: row.try_get("extraction_version")?,
+                    source_text: row.try_get("source_text")?,
+                    source_byte_start: row.try_get("source_byte_start")?,
+                    source_byte_end: row.try_get("source_byte_end")?,
+                    confidence: row.try_get("extraction_confidence")?,
+                    extracted_at: row.try_get("extracted_at")?,
+                }),
+            };
             Ok(EventClaim {
+                source_url: row.try_get("source_url")?,
+                publication_date: crate::entities::publication_date(row)?,
+                extraction,
                 id: row.try_get("id")?,
                 video_id: row.try_get("video_id")?,
                 video_title: row.try_get("video_title")?,
@@ -638,6 +694,100 @@ pub async fn event_profile(
         claims_outside_scope: total - rows.len() as i64,
         claims,
     }))
+}
+
+/// Which events a historical timeline shows: one event, the events an identity takes part in
+/// (as a participant or place claim), or every event; claims are limited to `corpus`.
+#[derive(Debug, Clone, Default)]
+pub struct TimelineFilter {
+    pub corpus: Option<Uuid>,
+    pub identity: Option<Uuid>,
+    pub event: Option<Uuid>,
+}
+
+/// One event on the historical timeline with its date claims (every review status).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineEvent {
+    pub event: EventSummary,
+    pub claims: Vec<EventClaim>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoricalTimeline {
+    pub events: Vec<TimelineEvent>,
+    /// More events matched than the timeline holds.
+    pub truncated: bool,
+}
+
+/// Events shown on one historical timeline.
+const TIMELINE_EVENTS: usize = 200;
+
+/// Historical (claimed) dates, kept apart from video publication dates (Atlas 5.5, 7.1).
+pub async fn historical_timeline(
+    pool: &PgPool,
+    filter: &TimelineFilter,
+) -> anyhow::Result<HistoricalTimeline> {
+    let mut ids: Vec<Uuid> = if let Some(event) = filter.event {
+        live_event(pool, event).await?.into_iter().collect()
+    } else if let Some(identity) = filter.identity {
+        let identity = live_identity(pool, identity).await?.unwrap_or(identity);
+        // Claims keep the identity they recorded; merged identities resolve to this one.
+        sqlx::query_scalar(
+            "WITH RECURSIVE merged AS (
+               SELECT $1::uuid AS id
+               UNION SELECT c.id FROM canonical_identities c JOIN merged m ON c.merged_into = m.id
+             )
+             SELECT DISTINCT e.id FROM historical_event_claims c
+             JOIN historical_events e ON e.id = c.event_id AND e.merged_into IS NULL
+             WHERE c.identity_id IN (SELECT id FROM merged) AND c.review_status <> 'rejected'
+             ORDER BY e.id",
+        )
+        .bind(identity)
+        .fetch_all(pool)
+        .await?
+    } else {
+        list_events(
+            pool,
+            &EventFilter {
+                corpus: filter.corpus,
+                limit: TIMELINE_EVENTS as i64 + 1,
+                ..EventFilter::default()
+            },
+        )
+        .await?
+        .into_iter()
+        .map(|event| event.id)
+        .collect()
+    };
+    let truncated = ids.len() > TIMELINE_EVENTS;
+    ids.truncate(TIMELINE_EVENTS);
+    let mut events = Vec::new();
+    for id in ids {
+        let Some(profile) = event_profile(pool, id, filter.corpus).await? else {
+            continue;
+        };
+        let claims: Vec<EventClaim> = profile
+            .claims
+            .into_iter()
+            .filter(|claim| claim.predicate == ClaimPredicate::Date)
+            .collect();
+        if !claims.is_empty() {
+            events.push(TimelineEvent {
+                event: profile.event,
+                claims,
+            });
+        }
+    }
+    events.sort_by_key(|entry| {
+        (
+            entry.event.earliest_year.is_none(),
+            entry.event.earliest_year,
+            entry.event.label.to_lowercase(),
+        )
+    });
+    Ok(HistoricalTimeline { events, truncated })
 }
 
 async fn require_live(tx: &mut Transaction<'_, Postgres>, event: Uuid) -> anyhow::Result<String> {

@@ -134,6 +134,29 @@ pub enum Command {
     Export(ExportArgs),
     /// Extracts source-grounded entity mentions from transcripts and visible text.
     Entities(EntitiesArgs),
+    /// Suggests unreviewed dated historical event claims from transcripts and visible text.
+    Events(EventsArgs),
+}
+
+#[derive(Debug, Parser)]
+pub struct EventsArgs {
+    #[command(subcommand)]
+    pub command: EventsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum EventsCommand {
+    /// Suggests claims for every video of a corpus; reviewed claims are never changed.
+    Extract(ExtractEventsArgs),
+}
+
+#[derive(Debug, Parser)]
+pub struct ExtractEventsArgs {
+    /// Corpus id or slug.
+    #[arg(long)]
+    pub corpus: String,
+    #[arg(long)]
+    pub migrate: bool,
 }
 
 #[derive(Debug, Parser)]

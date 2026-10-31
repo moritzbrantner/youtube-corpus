@@ -215,6 +215,23 @@ export function dateX(date: string, domain: Domain, width: number): number {
 
 export type Marker = { videoId: string; x: number; lane: number };
 
+/**
+ * Stacks items left to right into lanes: an item starting less than `minGap` after the end of a
+ * lane's last item (`x1`, else `x`) goes to the next lane. Items must be sorted by `x`.
+ */
+export function stackLanes<T extends { x: number; x1?: number }>(
+  items: T[],
+  minGap: number,
+): (T & { lane: number })[] {
+  const laneEnds: number[] = [];
+  return items.map((item) => {
+    let lane = laneEnds.findIndex((end) => item.x - end >= minGap);
+    if (lane === -1) lane = laneEnds.length;
+    laneEnds[lane] = item.x1 ?? item.x;
+    return { ...item, lane };
+  });
+}
+
 /** Places dated videos left to right by date; markers closer than `minGap` stack into lanes. */
 export function layoutMarkers(
   videos: { videoId: string; publicationDate: string | null }[],
@@ -222,19 +239,15 @@ export function layoutMarkers(
   width: number,
   minGap = 24,
 ): Marker[] {
-  const laneEnds: number[] = [];
-  return videos
-    .filter((video): video is { videoId: string; publicationDate: string } =>
-      Boolean(video.publicationDate),
-    )
-    .map((video) => ({ videoId: video.videoId, x: dateX(video.publicationDate, domain, width) }))
-    .sort((a, b) => a.x - b.x || a.videoId.localeCompare(b.videoId))
-    .map(({ videoId, x }) => {
-      let lane = laneEnds.findIndex((end) => x - end >= minGap);
-      if (lane === -1) lane = laneEnds.length;
-      laneEnds[lane] = x;
-      return { videoId, x, lane };
-    });
+  return stackLanes(
+    videos
+      .filter((video): video is { videoId: string; publicationDate: string } =>
+        Boolean(video.publicationDate),
+      )
+      .map((video) => ({ videoId: video.videoId, x: dateX(video.publicationDate, domain, width) }))
+      .sort((a, b) => a.x - b.x || a.videoId.localeCompare(b.videoId)),
+    minGap,
+  );
 }
 
 /** Scales the span around `center` (default: its middle); factor < 1 zooms in. */
