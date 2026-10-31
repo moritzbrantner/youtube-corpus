@@ -8,7 +8,7 @@ use audio_analysis_io::{AudioFrameSource, FfmpegAudioSource};
 use audio_analysis_processing::OfflineAudioProcessor;
 use audio_analysis_speakers::{
     DiarizedSpeaker, EnergyVoiceActivityDetector, OnnxSpeakerEmbedder, OnnxSpeakerEmbeddingConfig,
-    SpeakerAudio, SpeakerDiarizer, SpeakerEmbedding, SpeakerEmbeddingExtractor,
+    SpeakerAudio, SpeakerDiarizer, SpeakerEmbedding, SpeakerEmbeddingExtractor, VadOptions,
     WindowedSpeakerDiarizer,
 };
 use model_runtime::{HuggingFaceDownloader, HuggingFaceModelSpec, ModelBundleStore, ModelTask};
@@ -67,10 +67,23 @@ fn hash_bytes(bytes: &[u8]) -> String {
     )
 }
 
+/// Shortest speech span that is embedded. WeSpeaker ResNet34 returns non-finite embeddings
+/// below ~150 ms (its statistics pooling sees a single frame), which failed whole real videos;
+/// spans under half a second also carry too little voice for cross-video matching.
+const MIN_SPEECH_SECONDS: f64 = 0.5;
+
+fn vad_options() -> VadOptions {
+    VadOptions {
+        min_speech_seconds: MIN_SPEECH_SECONDS,
+        ..VadOptions::unpadded()
+    }
+}
+
 pub(crate) fn settings() -> Value {
+    let vad = vad_options();
     json!({"sampleRate":16000,"channelMix":"average","diarizer":"audio-analysis/WindowedSpeakerDiarizer",
-        "clusterThreshold":0.72,"vad":{"kind":"energy","rmsThreshold":0.01,"frameSeconds":0.03,
-        "hopSeconds":0.01,"minSpeechSeconds":0.08,"mergeGapSeconds":0.05}})
+        "clusterThreshold":0.72,"vad":{"kind":"energy","rmsThreshold":vad.rms_threshold,"frameSeconds":vad.frame_seconds,
+        "hopSeconds":vad.hop_seconds,"minSpeechSeconds":vad.min_speech_seconds,"mergeGapSeconds":vad.merge_gap_seconds}})
 }
 
 fn provenance(input_hash: String) -> anyhow::Result<ProcessingProvenance> {
@@ -265,7 +278,8 @@ fn analyze_media(path: &Path, models: &Path, token: &CancellationToken) -> anyho
         embeddings: Vec::new(),
         token: token.clone(),
     };
-    let mut diarizer = WindowedSpeakerDiarizer::new(recorder, EnergyVoiceActivityDetector);
+    let mut diarizer = WindowedSpeakerDiarizer::new(recorder, EnergyVoiceActivityDetector)
+        .vad_options(vad_options())?;
     let audio = SpeakerAudio::mono(&clip.samples, 16000)?;
     let result = diarizer.diarize(&audio)?;
     anyhow::ensure!(!token.is_cancelled(), "voice analysis cancelled");
