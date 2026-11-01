@@ -30,9 +30,9 @@
   },
   "dependencies": {
     "@moenarch/editor-core": "git+https://github.com/moritzbrantner/editor-core.git#e238e171c27e7dafb7db085430a19ebf67f8fb1b",
-    "@moritzbrantner/graph-editor": "git+https://github.com/moritzbrantner/graph-editor.git#f9d17b1a5b94dbfea2d824683ab61247f1763ac7",
+    "@moritzbrantner/graph-editor": "git+https://github.com/moritzbrantner/graph-editor.git#261e985123ae63103f61a61047b6fd6826b65cb8",
     "@moritzbrantner/ui": "1.1.0",
-    "@moritzbrantner/workflow-editor": "git+https://github.com/moritzbrantner/workflow-editor.git#c156ccae62a10c183180cb62ed4dad011297432b",
+    "@moritzbrantner/workflow-editor": "git+https://github.com/moritzbrantner/workflow-editor.git#fed19cf4ea1e752f691f2acc6d4b07c774a35473",
     "@tanstack/react-query": "^5.100.6",
     "lucide-react": "^1.7.0",
     "react": "^19.2.5",
