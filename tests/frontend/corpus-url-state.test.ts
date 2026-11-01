@@ -8,12 +8,14 @@ import {
   momentModality,
   patchCorpusUrl,
   processingUrl,
+  processingWorkflowUrl,
   readIdentityRoute,
   readProcessingRoute,
   readUrlState,
   readVideoRoute,
   searchMomentUrl,
   videoUrl,
+  workflowEditorUrl,
 } from "../../src/app/features/corpora/url-state";
 
 describe("channels and sources navigation", () => {
@@ -142,7 +144,7 @@ describe("processing page", () => {
   );
 
   test("selecting a video or attempt keeps run filters and the originating search", () => {
-    expect(readProcessingRoute(runs)).toEqual({ attemptId: null });
+    expect(readProcessingRoute(runs)).toEqual({ attemptId: null, editWorkflowId: null });
     expect(readUrlState(runs)).toMatchObject({
       stage: "entities",
       attemptState: "failed",
@@ -155,7 +157,7 @@ describe("processing page", () => {
 
     const attempt = attemptUrl(video, "attempt-7");
     expect(attempt.pathname).toBe("/processing/attempts/attempt-7");
-    expect(readProcessingRoute(attempt)).toEqual({ attemptId: "attempt-7" });
+    expect(readProcessingRoute(attempt)).toEqual({ attemptId: "attempt-7", editWorkflowId: null });
 
     const back = processingUrl(attempt);
     expect(back.pathname).toBe("/processing");
@@ -172,6 +174,19 @@ describe("processing page", () => {
     expect(readProcessingRoute(new URL("http://localhost/processing/attempts"))).toBeNull();
     expect(readProcessingRoute(new URL("http://localhost/processing/runs/x"))).toBeNull();
     expect(readProcessingRoute(new URL("http://localhost/videos"))).toBeNull();
+    expect(readProcessingRoute(new URL("http://localhost/processing/workflows"))).toBeNull();
+  });
+
+  test("the Workflow Editor opens from and returns to the corpus's Processing page", () => {
+    const editor = workflowEditorUrl(runs, "wf-1");
+    expect(editor.pathname).toBe("/processing/workflows/wf-1");
+    expect(readProcessingRoute(editor)).toEqual({ attemptId: null, editWorkflowId: "wf-1" });
+    expect(readUrlState(editor).corpusId).toBe("one");
+
+    const back = processingWorkflowUrl(editor, "wf-1");
+    expect(back.pathname).toBe("/processing");
+    expect(back.searchParams.get("workflow")).toBe("wf-1");
+    expect(readUrlState(back)).toEqual(readUrlState(runs));
   });
 });
 

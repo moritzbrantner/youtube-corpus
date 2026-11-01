@@ -969,6 +969,123 @@ export function getDetectorAttempt(corpusId: string, attemptId: string) {
   );
 }
 
+/** Node kind of a detector stage in a shared processing workflow definition (#108). */
+export const detectorNodeKindPrefix = "youtube_corpus.detector.";
+
+export type WorkflowStage = {
+  nodeId: string;
+  detector: string;
+  label: string;
+  targetLanguages: string[];
+};
+
+export type ProcessingWorkflowSummary = {
+  id: string;
+  name: string;
+  version: number;
+  fingerprint: string;
+  stages: WorkflowStage[];
+  updatedAt: string;
+};
+
+export type ProcessingWorkflowDefinition = ProcessingWorkflowSummary & {
+  /** The Workflow Editor document, reopened for editing. */
+  document: unknown;
+  /** Its compiled `@moritzbrantner/workflow/compiled` v1 form. */
+  compiled: unknown;
+};
+
+export type StageOverride = {
+  nodeId: string;
+  enabled?: boolean;
+  targetLanguages?: string[];
+};
+
+export type EffectiveStage = WorkflowStage & {
+  enabled: boolean;
+  definitionTargetLanguages?: string[];
+  overridden: boolean;
+};
+
+export type WorkflowRun = {
+  id: string;
+  corpusId: string;
+  workflowId: string;
+  workflowVersion: number;
+  fingerprint: string;
+  stages: EffectiveStage[];
+  refresh: boolean;
+  state: "running" | "completed" | "failed" | "interrupted";
+  report: {
+    videos: {
+      videoId: string;
+      title: string | null;
+      stages: PlanRunReport["stages"];
+      error: string | null;
+    }[];
+    failures: number;
+  } | null;
+  message: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+};
+
+export type CorpusWorkflow = {
+  workflow: ProcessingWorkflowSummary;
+  overrides: StageOverride[];
+  stages: EffectiveStage[];
+  runs: WorkflowRun[];
+};
+
+export function listProcessingWorkflows() {
+  return apiFetch<ProcessingWorkflowSummary[]>("/api/processing-workflows");
+}
+
+export function getProcessingWorkflow(workflowId: string) {
+  return apiFetch<ProcessingWorkflowDefinition>(`/api/processing-workflows/${workflowId}`);
+}
+
+export function saveProcessingWorkflow(
+  workflowId: string | null,
+  input: { name: string; document: unknown; compiled: unknown },
+) {
+  return apiFetch<ProcessingWorkflowDefinition>(
+    workflowId ? `/api/processing-workflows/${workflowId}` : "/api/processing-workflows",
+    {
+      method: workflowId ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function getCorpusWorkflow(corpusId: string, workflowId: string) {
+  return apiFetch<CorpusWorkflow>(`/api/corpora/${corpusId}/processing-workflows/${workflowId}`);
+}
+
+export function setCorpusWorkflowOverrides(
+  corpusId: string,
+  workflowId: string,
+  stages: StageOverride[],
+) {
+  return apiFetch<CorpusWorkflow>(
+    `/api/corpora/${corpusId}/processing-workflows/${workflowId}/overrides`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stages }),
+    },
+  );
+}
+
+export function startCorpusWorkflowRun(corpusId: string, workflowId: string, refresh: boolean) {
+  return apiFetch<WorkflowRun>(`/api/corpora/${corpusId}/processing-workflows/${workflowId}/runs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh }),
+  });
+}
+
 export type FaceEvidence = {
   trackId: string;
   videoId: string;

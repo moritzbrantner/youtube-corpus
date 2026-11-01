@@ -280,6 +280,7 @@ export function CorpusWorkspace({ page }: { page: CorpusPage }) {
                     key={selectedCorpus.id}
                     corpusId={selectedCorpus.id}
                     attemptId={processingRoute.attemptId}
+                    editWorkflowId={processingRoute.editWorkflowId}
                     state={state}
                     onUpdate={(patch) => update(patch)}
                   />

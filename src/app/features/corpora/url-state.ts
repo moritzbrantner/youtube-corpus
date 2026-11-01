@@ -303,16 +303,45 @@ export function identityUrl(current: URL, page: IdentityPage, identityId: string
   return url;
 }
 
-/** Parses `/processing` and `/processing/attempts/:attemptId`. */
-export function readProcessingRoute(url: URL): { attemptId: string | null } | null {
+export type ProcessingRoute = {
+  attemptId: string | null;
+  /** A shared workflow definition open in the Workflow Editor; `"new"` creates one. */
+  editWorkflowId: string | null;
+};
+
+/**
+ * Parses `/processing`, `/processing/attempts/:attemptId` and
+ * `/processing/workflows/:workflowId` (the Workflow Editor).
+ */
+export function readProcessingRoute(url: URL): ProcessingRoute | null {
   const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
   if (parts[0] !== "processing") {
     return null;
   }
   if (parts.length === 1) {
-    return { attemptId: null };
+    return { attemptId: null, editWorkflowId: null };
   }
-  return parts[1] === "attempts" && parts[2] && parts.length === 3 ? { attemptId: parts[2] } : null;
+  if (parts.length !== 3 || !parts[2]) {
+    return null;
+  }
+  if (parts[1] === "attempts") {
+    return { attemptId: parts[2], editWorkflowId: null };
+  }
+  return parts[1] === "workflows" ? { attemptId: null, editWorkflowId: parts[2] } : null;
+}
+
+/** The Processing page with one shared workflow definition selected. */
+export function processingWorkflowUrl(current: URL, workflowId: string): URL {
+  const url = corpusPageUrl(current, "processing");
+  url.searchParams.set("workflow", workflowId);
+  return url;
+}
+
+/** The Workflow Editor for one definition, or `"new"`; keeps the corpus for the way back. */
+export function workflowEditorUrl(current: URL, workflowId: string): URL {
+  const url = corpusPageUrl(current, "processing");
+  url.pathname = `/processing/workflows/${encodeURIComponent(workflowId)}`;
+  return url;
 }
 
 /** The Processing page, optionally with one video selected. */

@@ -28,6 +28,8 @@ pub mod media_evidence;
 pub mod media_extracts;
 pub mod multimodal;
 pub mod person_names;
+pub mod processing_workflows;
+pub mod processing_workflows_web;
 pub mod provenance;
 pub mod reprocessing;
 pub mod research_quality_web;

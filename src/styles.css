@@ -3,6 +3,9 @@
 
 @source "../index.html";
 @source "./**/*.{ts,tsx}";
+/* The shared Workflow Editor (#108) styles its canvas and panels with Tailwind classes. */
+@source "../node_modules/@moritzbrantner/workflow-editor/dist/**/*.js";
+@source "../node_modules/@moritzbrantner/graph-editor/dist/**/*.js";
 
 html {
   min-width: 320px;
