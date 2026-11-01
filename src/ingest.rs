@@ -3,8 +3,9 @@ mod core;
 use std::collections::HashSet;
 
 pub use core::{
-    transcript_segment_contract, transcript_segment_metadata, vector_literal, IngestItemReport,
-    IngestReport, IngestRequest, TranscriptSegmentContractInput,
+    add_passage_metadata, stream_segment_id, transcript_segment_contract,
+    transcript_segment_metadata, vector_literal, with_segmentation, write_source_cues,
+    IngestItemReport, IngestReport, IngestRequest, TranscriptSegmentContractInput,
 };
 
 pub async fn ingest_corpus(request: IngestRequest) -> anyhow::Result<IngestReport> {

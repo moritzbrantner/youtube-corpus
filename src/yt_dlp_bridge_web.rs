@@ -462,6 +462,7 @@ mod tests {
                 source_path: Some(PathBuf::from("manual-en.vtt")),
                 text: None,
                 segments: Vec::new(),
+                source_cues: Vec::new(),
                 message: None,
             },
             TranscriptStream {
@@ -470,6 +471,7 @@ mod tests {
                 source_path: Some(PathBuf::from("auto-de.vtt")),
                 text: None,
                 segments: Vec::new(),
+                source_cues: Vec::new(),
                 message: None,
             },
         ];

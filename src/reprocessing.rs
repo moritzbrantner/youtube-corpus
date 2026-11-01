@@ -10,7 +10,8 @@ use uuid::Uuid;
 use crate::captions::TranscriptStream;
 use crate::config::{CaptionConfig, CorpusSource, YtDlpConfig};
 use crate::ingest::{
-    ingest_corpus, transcript_segment_contract, transcript_segment_metadata, vector_literal,
+    add_passage_metadata, ingest_corpus, stream_segment_id, transcript_segment_contract,
+    transcript_segment_metadata, vector_literal, with_segmentation, write_source_cues,
     IngestReport, IngestRequest, TranscriptSegmentContractInput,
 };
 
@@ -148,6 +149,7 @@ pub async fn reprocess_video(request: ReprocessRequest) -> anyhow::Result<Reproc
             "stage": "segments",
             "source": "stored-caption-files",
             "parser": "moenarch-text-transcripts",
+            "rollingCaptions": "moenarch-media-core",
             "embedding": {
                 "provider": "hashed-text-embedder",
                 "dimensions": 128,
@@ -305,6 +307,7 @@ async fn resegment_stream(
             .collect::<Vec<_>>()
             .join(" ")
     });
+    let processing_config = &with_segmentation(stream, processing_config);
 
     sqlx::query(
         "INSERT INTO transcript_streams
@@ -341,6 +344,7 @@ async fn resegment_stream(
         .bind(stream_id)
         .execute(&mut **tx)
         .await?;
+    write_source_cues(tx, stream_id, stream).await?;
 
     let mut indexed = 0_u64;
     for segment in &stream.segments {
@@ -352,7 +356,7 @@ async fn resegment_stream(
             .embed_text(text)
             .ok()
             .map(|vector| vector_literal(vector.as_slice()));
-        let segment_id = crate::youtube::stable_child_id(stream_id, &segment.index.to_string());
+        let segment_id = stream_segment_id(stream_id, stream, segment.index);
         let contract = transcript_segment_contract(TranscriptSegmentContractInput {
             stream_id,
             source_url,
@@ -363,7 +367,7 @@ async fn resegment_stream(
             start_seconds: segment.start_seconds,
             end_seconds: segment.end_seconds,
         });
-        let metadata = transcript_segment_metadata(
+        let mut metadata = transcript_segment_metadata(
             source_url,
             stream.source_kind,
             stream_id,
@@ -371,6 +375,7 @@ async fn resegment_stream(
             segment.start_seconds,
             segment.end_seconds,
         )?;
+        add_passage_metadata(&mut metadata, segment);
         sqlx::query(
             "INSERT INTO transcript_segments
              (id, stream_id, video_id, segment_index, start_seconds, end_seconds, text, language, metadata, embedding)

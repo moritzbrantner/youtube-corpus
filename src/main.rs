@@ -327,12 +327,18 @@ async fn resolve_corpus(pool: &sqlx::PgPool, corpus: &str) -> anyhow::Result<uui
 }
 
 async fn run_span(args: SpanArgs, database_url: Option<String>) -> anyhow::Result<()> {
-    use youtube_corpus::citations::{media_spans, render_span_text, SpanQuery};
-    use youtube_corpus::corpus_export::{load_export_snapshot, CorpusExportSnapshot};
+    use youtube_corpus::citations::{media_spans, render_span_text, SpanQuery, SpanRepresentation};
+    use youtube_corpus::corpus_export::{
+        load_export_snapshot, use_source_cues, CorpusExportSnapshot,
+    };
 
     anyhow::ensure!(
         !args.producer_revision.trim().is_empty(),
         "--producer-revision must be a non-empty revision"
+    );
+    anyhow::ensure!(
+        args.snapshot.is_none() || args.representation == SpanRepresentation::Segments,
+        "--representation source-cues reads the stored cues from Postgres, not --snapshot"
     );
     let snapshot = match &args.snapshot {
         Some(path) => {
@@ -358,12 +364,16 @@ async fn run_span(args: SpanArgs, database_url: Option<String>) -> anyhow::Resul
                     .fetch_optional(&pool)
                     .await?
                     .with_context(|| format!("video {} is not in the corpus", args.youtube_id))?;
-            load_export_snapshot(&pool, Some(video_id))
+            let mut snapshot = load_export_snapshot(&pool, Some(video_id))
                 .await
-                .context("failed to load the export snapshot")?
+                .context("failed to load the export snapshot")?;
+            if args.representation == SpanRepresentation::SourceCues {
+                use_source_cues(&pool, &mut snapshot).await?;
+            }
+            snapshot
         }
     };
-    let report = media_spans(
+    let mut report = media_spans(
         &snapshot,
         &args.producer_revision,
         &SpanQuery {
@@ -375,6 +385,7 @@ async fn run_span(args: SpanArgs, database_url: Option<String>) -> anyhow::Resul
             language: args.language,
         },
     )?;
+    report.representation = args.representation;
     anyhow::ensure!(
         !report.spans.is_empty(),
         "no transcript segment of {} overlaps [{}, {})",

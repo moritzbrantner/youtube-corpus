@@ -1086,6 +1086,63 @@ fn require_immutable_revision(field: &str, value: &str) -> anyhow::Result<()> {
 // Postgres loader
 // ---------------------------------------------------------------------------------------------
 
+/// Replaces the segments of every passage stream in `snapshot` with its stored raw display cues
+/// (`transcript_source_cues`, #92), under the ids those cues had when they were the indexed
+/// segments. Returns the number of streams replaced.
+pub async fn use_source_cues(
+    pool: &PgPool,
+    snapshot: &mut CorpusExportSnapshot,
+) -> anyhow::Result<usize> {
+    let stream_ids = snapshot
+        .transcript_streams
+        .iter()
+        .map(|stream| stream.id)
+        .collect::<Vec<_>>();
+    let rows = sqlx::query(
+        "SELECT stream_id, cue_index, start_seconds, end_seconds, text
+         FROM transcript_source_cues
+         WHERE stream_id = ANY($1)
+         ORDER BY stream_id, cue_index",
+    )
+    .bind(&stream_ids)
+    .fetch_all(pool)
+    .await?;
+    let mut cues_by_stream = BTreeMap::<Uuid, Vec<ExportTranscriptSegment>>::new();
+    for row in rows {
+        let stream_id: Uuid = row.try_get("stream_id")?;
+        let cue_index: i64 = row.try_get("cue_index")?;
+        cues_by_stream
+            .entry(stream_id)
+            .or_default()
+            .push(ExportTranscriptSegment {
+                id: crate::youtube::stable_child_id(stream_id, &cue_index.to_string()),
+                segment_index: cue_index
+                    .try_into()
+                    .context("source cue index must be non-negative")?,
+                start_seconds: row.try_get("start_seconds")?,
+                end_seconds: row.try_get("end_seconds")?,
+                text: row.try_get("text")?,
+                language: None,
+                video_id: None,
+            });
+    }
+    let mut replaced = 0;
+    for stream in &mut snapshot.transcript_streams {
+        if let Some(mut cues) = cues_by_stream.remove(&stream.id) {
+            let language = stream
+                .segments
+                .first()
+                .and_then(|segment| segment.language.clone());
+            for cue in &mut cues {
+                cue.language = language.clone();
+            }
+            stream.segments = cues;
+            replaced += 1;
+        }
+    }
+    Ok(replaced)
+}
+
 /// Loads the export snapshot from Postgres, optionally for one video.
 ///
 /// It reads exactly what the source-span export has always read, with the same scope:

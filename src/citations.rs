@@ -373,6 +373,18 @@ pub struct SpanQuery {
     pub language: Option<String>,
 }
 
+/// Which stored segmentation a span is cut from.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+pub enum SpanRepresentation {
+    /// The indexed segments: de-rolled passages for automatic captions (#92), cues otherwise.
+    #[default]
+    Segments,
+    /// The raw display cues kept for passage streams: what automatic captions indexed before
+    /// passages, so citations made then reproduce their `span_sha256`.
+    SourceCues,
+}
+
 /// The pinnable citation of `[start, end)` in every matching transcript stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -380,6 +392,8 @@ pub struct SpanReport {
     /// `source_span_interchange@1`: the export the hash is defined over.
     pub schema: String,
     pub producer: SourceProducerV1,
+    #[serde(default)]
+    pub representation: SpanRepresentation,
     pub youtube_id: String,
     pub start_seconds: f64,
     pub end_seconds: f64,
@@ -510,6 +524,7 @@ pub fn media_spans(
     Ok(SpanReport {
         schema: format!("{SOURCE_SPAN_INTERCHANGE_SCHEMA}@{SOURCE_SPAN_INTERCHANGE_VERSION_V1}"),
         producer: batch.producer,
+        representation: SpanRepresentation::Segments,
         youtube_id: query.youtube_id.clone(),
         start_seconds: start,
         end_seconds: end,
