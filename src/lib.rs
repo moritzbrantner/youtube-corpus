@@ -4,6 +4,7 @@ pub mod api_types;
 pub mod asr;
 pub mod backfill;
 pub mod benchmark;
+pub mod caption_passages;
 pub mod captions;
 pub mod citations;
 pub mod cli;

@@ -496,6 +496,7 @@ async fn upsert_stream(
             .collect::<Vec<_>>()
             .join(" ")
     });
+    let processing_config = &with_segmentation(stream, processing_config);
     sqlx::query(
         "INSERT INTO transcript_streams (id, video_id, source_kind, language, status, source_path, full_text, message, processor, processor_version, processor_revision, processing_config)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'youtube-corpus', $9, $10, $11)
@@ -522,6 +523,7 @@ async fn upsert_stream(
         .bind(stream_id)
         .execute(&mut **tx)
         .await?;
+    write_source_cues(tx, stream_id, stream).await?;
 
     let mut indexed = 0;
     for segment in &stream.segments {
@@ -533,7 +535,7 @@ async fn upsert_stream(
             Ok(vector) => Some(vector_literal(vector.as_slice())),
             Err(_) => None,
         };
-        let segment_id = stable_child_id(stream_id, &segment.index.to_string());
+        let segment_id = stream_segment_id(stream_id, stream, segment.index);
         let contract = transcript_segment_contract(TranscriptSegmentContractInput {
             stream_id,
             source_url,
@@ -544,7 +546,7 @@ async fn upsert_stream(
             start_seconds: segment.start_seconds,
             end_seconds: segment.end_seconds,
         });
-        let metadata = transcript_segment_metadata(
+        let mut metadata = transcript_segment_metadata(
             source_url,
             stream.source_kind,
             stream_id,
@@ -552,6 +554,7 @@ async fn upsert_stream(
             segment.start_seconds,
             segment.end_seconds,
         )?;
+        add_passage_metadata(&mut metadata, segment);
         sqlx::query(
             "INSERT INTO transcript_segments
              (id, stream_id, video_id, segment_index, start_seconds, end_seconds, text, language, metadata, embedding)
@@ -572,6 +575,84 @@ async fn upsert_stream(
         indexed += 1;
     }
     Ok(indexed)
+}
+
+/// Records the passage representation in a passage stream's processing config, so its stream
+/// revision and `processing_config_hash` change with the segmentation.
+pub fn with_segmentation(
+    stream: &TranscriptStream,
+    processing_config: &serde_json::Value,
+) -> serde_json::Value {
+    let mut config = processing_config.clone();
+    if stream.has_passages() {
+        config["segmentation"] = crate::caption_passages::segmentation_provenance();
+    }
+    config
+}
+
+/// Passages get their own id space, distinct from the display cues the stream indexed before.
+pub fn stream_segment_id(stream_id: Uuid, stream: &TranscriptStream, index: u64) -> Uuid {
+    if stream.has_passages() {
+        stable_child_id(stream_id, &format!("passage:{index}"))
+    } else {
+        stable_child_id(stream_id, &index.to_string())
+    }
+}
+
+pub fn add_passage_metadata(
+    metadata: &mut serde_json::Value,
+    segment: &text_transcripts::TranscriptSegmentContract,
+) {
+    if let Some(passage) = crate::caption_passages::passage_metadata(segment) {
+        metadata["passage"] = passage;
+    }
+}
+
+/// Replaces the stream's stored source cues with `stream.source_cues`.
+pub async fn write_source_cues(
+    tx: &mut Transaction<'_, Postgres>,
+    stream_id: Uuid,
+    stream: &TranscriptStream,
+) -> anyhow::Result<()> {
+    sqlx::query("DELETE FROM transcript_source_cues WHERE stream_id = $1")
+        .bind(stream_id)
+        .execute(&mut **tx)
+        .await?;
+    if stream.source_cues.is_empty() {
+        return Ok(());
+    }
+    let indices = stream
+        .source_cues
+        .iter()
+        .map(|cue| cue.index as i64)
+        .collect::<Vec<_>>();
+    let starts = stream
+        .source_cues
+        .iter()
+        .map(|cue| cue.start_seconds)
+        .collect::<Vec<_>>();
+    let ends = stream
+        .source_cues
+        .iter()
+        .map(|cue| cue.end_seconds)
+        .collect::<Vec<_>>();
+    let texts = stream
+        .source_cues
+        .iter()
+        .map(|cue| cue.text.trim().to_string())
+        .collect::<Vec<_>>();
+    sqlx::query(
+        "INSERT INTO transcript_source_cues (stream_id, cue_index, start_seconds, end_seconds, text)
+         SELECT $1, * FROM unnest($2::bigint[], $3::float8[], $4::float8[], $5::text[])",
+    )
+    .bind(stream_id)
+    .bind(&indices)
+    .bind(&starts)
+    .bind(&ends)
+    .bind(&texts)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 pub fn vector_literal(values: &[f32]) -> String {

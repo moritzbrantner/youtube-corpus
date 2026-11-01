@@ -10,8 +10,21 @@ pub struct TranscriptStream {
     pub language: Option<String>,
     pub source_path: Option<PathBuf>,
     pub text: Option<String>,
+    /// The indexed retrieval segments. For automatic captions these are de-rolled passages
+    /// (`crate::caption_passages`), not display cues.
     pub segments: Vec<text_transcripts::TranscriptSegmentContract>,
+    /// The normalized display cues of a passage stream, kept as raw evidence (and what this
+    /// stream indexed before passages, so earlier `span_sha256` citations stay verifiable).
+    /// Empty when `segments` are the cues themselves.
+    pub source_cues: Vec<text_transcripts::TranscriptSegmentContract>,
     pub message: Option<String>,
+}
+
+impl TranscriptStream {
+    /// Whether `segments` are de-rolled passages derived from `source_cues`.
+    pub fn has_passages(&self) -> bool {
+        !self.source_cues.is_empty()
+    }
 }
 
 pub async fn download_and_parse_captions(
@@ -38,6 +51,7 @@ pub async fn download_and_parse_captions(
             source_path: None,
             text: None,
             segments: Vec::new(),
+            source_cues: Vec::new(),
             message: Some(format!("manual captions unavailable: {error}")),
         });
     }
@@ -51,6 +65,7 @@ pub async fn download_and_parse_captions(
                 source_path: None,
                 text: None,
                 segments: Vec::new(),
+                source_cues: Vec::new(),
                 message: Some(format!("auto captions unavailable: {error}")),
             });
         }
@@ -79,11 +94,15 @@ pub async fn parse_caption_files(dir: &Path) -> anyhow::Result<Vec<TranscriptStr
             text_transcripts::parse_srt(&text)
         }?;
         let source_kind = caption_source_kind_from_path(&path);
-        let segments = parsed
+        let raw_cues = parsed
             .segments
             .into_iter()
-            .filter_map(|segment| {
-                let mut segment = text_transcripts::TranscriptSegmentContract::from(segment);
+            .map(text_transcripts::TranscriptSegmentContract::from)
+            .collect::<Vec<_>>();
+        let cues = raw_cues
+            .iter()
+            .cloned()
+            .filter_map(|mut segment| {
                 segment.text = text_transcripts::normalize_subtitle_text(
                     &segment.text,
                     text_transcripts::SubtitleNormalizationOptions::default(),
@@ -91,25 +110,36 @@ pub async fn parse_caption_files(dir: &Path) -> anyhow::Result<Vec<TranscriptStr
                 (!segment.text.is_empty()).then_some(segment)
             })
             .collect::<Vec<_>>();
-        let text = parsed
-            .text
-            .as_deref()
-            .map(|text| {
-                text_transcripts::normalize_subtitle_text(
-                    text,
-                    text_transcripts::SubtitleNormalizationOptions::default(),
-                )
+        // Automatic captions roll; index de-rolled passages and keep the cues as evidence.
+        let (segments, source_cues) = if source_kind == SourceKind::CaptionAuto {
+            (crate::caption_passages::build_passages(&raw_cues)?, cues)
+        } else {
+            (cues, Vec::new())
+        };
+        let joined = || {
+            (!segments.is_empty()).then(|| {
+                segments
+                    .iter()
+                    .map(|segment| segment.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
             })
-            .filter(|text| !text.is_empty())
-            .or_else(|| {
-                (!segments.is_empty()).then(|| {
-                    segments
-                        .iter()
-                        .map(|segment| segment.text.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" ")
+        };
+        let text = if source_cues.is_empty() {
+            parsed
+                .text
+                .as_deref()
+                .map(|text| {
+                    text_transcripts::normalize_subtitle_text(
+                        text,
+                        text_transcripts::SubtitleNormalizationOptions::default(),
+                    )
                 })
-            });
+                .filter(|text| !text.is_empty())
+                .or_else(joined)
+        } else {
+            joined()
+        };
         streams.push(TranscriptStream {
             source_kind,
             language: parsed
@@ -119,6 +149,7 @@ pub async fn parse_caption_files(dir: &Path) -> anyhow::Result<Vec<TranscriptStr
             source_path: Some(path),
             text,
             segments,
+            source_cues,
             message: None,
         });
     }

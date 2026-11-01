@@ -510,6 +510,35 @@ the same `source_span_interchange@1` batch `export --format source-span`
 writes, so the hash equals the one a whole-corpus export yields; no export file
 is needed. `--snapshot FILE` reads a corpus snapshot instead of Postgres.
 
+### Automatic-caption passages (#92)
+
+YouTube automatic captions roll: every cue redisplays the previous line and
+~10 ms refresh cues repeat it again, so indexing cues gave stuttering,
+duplicated hits. Automatic-caption streams therefore index **passages**: the
+cues go through Foundation's `media_core::project_rolling_captions` (each
+spoken word once, timed from the caption's inline word timestamps, else
+interpolated in its cue), and the words are grouped into passages that close
+at a sentence end after 12 words, at 40 words, 30 s, a pause over 2 s, or a
+`>>` speaker change. Each passage's `metadata.passage` lists its words with
+their timing source and source cue. Manual captions and ASR are unchanged.
+
+The raw cues stay untouched: the caption file on disk, and the normalized cues
+in `transcript_source_cues`, which are exactly what the stream indexed before
+passages. The stream's `processing_config.segmentation` records the
+representation (`rolling-caption-passages@1`) and projection
+(`media-core/rolling-captions@1`). Existing corpora get passages by
+reprocessing the `segments` stage from the stored caption files
+(`POST /api/corpora/{corpus}/videos/{video}/reprocess` with
+`{"stage":"segments"}`).
+
+Passage boundaries change span hashes. To verify a citation made before
+passages, cut the span from the raw cues:
+
+```bash
+cargo run -- span --youtube-id SVJiCL3K0j4 --start 265 --end 275 \
+  --producer-revision "git:$(git rev-parse HEAD)" --representation source-cues
+```
+
 ### Opt-in Tantivy literal search pilot
 
 Postgres stays the default. The pilot (#76) answers `--mode fts` queries with

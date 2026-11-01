@@ -837,6 +837,10 @@ pub struct SpanArgs {
     /// Reads the corpus snapshot from this JSON file instead of Postgres.
     #[arg(long)]
     pub snapshot: Option<PathBuf>,
+    /// `source-cues` cuts the span from the raw display cues kept for automatic-caption
+    /// passage streams, to verify a citation made before passages (#92). Needs Postgres.
+    #[arg(long, value_enum, default_value_t = crate::citations::SpanRepresentation::Segments)]
+    pub representation: crate::citations::SpanRepresentation,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     pub format: OutputFormat,
 }
