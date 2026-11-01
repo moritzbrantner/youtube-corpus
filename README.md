@@ -14,7 +14,7 @@ search plus `pgvector` for semantic search.
 - Bun
 - Docker, for the local Postgres service
 - `yt-dlp`, for YouTube discovery, metadata, captions, and media downloads
-- Optional `whisper` command, for local ASR fallback
+- Optional CUDA toolkit, to build ASR for the GPU (`--features cuda`)
 
 Binary release users only need the downloadable CLI archive with its embedded
 browser UI.
@@ -128,7 +128,7 @@ cargo run -- ingest --playlist-url "https://www.youtube.com/playlist?list=..." -
 For local media:
 
 ```bash
-cargo run -- ingest --input ./lecture.mp4 --transcriber-command whisper
+cargo run -- ingest --input ./lecture.mp4
 ```
 
 Common `yt-dlp` reliability options have typed flags, including
@@ -142,15 +142,27 @@ download, metadata download, media download, benchmark ingest, and saved
 subscription checks.
 
 ```bash
-cargo run -- ingest --url "$URL" --caption-language de --transcriber-command whisper
+cargo run -- ingest --url "$URL" --caption-language de --transcriber-command /opt/whisper/bin/whisper
 cargo run -- ingest --url "$URL" --yt-dlp-cookies-from-browser brave
 cargo run -- ingest --url "$URL" --yt-dlp-timeout-seconds 120 --transcriber-timeout-seconds 1800
 cargo run -- ingest --url "$URL" --no-asr
 ```
 
-By default the tool requests manual and auto captions in English and also tries
-to run a `whisper` command from `PATH`. If no ASR command is available, ASR is
-reported as skipped while captions are still indexed.
+By default the tool requests manual and auto captions in English and transcribes
+the audio with [native-whisperx](https://github.com/moritzbrantner/native-whisperx),
+linked as a library at the exact revision pinned in `Cargo.toml` (Whisper `small`,
+no word alignment). It decodes in the first requested caption language, because
+native language detection does not work yet (native-whisperx#434). One transcription session keeps
+the model loaded across videos; it downloads into the Hugging Face cache on first
+use. Build with `--features cuda` to run it on the GPU when one is present; a
+failed GPU run is retried on the CPU. Every ASR stream records the producer
+(`asrProducer`: provider, revision, model config) and the run (`asrRun`: model,
+device, CPU fallback) in its `processing_config`.
+
+`--transcriber-command` selects an explicit Whisper-CLI-compatible command
+instead (called as `<command> <media> <args…> --output_dir <dir> --output_format json`).
+Nothing is looked up on `PATH`. `--transcriber-timeout-seconds` applies to that
+command only.
 
 For YouTube sources, ingest downloads normalized video metadata with `yt-dlp`
 into each item's `metadata/` work-dir folder. The corpus stores common filter
@@ -215,7 +227,7 @@ reported but are not failures.
 | `detectors`        | required           | Enabled detectors, as ids or `{"detector": "translate_spoken", "targetLanguages": ["de"]}`      |
 | `requireLicense`   | `Creative Commons` | Text the video's YouTube licence must contain                                                   |
 | `captionLanguages` | `["en"]`           | Caption languages to fetch                                                                      |
-| `transcriber`      | `whisper` on PATH  | `{"command": "...", "args": [...], "timeoutSeconds": n}` for ASR of videos no source configures |
+| `transcriber`      | native-whisperx    | `{"command": "...", "args": [...], "timeoutSeconds": n}` for ASR of videos no source configures |
 | `exports`          | all three          | `source-span`, `corpus-core`, `belief-evidence`                                                 |
 | `keepMedia`        | `false`            | Keep downloaded media after processing                                                          |
 | `extracts`         | none               | Media extracts to cut before the media is released (see below)                                  |
@@ -451,12 +463,13 @@ Check local prerequisites without requiring a configured database:
 
 ```bash
 cargo run -- diagnostics
-cargo run -- diagnostics --transcriber-command whisper
+cargo run -- diagnostics --transcriber-command /opt/whisper/bin/whisper
 ```
 
 The report includes database reachability and migration readiness when
 `DATABASE_URL` is configured, plus availability/version checks for `yt-dlp`,
-`ffmpeg`, `ffprobe`, and the transcriber command.
+`ffmpeg`, `ffprobe`, the native-whisperx revision and device, and a configured
+transcriber command.
 
 ## API Schema
 

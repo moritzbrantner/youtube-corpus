@@ -32,18 +32,37 @@ pub async fn run(
     database_url: Option<String>,
     transcriber_command: Option<String>,
 ) -> DiagnosticsReport {
+    let mut tools = vec![
+        yt_dlp_diagnostic(),
+        command_diagnostic("ffmpeg", &["-version"]),
+        command_diagnostic("ffprobe", &["-version"]),
+        command_diagnostic("curl", &["--version"]),
+        native_asr_diagnostic(),
+    ];
+    if let Some(command) = transcriber_command.as_deref() {
+        tools.push(command_diagnostic(command, &["--help"]));
+    }
     DiagnosticsReport {
         database: database_diagnostic(database_url).await,
-        tools: vec![
-            yt_dlp_diagnostic(),
-            command_diagnostic("ffmpeg", &["-version"]),
-            command_diagnostic("ffprobe", &["-version"]),
-            command_diagnostic("curl", &["--version"]),
-            command_diagnostic(
-                transcriber_command.as_deref().unwrap_or("whisper"),
-                &["--help"],
-            ),
-        ],
+        tools,
+    }
+}
+
+/// Default ASR is linked in, so it is always available; the model downloads on first use.
+fn native_asr_diagnostic() -> ToolDiagnostic {
+    ToolDiagnostic {
+        name: "native-whisperx".to_string(),
+        available: true,
+        version: Some(crate::translation::NATIVE_WHISPERX_REVISION.to_string()),
+        message: Some(format!(
+            "Default ASR: Whisper {} on {}.",
+            crate::asr::NATIVE_ASR_MODEL,
+            if cfg!(feature = "cuda") {
+                "the GPU when present, else the CPU"
+            } else {
+                "the CPU (build with --features cuda for the GPU)"
+            }
+        )),
     }
 }
 

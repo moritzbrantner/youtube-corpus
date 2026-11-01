@@ -296,7 +296,9 @@ pub(crate) fn ingest_identity(request: &crate::ingest::IngestRequest, detector: 
     let config = match detector {
         "captions" => json!({ "caption": request.caption, "ytDlp": request.yt_dlp }),
         "asr" => json!({ "command": request.transcriber_command, "args": request.transcriber_args,
-            "timeoutSeconds": request.transcriber_timeout_seconds }),
+            "timeoutSeconds": request.transcriber_timeout_seconds,
+            "producer": crate::asr::producer_identity(request.transcriber_command.as_deref(),
+                &request.caption.languages).ok() }),
         _ => Value::Null,
     };
     json!({ "processorRevision": crate::provenance::PROCESSOR_SOURCE_REVISION,
