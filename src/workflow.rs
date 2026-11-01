@@ -21,6 +21,7 @@ use crate::detectors::{
     TranscriberConfig,
 };
 use crate::ingest::IngestRequest;
+use crate::media_extracts::{ExtractKind, ExtractRequest, ExtractSelection, SkippedExtract};
 
 /// Licence text a video must state unless the plan sets `requireLicense` (empty disables it).
 pub const DEFAULT_REQUIRED_LICENSE: &str = "Creative Commons";
@@ -51,6 +52,57 @@ pub struct WorkflowPlan {
     /// Keep downloaded media instead of deleting it once every media stage stored output.
     #[serde(default)]
     pub keep_media: bool,
+    /// Media extracts to cut (#116), from the media the stages acquired, before it is
+    /// released.
+    #[serde(default)]
+    pub extracts: Vec<PlanExtract>,
+}
+
+/// A scene clip, audio excerpt and keyframes of a span (or of stored scenes) of a plan video.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PlanExtract {
+    /// One of the plan's video URLs.
+    pub video: String,
+    #[serde(default)]
+    pub start_seconds: Option<f64>,
+    #[serde(default)]
+    pub end_seconds: Option<f64>,
+    #[serde(default)]
+    pub scene_ids: Vec<Uuid>,
+    #[serde(default = "default_extract_kinds")]
+    pub kinds: Vec<ExtractKind>,
+    #[serde(default = "default_extract_height")]
+    pub max_height: u32,
+}
+
+fn default_extract_kinds() -> Vec<ExtractKind> {
+    ExtractKind::ALL.to_vec()
+}
+
+fn default_extract_height() -> u32 {
+    crate::media_acquisition::SCENES_MAX_HEIGHT
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtractOutcome {
+    Completed,
+    /// An identical extract was still intact on disk.
+    Reused,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowExtract {
+    pub video: String,
+    pub outcome: ExtractOutcome,
+    pub manifest: Option<PathBuf>,
+    pub manifest_sha256: Option<String>,
+    pub artifacts: usize,
+    pub skipped: Vec<SkippedExtract>,
+    pub message: Option<String>,
 }
 
 /// A detector id, or a detector with target languages (`{"detector": "translate_spoken",
@@ -107,6 +159,13 @@ impl WorkflowPlan {
         let plan: Self = serde_json::from_str(&json)
             .with_context(|| format!("failed to parse plan {}", path.display()))?;
         anyhow::ensure!(!plan.videos.is_empty(), "the plan lists no videos");
+        for extract in &plan.extracts {
+            anyhow::ensure!(
+                plan.videos.contains(&extract.video),
+                "extract video {} is not one of the plan's videos",
+                extract.video
+            );
+        }
         Ok(plan)
     }
 }
@@ -161,6 +220,8 @@ pub struct WorkflowVideoReport {
     pub media: MediaCleanup,
     /// Downloaded source media still on disk after the run.
     pub retained_media: Option<PathBuf>,
+    /// The plan's media extracts of this video, cut before the media was released.
+    pub extracts: Vec<WorkflowExtract>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -246,6 +307,11 @@ pub async fn run_workflow(request: WorkflowRequest) -> anyhow::Result<WorkflowRe
                     .iter()
                     .filter(|stage| stage.outcome == StageOutcome::Failed)
                     .count()
+                + video
+                    .extracts
+                    .iter()
+                    .filter(|extract| extract.outcome == ExtractOutcome::Failed)
+                    .count()
         })
         .sum();
     let report = WorkflowReport {
@@ -284,6 +350,7 @@ async fn process_video(
         stages: Vec::new(),
         media: MediaCleanup::default(),
         retained_media: None,
+        extracts: Vec::new(),
     };
     if let Err(error) = process_video_inner(pool, request, corpus_id, captions, &mut report).await {
         report.outcome = VideoOutcome::Failed;
@@ -375,7 +442,12 @@ async fn process_video_inner(
         None
     };
 
-    let run = crate::detectors::run_video_plan(PlanRunRequest {
+    let extracts: Vec<&PlanExtract> = plan
+        .extracts
+        .iter()
+        .filter(|extract| crate::youtube::stable_video_id(&extract.video) == video_id)
+        .collect();
+    let run_request = PlanRunRequest {
         database_url: request.database_url.clone(),
         corpus_id,
         video_id,
@@ -387,11 +459,25 @@ async fn process_video_inner(
         translation_provider: None,
         keep_media: plan.keep_media,
         transcriber: plan.transcriber.clone(),
+    };
+    // Extracts are cut from the media the stages used, before it is released (#116).
+    let run = crate::detectors::run_video_plan(PlanRunRequest {
+        keep_media: plan.keep_media || !extracts.is_empty(),
+        ..run_request.clone()
     })
     .await
     .map_err(|error| anyhow::anyhow!("{error}"))?;
     report.stages.extend(run.stages);
     report.media = run.media;
+    if !extracts.is_empty() {
+        let client = crate::yt_dlp::YtDlpClient::new(request.yt_dlp.clone());
+        for extract in extracts {
+            report
+                .extracts
+                .push(run_extract(pool, &client, request, video_id, extract).await);
+        }
+        report.media = crate::detectors::release_processed_media(pool, &run_request).await?;
+    }
     let local: Option<String> =
         sqlx::query_scalar("SELECT local_video_path FROM videos WHERE id = $1")
             .bind(video_id)
@@ -402,7 +488,56 @@ async fn process_video_inner(
     Ok(())
 }
 
-fn license_allowed(required: &str, license: Option<&str>) -> bool {
+async fn run_extract(
+    pool: &sqlx::PgPool,
+    client: &crate::yt_dlp::YtDlpClient,
+    request: &WorkflowRequest,
+    video_id: Uuid,
+    extract: &PlanExtract,
+) -> WorkflowExtract {
+    let mut extract_request = ExtractRequest::new(
+        video_id,
+        ExtractSelection {
+            start_seconds: extract.start_seconds,
+            end_seconds: extract.end_seconds,
+            scene_ids: extract.scene_ids.clone(),
+        },
+        request.out_dir.join("extracts"),
+    );
+    extract_request.kinds = extract.kinds.iter().copied().collect();
+    extract_request.max_height = extract.max_height;
+    extract_request.work_dir = request.work_dir.clone();
+    extract_request.required_license = request.plan.require_license.clone();
+    extract_request.producer_revision = request.producer_revision.clone();
+    extract_request.keep_media = true;
+    match crate::media_extracts::extract_media(pool, client, &extract_request).await {
+        Ok(report) => WorkflowExtract {
+            video: extract.video.clone(),
+            outcome: if report.reused {
+                ExtractOutcome::Reused
+            } else {
+                ExtractOutcome::Completed
+            },
+            manifest: Some(report.manifest_path),
+            manifest_sha256: Some(report.manifest_sha256),
+            artifacts: report.manifest.artifacts.len(),
+            skipped: report.manifest.skipped,
+            message: None,
+        },
+        Err(error) => WorkflowExtract {
+            video: extract.video.clone(),
+            outcome: ExtractOutcome::Failed,
+            manifest: None,
+            manifest_sha256: None,
+            artifacts: 0,
+            skipped: Vec::new(),
+            message: Some(format!("{error:#}")),
+        },
+    }
+}
+
+/// Whether `license` satisfies `required` (case-insensitive containment; empty allows all).
+pub fn license_allowed(required: &str, license: Option<&str>) -> bool {
     let required = required.trim().to_lowercase();
     required.is_empty() || license.is_some_and(|license| license.to_lowercase().contains(&required))
 }

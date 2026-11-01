@@ -43,3 +43,4 @@ cargo test --test translated_text_db -- --ignored --skip native_opus_mt
 cargo test --test backfill_db -- --ignored
 cargo test --test source_monitor_db -- --ignored
 cargo test --test process_workflow_db -- --ignored
+cargo test --test media_extracts_db -- --ignored

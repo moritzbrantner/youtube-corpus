@@ -218,6 +218,7 @@ reported but are not failures.
 | `transcriber`      | `whisper` on PATH  | `{"command": "...", "args": [...], "timeoutSeconds": n}` for ASR of videos no source configures |
 | `exports`          | all three          | `source-span`, `corpus-core`, `belief-evidence`                                                 |
 | `keepMedia`        | `false`            | Keep downloaded media after processing                                                          |
+| `extracts`         | none               | Media extracts to cut before the media is released (see below)                                  |
 
 Running the same plan again reuses every stored stage, downloads nothing and
 writes byte-identical exports. If a stage has to run again (for example after a
@@ -225,6 +226,50 @@ transcriber change) and the media must be downloaded again, every enabled media
 stage runs on the new file, and that file is deleted afterwards. `--refresh`
 re-ingests and reruns every stage. `export --corpus <slug>` writes one corpus's
 exports later without a plan.
+
+## Media extracts (clips, audio excerpts, keyframes)
+
+Downstream tools can bundle small, verifiable extracts of a span instead of a whole
+video:
+
+```bash
+cargo run -- extract --youtube-id BnY2JdBrvaI --start 10 --end 14 \
+  --out-dir use-case-output/extracts
+```
+
+This writes `<out-dir>/<youtube id>/span-<start ms>-<end ms>/` (or
+`scenes-<digest>/` for `--scene <id>` selections) with:
+
+- `clip.mp4`: the stored scenes the span overlaps, cut at their boundaries
+  (H.264 + AAC);
+- `audio.m4a`: the same range, audio only (AAC);
+- `keyframe-<scene index>.png`: the midpoint frame of each covering scene;
+- `manifest.json` (`media_extract@1`): each file's SHA-256, size, range and scene
+  ids; the source media's SHA-256 and yt-dlp format ids; the video's stated
+  licence; the producer revision, the ffmpeg version, the cutter config and its
+  hash; and the scene run's detector revision and config hash.
+
+A span without scene evidence gets only the audio excerpt of exactly the span; the
+manifest lists the clip and keyframes as skipped. Videos whose licence is not
+Creative Commons are refused unless you pass `--allow-non-cc`. `--kind
+clip,audio,keyframes` selects what to cut, and `--max-height` (default 360, the
+height scenes are detected at) caps the source video. If the media was already
+released, `extract` downloads it again and deletes it after cutting
+(`--keep-media` keeps it). The same inputs give byte-identical files, and an
+existing extract whose files still match its manifest is reused without media.
+
+In a plan, `extracts` entries are cut from the media the stages used, before it is
+released, into `<out-dir>/extracts/`, and `workflow-report.json` lists each
+manifest's SHA-256:
+
+```json
+"extracts": [{ "video": "https://www.youtube.com/watch?v=BnY2JdBrvaI",
+               "startSeconds": 10, "endSeconds": 14 }]
+```
+
+Fields: `video` (one of the plan's URLs), `startSeconds`/`endSeconds` or
+`sceneIds`, `kinds` (default all three) and `maxHeight` (default 360). The plan's
+`requireLicense` applies.
 
 ## Subscriptions
 
