@@ -48,7 +48,9 @@ async function withProfile(
 }
 
 async function expectCompleted(page: Page) {
-  await expect(page.getByText(/entities in \d+ segments/)).toBeVisible({ timeout: MODEL_TIMEOUT });
+  await expect(page.getByText(/entities in \d+ segments/)).toBeVisible({
+    timeout: MODEL_TIMEOUT,
+  });
 }
 
 test("en, de and es fixtures yield anchored entities with provenance", async ({ baseURL }) => {
@@ -60,7 +62,7 @@ test("en, de and es fixtures yield anchored entities with provenance", async ({ 
       await expectEntities(page, language);
       await expect(
         page.getByText(
-          /at nlp-stack e1063c5b5918 · model Xenova\/distilbert-base-multilingual-cased-ner-hrl@c2a4dbf593c5 \(q8, from Davlan\//,
+          /at nlp-stack 7575027b1cc2 · model Xenova\/distilbert-base-multilingual-cased-ner-hrl@c2a4dbf593c5 \(q8, from Davlan\//,
         ),
       ).toBeVisible();
     }
@@ -112,15 +114,18 @@ test("a cold offline model load fails cleanly and a retry fails the same way", a
   }
 });
 
-// Transformers.js still probes huggingface.co (on the moving `main` revision) when the model is
-// cached, and fails offline: https://github.com/moritzbrantner/nlp-stack/issues/179
-test.fixme("a cached model works offline", async ({ baseURL }) => {
+test("a cached model works offline and sends no Hugging Face request", async ({ baseURL }) => {
   await withProfile(baseURL, async (page, context) => {
-    await context.route(HUGGING_FACE, (route) => route.abort("internetdisconnected"));
+    const blocked: string[] = [];
+    await context.route(HUGGING_FACE, (route) => {
+      blocked.push(route.request().url());
+      return route.abort("internetdisconnected");
+    });
     await openAnalyzer(page, fixture("es"));
     await runCanonicalNer(page, "es");
     await expectCompleted(page);
     await expectEntities(page, "es");
+    expect(blocked).toEqual([]);
   });
 });
 
@@ -285,7 +290,11 @@ test("measure cold download, startup, memory and analysis time", async ({ baseUR
       const firstMs = await timedRun("en");
       const rerunMs = await timedRun("en");
       const summary = await page.getByText(/entities in \d+ segments/).innerText();
-      return { firstMs, rerunMs, entities: Number(summary.match(/^(\d+)/)?.[1]) };
+      return {
+        firstMs,
+        rerunMs,
+        entities: Number(summary.match(/^(\d+)/)?.[1]),
+      };
     });
 
     const metrics = {
