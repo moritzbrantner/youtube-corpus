@@ -55,11 +55,11 @@ text-linguistics = { package = "moenarch-text-linguistics", git = "https://githu
   "candle",
   "model-bundles",
 ] }
-model-runtime = { package = "moenarch-model-runtime", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
+model-runtime = { package = "moenarch-model-runtime", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
 text-transcripts = { package = "moenarch-text-transcripts", git = "https://github.com/moritzbrantner/nlp-stack", rev = "22174b23fe30678a41491d71c510337e056d7615" }
-media-core = { package = "moenarch-media-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-corpus-core = { package = "moenarch-corpus-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-runtime-core = { package = "moenarch-runtime-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
+media-core = { package = "moenarch-media-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+corpus-core = { package = "moenarch-corpus-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+runtime-core = { package = "moenarch-runtime-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
 video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004" }
 video-analysis-ingest = { package = "moenarch-video-analysis-ingest", git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004" }
 video-analysis-core = { package = "moenarch-video-analysis-core", git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004" }
@@ -70,18 +70,18 @@ image-analysis-detection = { package = "moenarch-image-analysis-detection", git 
 image-analysis-embeddings = { package = "moenarch-image-analysis-embeddings", git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004", features = [
   "onnx",
 ] }
-runtime-onnx = { package = "moenarch-runtime-onnx", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72", features = [
+runtime-onnx = { package = "moenarch-runtime-onnx", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920", features = [
   "onnxruntime",
 ] }
-vector-analysis-core = { package = "moenarch-vector-analysis-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
+vector-analysis-core = { package = "moenarch-vector-analysis-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
 
-audio-analysis-speakers = { package = "moenarch-audio-analysis-speakers", git = "https://github.com/moritzbrantner/audio-analysis", rev = "c058cac6235c6471779bd0a87f5076549c47958b", features = [
+audio-analysis-speakers = { package = "moenarch-audio-analysis-speakers", git = "https://github.com/moritzbrantner/audio-analysis", rev = "907ff19567ef7bcc1327b24d5648f75e0977863e", features = [
   "onnx",
   "model-bundles",
 ] }
-audio-analysis-core = { package = "moenarch-audio-analysis-core", git = "https://github.com/moritzbrantner/audio-analysis", rev = "c058cac6235c6471779bd0a87f5076549c47958b" }
-audio-analysis-io = { package = "moenarch-audio-analysis-io", git = "https://github.com/moritzbrantner/audio-analysis", rev = "c058cac6235c6471779bd0a87f5076549c47958b" }
-audio-analysis-processing = { package = "moenarch-audio-analysis-processing", git = "https://github.com/moritzbrantner/audio-analysis", rev = "c058cac6235c6471779bd0a87f5076549c47958b" }
+audio-analysis-core = { package = "moenarch-audio-analysis-core", git = "https://github.com/moritzbrantner/audio-analysis", rev = "907ff19567ef7bcc1327b24d5648f75e0977863e" }
+audio-analysis-io = { package = "moenarch-audio-analysis-io", git = "https://github.com/moritzbrantner/audio-analysis", rev = "907ff19567ef7bcc1327b24d5648f75e0977863e" }
+audio-analysis-processing = { package = "moenarch-audio-analysis-processing", git = "https://github.com/moritzbrantner/audio-analysis", rev = "907ff19567ef7bcc1327b24d5648f75e0977863e" }
 
 # Default ASR through one reused `TranscriptionSession` (#73), plus the translation
 # planner/executor and native OPUS-MT provider (#69, native-whisperx #373).
@@ -94,7 +94,7 @@ native-whisperx = { git = "https://github.com/moritzbrantner/native-whisperx", r
 # Opt-in Tantivy lexical search pilot (#76); Postgres stays the default provider.
 search-engine = { git = "https://github.com/moritzbrantner/search-engine", rev = "3bde04c958fb2bba19e9e75584793518999bfb33" }
 
-audio-contracts = { package = "moenarch-audio-contracts", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
+audio-contracts = { package = "moenarch-audio-contracts", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
 
 [features]
 # Default ASR on CUDA when a GPU is present (building needs the CUDA toolkit). Without it, or
@@ -115,29 +115,29 @@ tower = { version = "=0.5.3", features = ["util"] }
 # Current set: foundation c2c1ab1, nlp-stack 22174b2 (temporal normalizer nlp-stack#156, multilingual NER #167, per-sentence language routing #171, NER weights loaded once #173),
 # visual-analysis 35a5320 (OCR span compatibility; see visual-analysis #87).
 [patch.crates-io]
-moenarch-math-signal-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-audio-contracts = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-data-inversion-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-math-geometry-2d = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-math-linear = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-math-sparse-data = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-media-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-model-runtime = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-numbers-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-runtime-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-runtime-onnx = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-tensor-data = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-vector-analysis-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-vector-analysis-index = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
+moenarch-math-signal-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-audio-contracts = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-data-inversion-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-math-geometry-2d = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-math-linear = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-math-sparse-data = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-media-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-model-runtime = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-numbers-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-runtime-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-runtime-onnx = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-tensor-data = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-vector-analysis-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
+moenarch-vector-analysis-index = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
 moenarch-text-core = { git = "https://github.com/moritzbrantner/nlp-stack", rev = "22174b23fe30678a41491d71c510337e056d7615" }
 # native-whisperx (#69) declares registry requirements on audio-analysis, nlp-stack and
 # visual-analysis crates; resolve them to the revisions pinned above so the graph keeps one copy.
 # native-whisperx needs audio-analysis APIs newer than the published releases. audio-analysis
-# c058cac is the revision native-whisperx pins (audio-analysis#216, native-whisperx#434) and keeps the
-# AHC speaker clustering of audio-analysis#206 (youtube-corpus#159).
-moenarch-audio-analysis-speakers = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "c058cac6235c6471779bd0a87f5076549c47958b" }
-moenarch-audio-analysis-transcription = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "c058cac6235c6471779bd0a87f5076549c47958b" }
-moenarch-audio-analysis-io = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "c058cac6235c6471779bd0a87f5076549c47958b" }
+# 907ff19 is native-whisperx's pin c058cac (audio-analysis#216, native-whisperx#434, AHC speaker
+# clustering of audio-analysis#206) plus typed ONNX Runtime load errors (audio-analysis#217, vox#159).
+moenarch-audio-analysis-speakers = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "907ff19567ef7bcc1327b24d5648f75e0977863e" }
+moenarch-audio-analysis-transcription = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "907ff19567ef7bcc1327b24d5648f75e0977863e" }
+moenarch-audio-analysis-io = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "907ff19567ef7bcc1327b24d5648f75e0977863e" }
 moenarch-text-transcripts = { git = "https://github.com/moritzbrantner/nlp-stack", rev = "22174b23fe30678a41491d71c510337e056d7615" }
 moenarch-video-analysis-core = { git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004" }
 # Foundation c2c1ab1 depends on the registry name `search-kernels` and resolves it to this exact
