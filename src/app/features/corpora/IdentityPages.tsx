@@ -41,7 +41,7 @@ import {
 } from "./url-state";
 
 /** Entity types with a canonical identity on the Entities page; dates and amounts get none. */
-const ENTITY_TYPES = ["organization", "location", "product", "law", "work", "event", "misc"];
+const ENTITY_TYPES = ["organization", "location", "product", "law", "work", "event"];
 
 const identityKeys = {
   all: ["identities"] as const,

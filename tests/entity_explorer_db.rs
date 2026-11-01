@@ -1,7 +1,7 @@
 //! Entity explorer (#62, Decision Atlas 4.1-4.3) against Postgres and the corpus HTTP API.
 //!
 //! `entity_occurrences_*` seeds producer-shaped mentions through `replace_entity_run` so it
-//! runs without the NER model. `real_producer_*` runs the canonical nlp-stack bert-base-NER
+//! runs without the NER model. `real_producer_*` runs the canonical nlp-stack multilingual NER
 //! model end to end and is skipped unless `YOUTUBE_CORPUS_NER_MODEL_DIR` points at a
 //! directory holding (or allowed to receive) the model bundle.
 
@@ -237,7 +237,9 @@ async fn store(seed: &Seed, video: Uuid, mentions: Vec<EntityMentionInput>) {
     replace_entity_run(
         &seed.pool,
         video,
-        &EntityRunProvenance::canonical("dslim/bert-base-NER@fixture"),
+        &EntityRunProvenance::canonical(
+            "Davlan/distilbert-base-multilingual-cased-ner-hrl@fixture",
+        ),
         None,
         mentions.len() as i32,
         0,
@@ -455,7 +457,10 @@ async fn entity_occurrences_are_counted_per_modality_with_provenance() {
     assert_eq!(first["context"], "Today Ada Lovelace explains the engine.");
     assert_eq!(first["transcriptSegmentId"], seed.segments[0].to_string());
     assert_eq!(first["producer"], "nlp-stack/text-linguistics");
-    assert_eq!(first["model"], "dslim/bert-base-NER@fixture");
+    assert_eq!(
+        first["model"],
+        "Davlan/distilbert-base-multilingual-cased-ner-hrl@fixture"
+    );
 
     let slide = videos
         .iter()

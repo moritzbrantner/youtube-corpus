@@ -260,7 +260,9 @@ async fn suggested_claims_are_source_linked_unverified_and_survive_review_on_rer
     replace_entity_run(
         &ctx.pool,
         v1,
-        &EntityRunProvenance::canonical("dslim/bert-base-NER@fixture"),
+        &EntityRunProvenance::canonical(
+            "Davlan/distilbert-base-multilingual-cased-ner-hrl@fixture",
+        ),
         None,
         3,
         1,

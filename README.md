@@ -445,13 +445,19 @@ Voice embeddings remain local corpus data and must not be committed as real fixt
 ## Entities
 
 Extract people, places and other named entities from each corpus video's transcript and
-visible-text (OCR) tracks with the nlp-stack `bert-base-NER` model (downloaded once from
+visible-text (OCR) tracks with the nlp-stack multilingual NER model
+(`Davlan/distilbert-base-multilingual-cased-ner-hrl`, AFL-3.0, downloaded once from
 Hugging Face into `use-case-output/models`), then explore them in the corpus workspace's
 Entities panel:
 
 ```bash
 cargo run --release -- entities extract --corpus <corpus-id-or-slug>
 ```
+
+The model covers English, German and Spanish. Each sentence is routed by its detected language
+(lingua, through nlp-stack); a sentence too short or ambiguous to decide takes its segment's,
+stream's or track's declared language, else the language detected over the whole video.
+Sentences in any other language are skipped, not tagged as English.
 
 Mentions keep their modality (spoken or on-screen text), timestamp, source segment/track and
 producer run. Labeled corpus people from face/voice matching are listed separately as shown or

@@ -212,7 +212,9 @@ impl Ctx {
         replace_entity_run(
             &self.pool,
             video,
-            &EntityRunProvenance::canonical("dslim/bert-base-NER@fixture"),
+            &EntityRunProvenance::canonical(
+                "Davlan/distilbert-base-multilingual-cased-ner-hrl@fixture",
+            ),
             None,
             0,
             1,
@@ -618,7 +620,9 @@ impl Ctx {
         replace_entity_run(
             &self.pool,
             video,
-            &EntityRunProvenance::canonical("dslim/bert-base-NER@fixture"),
+            &EntityRunProvenance::canonical(
+                "Davlan/distilbert-base-multilingual-cased-ner-hrl@fixture",
+            ),
             Some(stream),
             segments.len() as i32,
             0,
