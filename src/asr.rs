@@ -23,8 +23,19 @@ use crate::captions::TranscriptStream;
 use crate::config::SourceKind;
 use crate::translation::NATIVE_WHISPERX_REVISION;
 
-/// Whisper checkpoint of the default native provider (multilingual, language detected per video).
+/// Whisper checkpoint of the default native provider (multilingual).
 pub const NATIVE_ASR_MODEL: &str = "small";
+
+/// The language native ASR decodes in: the source's first requested caption language
+/// (`en-US` → `en`). Native language detection returns punctuation-only transcripts at the
+/// pinned revision (native-whisperx#434), so the corpus always passes a language.
+pub fn native_language(caption_languages: &[String]) -> Option<String> {
+    caption_languages
+        .iter()
+        .map(|language| language.split(['-', '_']).next().unwrap_or("").trim())
+        .find(|language| !language.is_empty())
+        .map(str::to_ascii_lowercase)
+}
 
 /// A transcript plus the producer facts recorded in the stream's provenance.
 #[derive(Debug)]
@@ -36,7 +47,10 @@ pub struct AsrOutput {
 
 /// Stable identity of the ASR producer a request selects. Stored with every ASR stream and
 /// compared on reuse, so a changed revision, model or command invalidates earlier output.
-pub fn producer_identity(command: Option<&Path>) -> anyhow::Result<Value> {
+pub fn producer_identity(
+    command: Option<&Path>,
+    caption_languages: &[String],
+) -> anyhow::Result<Value> {
     Ok(match command {
         Some(command) => json!({
             "provider": "command",
@@ -45,13 +59,14 @@ pub fn producer_identity(command: Option<&Path>) -> anyhow::Result<Value> {
         None => json!({
             "provider": "native-whisperx",
             "revision": NATIVE_WHISPERX_REVISION,
-            "config": native_config_identity(),
+            "config": native_config_identity(native_language(caption_languages).as_deref()),
         }),
     })
 }
 
-fn native_config_identity() -> Value {
-    json!({ "modelId": NATIVE_ASR_MODEL, "alignment": false, "vad": "energy", "diarization": false })
+fn native_config_identity(language: Option<&str>) -> Value {
+    json!({ "modelId": NATIVE_ASR_MODEL, "language": language, "alignment": false,
+        "vad": "energy", "diarization": false })
 }
 
 /// Transcribes `media_path` with the explicitly configured command, else the native provider.
@@ -61,6 +76,7 @@ pub async fn transcribe(
     command: Option<&PathBuf>,
     args: &[String],
     timeout_seconds: Option<u64>,
+    caption_languages: &[String],
 ) -> anyhow::Result<AsrOutput> {
     let output_dir = work_dir.join("asr");
     tokio::fs::create_dir_all(&output_dir).await?;
@@ -74,6 +90,7 @@ pub async fn transcribe(
                 .send(NativeJob {
                     media_path: media_path.to_path_buf(),
                     output_dir,
+                    language: native_language(caption_languages),
                     reply,
                 })
                 .context("native ASR worker stopped")?;
@@ -85,6 +102,7 @@ pub async fn transcribe(
 struct NativeJob {
     media_path: PathBuf,
     output_dir: PathBuf,
+    language: Option<String>,
     reply: tokio::sync::oneshot::Sender<anyhow::Result<AsrOutput>>,
 }
 
@@ -103,6 +121,7 @@ static NATIVE_WORKER: LazyLock<std::sync::mpsc::Sender<NativeJob>> = LazyLock::n
                         &mut session,
                         &job.media_path,
                         &job.output_dir,
+                        job.language.as_deref(),
                         cfg!(feature = "cuda"),
                     )
                 }))
@@ -137,6 +156,7 @@ pub fn transcribe_native(
     backend: &mut dyn NativeAsrBackend,
     media_path: &Path,
     output_dir: &Path,
+    language: Option<&str>,
     gpu_capable: bool,
 ) -> anyhow::Result<AsrOutput> {
     let first = if gpu_capable {
@@ -144,16 +164,16 @@ pub fn transcribe_native(
     } else {
         DevicePreference::Cpu
     };
-    let (report, gpu_error) = match backend.run(native_config(media_path, first)) {
+    let config = |device| native_config(media_path, output_dir, language, device);
+    let (report, gpu_error) = match backend.run(config(first)) {
         Ok(report) => (report, None),
-        Err(error) if gpu_capable => {
-            let report = backend
-                .run(native_config(media_path, DevicePreference::Cpu))
-                .map_err(|cpu| {
-                    anyhow::anyhow!(
-                        "native-whisperx failed on the GPU ({error}) and on the CPU ({cpu})"
-                    )
-                })?;
+        // A configuration error fails the same way on the CPU.
+        Err(error) if gpu_capable && !matches!(error, NativeWhisperxError::InvalidConfig(_)) => {
+            let report = backend.run(config(DevicePreference::Cpu)).map_err(|cpu| {
+                anyhow::anyhow!(
+                    "native-whisperx failed on the GPU ({error}) and on the CPU ({cpu})"
+                )
+            })?;
             (report, Some(error.to_string()))
         }
         Err(error) => return Err(anyhow::anyhow!("native-whisperx failed: {error}")),
@@ -193,18 +213,24 @@ pub fn transcribe_native(
             "modelId": provenance.model_id,
             "device": device,
             "cpuFallback": gpu_error,
-            "config": native_config_identity(),
+            "config": native_config_identity(language),
         }),
     })
 }
 
-fn native_config(media_path: &Path, device: DevicePreference) -> NativeWhisperxConfig {
+fn native_config(
+    media_path: &Path,
+    output_dir: &Path,
+    language: Option<&str>,
+    device: DevicePreference,
+) -> NativeWhisperxConfig {
     NativeWhisperxConfig {
         input: InputSource::Path {
             path: media_path.to_path_buf(),
         },
         asr: AsrConfig {
             model_id: NATIVE_ASR_MODEL.to_string(),
+            language: language.map(str::to_string),
             device,
             ..AsrConfig::default()
         },
@@ -216,9 +242,9 @@ fn native_config(media_path: &Path, device: DevicePreference) -> NativeWhisperxC
             ..AlignmentConfig::default()
         },
         diarization: DiarizationConfig::default(),
-        // The corpus writes its own Whisper JSON evidence file.
+        // native-whisperx's own JSON report stays beside the corpus' Whisper JSON as evidence.
         output: OutputConfig {
-            formats: Vec::new(),
+            output_dir: Some(output_dir.join("native-whisperx")),
             ..OutputConfig::default()
         },
     }
@@ -343,8 +369,9 @@ mod tests {
             self.devices.push(config.asr.device);
             assert_eq!(config.asr.model_id, "small");
             assert!(!config.alignment.enabled);
+            assert_eq!(config.asr.language.as_deref(), Some("en"));
             if self.gpu_fails && config.asr.device != DevicePreference::Cpu {
-                return Err(NativeWhisperxError::InvalidConfig(
+                return Err(NativeWhisperxError::Transcription(
                     "CUDA out of memory".to_string(),
                 ));
             }
@@ -381,6 +408,7 @@ mod tests {
             &mut backend,
             Path::new("/media/talk.webm"),
             dir.path(),
+            Some("en"),
             true,
         )
         .unwrap();
@@ -405,6 +433,7 @@ mod tests {
             &mut backend,
             Path::new("/media/talk.webm"),
             dir.path(),
+            Some("en"),
             true,
         )
         .unwrap();
@@ -435,6 +464,7 @@ mod tests {
             &mut backend,
             Path::new("/media/talk.webm"),
             dir.path(),
+            Some("en"),
             false,
         )
         .unwrap();
@@ -443,10 +473,21 @@ mod tests {
 
     #[test]
     fn producer_identity_pins_the_native_revision() {
-        let identity = producer_identity(None).unwrap();
+        let identity = producer_identity(None, &["en-US".to_string()]).unwrap();
         assert_eq!(identity["provider"], "native-whisperx");
         assert_eq!(identity["revision"], super::NATIVE_WHISPERX_REVISION);
         assert_eq!(identity["config"]["modelId"], "small");
+        assert_eq!(identity["config"]["language"], "en");
+    }
+
+    #[test]
+    fn native_language_is_the_first_caption_language() {
+        use super::native_language;
+        assert_eq!(
+            native_language(&["de_DE".into(), "en".into()]).as_deref(),
+            Some("de")
+        );
+        assert_eq!(native_language(&[]), None);
     }
 
     #[test]
