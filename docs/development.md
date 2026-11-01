@@ -62,6 +62,50 @@ bun run dev:frontend
 Open `http://127.0.0.1:5173`. Vite proxies `/api` to the Rust server on
 `http://127.0.0.1:1420`.
 
+### Pages canonical NER
+
+The Pages analyzer's opt-in "Canonical named entities" panel loads NLP Stack's `browser-ner`
+module from jsDelivr at the commit pinned in `src/app/features/analyzer/canonical-ner.ts`.
+Its browser tests use the en/de/es caption fixtures in `tests/fixtures/canonical-ner/`:
+
+```bash
+# Stub producer; no downloads. Covers opt-in, run, timestamps, provenance, cancel,
+# a failed module load and stale results after a transcript change.
+bun run test:e2e tests/e2e/canonical-ner.spec.ts
+
+# Real pinned module and model (opt-in). Uses a persistent Chromium profile
+# (CANONICAL_NER_PROFILE, default ~/.cache/youtube-corpus/canonical-ner-profile), so only
+# the first run downloads the model. CANONICAL_NER_MEASURE=1 also measures from a fresh
+# profile and writes test-results/canonical-ner-metrics.json.
+CANONICAL_NER_MODEL=1 bun run test:e2e tests/e2e/canonical-ner-model.spec.ts --project=desktop-chromium
+```
+
+CI runs neither suite. CI does not run Playwright, and the real model needs about 140 MB of
+network on a cold profile.
+
+Measured on 2026-11-01 with nlp-stack `e1063c5b` and the model
+`Xenova/distilbert-base-multilingual-cased-ner-hrl@c2a4dbf5` (q8). Hardware: Ryzen 7 5700X,
+headless Playwright Chromium, Wasm CPU backend (no WebGPU), on a shared machine with load
+average about 20. The figures are ranges over four runs.
+
+|                                                  | Canonical NER                                                                                                                     | Lexical `proper-noun-like` guesses                                                                                                                                            |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cold download                                    | 140.4 MB (model 135.4 MB, ORT Wasm 4.7 MB, tokenizer, Transformers.js)                                                            | 0 (ships in the page)                                                                                                                                                         |
+| First run, cold profile (download, init, 4 cues) | 6.0–10.8 s                                                                                                                        | n/a                                                                                                                                                                           |
+| First run after a reload, model cached           | 2.4–5.0 s                                                                                                                         | n/a                                                                                                                                                                           |
+| Warm rerun, 4 cues                               | 0.14–0.6 s                                                                                                                        | under 1 ms                                                                                                                                                                    |
+| Next transcript in the same page (worker reused) | 0.75 s (one run)                                                                                                                  | under 1 ms                                                                                                                                                                    |
+| 240-cue transcript, warm                         | 5.7–15.3 s (420 entities)                                                                                                         | 3–21 ms (16 guesses, capped)                                                                                                                                                  |
+| Peak browser RSS, all processes                  | 1.35–1.40 GB cold; 1.51–1.60 GB on 240 cues                                                                                       | 0.54–0.56 GB baseline                                                                                                                                                         |
+| Labels                                           | PER / ORG / LOC with confidence                                                                                                   | none                                                                                                                                                                          |
+| Fixtures (en/de/es, 4 cues each)                 | 21 entities: every person and place, plus Deutsche Bahn and Cambridge University Press. Misses "Roman Empire"; labels museums LOC | 6 exact, plus "Roman Empire" and 3 clipped spans ("Die Deutsche Bahn", "Johann Wolfgang", "El Museo"). Misses every one-word, single-mention name (London, Berlin, Madrid, …) |
+
+Known gap: a cached model does not work offline yet. Transformers.js still probes
+huggingface.co on the moving `main` revision at startup, and with no network it fails with
+"this.tokenizer is not a function"
+([nlp-stack#179](https://github.com/moritzbrantner/nlp-stack/issues/179)). A cold offline load
+fails cleanly, and a retry fails the same way.
+
 ## Embedded Assets
 
 The Rust web server embeds files from `dist/` using `rust-embed`. Run the

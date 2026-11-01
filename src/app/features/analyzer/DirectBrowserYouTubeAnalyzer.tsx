@@ -32,6 +32,9 @@ export function DirectBrowserYouTubeAnalyzer() {
   );
   const [error, setError] = React.useState<string | null>(null);
   const [report, setReport] = React.useState<VideoAnalysisReport | null>(null);
+  // Bumped per analysis so the canonical NER panel remounts (dropping results and any
+  // in-flight run) even when React batches the old report straight into the new one.
+  const [reportRevision, setReportRevision] = React.useState(0);
   const requestGeneration = React.useRef(0);
 
   const parsedUrl = React.useMemo(() => parseYouTubeVideoUrl(sourceUrl), [sourceUrl]);
@@ -117,6 +120,7 @@ export function DirectBrowserYouTubeAnalyzer() {
 
       persistWorkbenchUrl(parsed.canonicalUrl);
       setReport(nextReport);
+      setReportRevision((revision) => revision + 1);
       setPhase("done");
       setStatusMessage(
         nextAcquisition
@@ -334,7 +338,9 @@ export function DirectBrowserYouTubeAnalyzer() {
         </div>
       ) : null}
 
-      {report ? <BrowserReport report={report} acquisition={acquisition} /> : null}
+      {report ? (
+        <BrowserReport report={report} revision={reportRevision} acquisition={acquisition} />
+      ) : null}
 
       <footer className="analyzer-footer">
         <span>Static GitHub Pages · direct captions first · loopback yt-dlp fallback</span>
@@ -346,9 +352,11 @@ export function DirectBrowserYouTubeAnalyzer() {
 
 function BrowserReport({
   report,
+  revision,
   acquisition,
 }: {
   report: VideoAnalysisReport;
+  revision: number;
   acquisition: BrowserCaptionAcquisition | null;
 }) {
   const lexical = asRecord(report.lexicalAnalysis);
@@ -428,7 +436,7 @@ function BrowserReport({
         </div>
       </section>
 
-      <CanonicalNerPanel report={report} />
+      <CanonicalNerPanel key={revision} report={report} />
 
       <section>
         <div className="section-heading">
