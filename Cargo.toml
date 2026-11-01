@@ -85,7 +85,7 @@ audio-analysis-processing = { package = "moenarch-audio-analysis-processing", gi
 
 # Default ASR through one reused `TranscriptionSession` (#73), plus the translation
 # planner/executor and native OPUS-MT provider (#69, native-whisperx #373).
-native-whisperx = { git = "https://github.com/moritzbrantner/native-whisperx", rev = "0e5e25787ce03e1b01cf264ab74718bc21edae1c", default-features = false, features = [
+native-whisperx = { git = "https://github.com/moritzbrantner/native-whisperx", rev = "8c698ffd23d7f86ca63c6b1ef4b6b13b6b9c2e50", default-features = false, features = [
   "native",
   "media-decode",
   "translation",

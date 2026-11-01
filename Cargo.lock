@@ -3140,7 +3140,7 @@ checksum = "a8afc6df942f4c022d70c5725e18df1a705773870e5b7f96fde94ca0334ce77a"
 [[package]]
 name = "native-whisperx"
 version = "0.1.14"
-source = "git+https://github.com/moritzbrantner/native-whisperx?rev=0e5e25787ce03e1b01cf264ab74718bc21edae1c#0e5e25787ce03e1b01cf264ab74718bc21edae1c"
+source = "git+https://github.com/moritzbrantner/native-whisperx?rev=8c698ffd23d7f86ca63c6b1ef4b6b13b6b9c2e50#8c698ffd23d7f86ca63c6b1ef4b6b13b6b9c2e50"
 dependencies = [
  "candle-core 0.11.0",
  "candle-nn 0.11.0",
