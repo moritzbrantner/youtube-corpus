@@ -62,7 +62,7 @@
       "ner": {
         "owner": "nlp-stack/text-linguistics",
         "module": "@moritzbrantner/text-linguistics-wasm/browser-ner",
-        "nlpStackRevision": "e1063c5b5918f7c18bf1725a461a6193d587b8ec",
+        "nlpStackRevision": "7575027b1cc2197ff8ea609168d902df68059338",
         "moduleHost": "cdn.jsdelivr.net",
         "modelHost": "huggingface.co",
         "optIn": true,

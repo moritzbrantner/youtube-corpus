@@ -4,7 +4,7 @@
 // commit on explicit user action and anchors its entities to transcript segments.
 
 /** Pushed, reviewed nlp-stack commit whose browser-ner module this app consumes. */
-export const NLP_STACK_REVISION = "e1063c5b5918f7c18bf1725a461a6193d587b8ec";
+export const NLP_STACK_REVISION = "7575027b1cc2197ff8ea609168d902df68059338";
 
 export const BROWSER_NER_MODULE_BASE_URL = `https://cdn.jsdelivr.net/gh/moritzbrantner/nlp-stack@${NLP_STACK_REVISION}/packages/text-linguistics-wasm/`;
 
