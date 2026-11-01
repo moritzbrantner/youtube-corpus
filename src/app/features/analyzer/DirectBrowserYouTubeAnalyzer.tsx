@@ -3,6 +3,7 @@ import * as React from "react";
 import type { VideoAnalysisReport } from "../../api";
 import { applyBrowserCaptionAcquisition } from "./browser-acquisition-report";
 import { buildBrowserVideoAnalysis } from "./browser-analysis";
+import { CanonicalNerPanel } from "./CanonicalNerPanel";
 import {
   acquireYouTubeCaptions,
   BrowserYouTubeAcquisitionError,
@@ -426,6 +427,8 @@ function BrowserReport({
           <AnalysisList title="Key phrases" items={phrases.map(termLabel).filter(Boolean)} />
         </div>
       </section>
+
+      <CanonicalNerPanel report={report} />
 
       <section>
         <div className="section-heading">
