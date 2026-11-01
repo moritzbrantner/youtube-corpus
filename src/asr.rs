@@ -1,41 +1,243 @@
+//! Spoken-word transcription for corpus videos (#73).
+//!
+//! Default ASR goes through the pinned native-whisperx library (the audio/ASR capability that
+//! owns Whisper decoding), never through a command resolved from `PATH`. One process-wide
+//! [`TranscriptionSession`] keeps the Whisper model loaded across videos. With the `cuda` build
+//! feature the model runs on the GPU when one is present, and a failed GPU run is retried on the
+//! CPU. An external Whisper-compatible command runs only when a source configures one explicitly.
+
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use anyhow::Context;
+use native_whisperx::{
+    AlignmentConfig, AsrConfig, DevicePreference, DiarizationConfig, InputSource,
+    NativeWhisperxConfig, NativeWhisperxError, NativeWhisperxReport, OutputConfig,
+    TranscriptionSession, TranslationConfig, VadConfig,
+};
+use serde_json::{json, Value};
 
 use crate::captions::TranscriptStream;
 use crate::config::SourceKind;
+use crate::translation::NATIVE_WHISPERX_REVISION;
 
-pub async fn transcribe_with_command(
+/// Whisper checkpoint of the default native provider (multilingual, language detected per video).
+pub const NATIVE_ASR_MODEL: &str = "small";
+
+/// A transcript plus the producer facts recorded in the stream's provenance.
+#[derive(Debug)]
+pub struct AsrOutput {
+    pub stream: TranscriptStream,
+    /// What ran: provider, exact revision, model, device, and whether the CPU fallback was used.
+    pub run: Value,
+}
+
+/// Stable identity of the ASR producer a request selects. Stored with every ASR stream and
+/// compared on reuse, so a changed revision, model or command invalidates earlier output.
+pub fn producer_identity(command: Option<&Path>) -> anyhow::Result<Value> {
+    Ok(match command {
+        Some(command) => json!({
+            "provider": "command",
+            "executable": crate::detector_status::file_identity(command)?,
+        }),
+        None => json!({
+            "provider": "native-whisperx",
+            "revision": NATIVE_WHISPERX_REVISION,
+            "config": native_config_identity(),
+        }),
+    })
+}
+
+fn native_config_identity() -> Value {
+    json!({ "modelId": NATIVE_ASR_MODEL, "alignment": false, "vad": "energy", "diarization": false })
+}
+
+/// Transcribes `media_path` with the explicitly configured command, else the native provider.
+pub async fn transcribe(
     media_path: &Path,
     work_dir: &Path,
     command: Option<&PathBuf>,
     args: &[String],
     timeout_seconds: Option<u64>,
-) -> anyhow::Result<Option<TranscriptStream>> {
-    let Some(command) = command.cloned().or_else(|| resolve_command("whisper")) else {
-        return Ok(Some(TranscriptStream {
-            source_kind: SourceKind::Asr,
-            language: None,
-            source_path: None,
-            text: None,
-            segments: Vec::new(),
-            source_cues: Vec::new(),
-            message: Some(
-                "ASR skipped because no transcriber command was configured or found".to_string(),
-            ),
-        }));
-    };
-    tokio::fs::create_dir_all(work_dir).await?;
+) -> anyhow::Result<AsrOutput> {
     let output_dir = work_dir.join("asr");
     tokio::fs::create_dir_all(&output_dir).await?;
-    let output_path = whisper_json_path(media_path, &output_dir)?;
+    match command {
+        Some(command) => {
+            transcribe_with_command(media_path, &output_dir, command, args, timeout_seconds).await
+        }
+        None => {
+            let (reply, answer) = tokio::sync::oneshot::channel();
+            NATIVE_WORKER
+                .send(NativeJob {
+                    media_path: media_path.to_path_buf(),
+                    output_dir,
+                    reply,
+                })
+                .context("native ASR worker stopped")?;
+            answer.await.context("native ASR worker stopped")?
+        }
+    }
+}
+
+struct NativeJob {
+    media_path: PathBuf,
+    output_dir: PathBuf,
+    reply: tokio::sync::oneshot::Sender<anyhow::Result<AsrOutput>>,
+}
+
+/// One worker thread owns the process's [`TranscriptionSession`] (it is not `Send`,
+/// native-whisperx#432), so the
+/// Whisper model stays loaded between videos and jobs run one at a time.
+static NATIVE_WORKER: LazyLock<std::sync::mpsc::Sender<NativeJob>> = LazyLock::new(|| {
+    let (jobs, queue) = std::sync::mpsc::channel::<NativeJob>();
+    std::thread::Builder::new()
+        .name("native-asr".to_string())
+        .spawn(move || {
+            let mut session = TranscriptionSession::new();
+            for job in queue {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    transcribe_native(
+                        &mut session,
+                        &job.media_path,
+                        &job.output_dir,
+                        cfg!(feature = "cuda"),
+                    )
+                }))
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("native-whisperx panicked")));
+                let _ = job.reply.send(result);
+            }
+        })
+        .expect("start the native ASR worker thread");
+    jobs
+});
+
+/// The native ASR seam: the real [`TranscriptionSession`] in production, a fake in tests.
+pub trait NativeAsrBackend {
+    fn run(
+        &mut self,
+        config: NativeWhisperxConfig,
+    ) -> Result<NativeWhisperxReport, NativeWhisperxError>;
+}
+
+impl NativeAsrBackend for TranscriptionSession {
+    fn run(
+        &mut self,
+        config: NativeWhisperxConfig,
+    ) -> Result<NativeWhisperxReport, NativeWhisperxError> {
+        TranscriptionSession::run(self, config)
+    }
+}
+
+/// Runs the native provider. `gpu_capable` (the `cuda` build) lets the first attempt pick the
+/// GPU automatically; if that attempt fails the video is transcribed again on the CPU.
+pub fn transcribe_native(
+    backend: &mut dyn NativeAsrBackend,
+    media_path: &Path,
+    output_dir: &Path,
+    gpu_capable: bool,
+) -> anyhow::Result<AsrOutput> {
+    let first = if gpu_capable {
+        DevicePreference::Auto
+    } else {
+        DevicePreference::Cpu
+    };
+    let (report, gpu_error) = match backend.run(native_config(media_path, first)) {
+        Ok(report) => (report, None),
+        Err(error) if gpu_capable => {
+            let report = backend
+                .run(native_config(media_path, DevicePreference::Cpu))
+                .map_err(|cpu| {
+                    anyhow::anyhow!(
+                        "native-whisperx failed on the GPU ({error}) and on the CPU ({cpu})"
+                    )
+                })?;
+            (report, Some(error.to_string()))
+        }
+        Err(error) => return Err(anyhow::anyhow!("native-whisperx failed: {error}")),
+    };
+
+    let json_path = whisper_json_path(media_path, output_dir)?;
+    let whisper_json = native_whisperx::whisperx_json_value(&report.transcript, false);
+    std::fs::write(&json_path, serde_json::to_vec_pretty(&whisper_json)?)?;
+    let mut parsed = text_transcripts::parse_whisper_json(&serde_json::to_vec(&whisper_json)?)?;
+    parsed.source = Some(json_path.to_string_lossy().into_owned());
+
+    let provenance = &report.provenance;
+    let device = provenance.device.clone();
+    let mut message = format!(
+        "ASR generated by native-whisperx {} ({} on {})",
+        &NATIVE_WHISPERX_REVISION[..7],
+        provenance.model_id,
+        device.as_deref().unwrap_or("unreported device"),
+    );
+    if let Some(error) = &gpu_error {
+        message.push_str(&format!("; GPU run failed, used the CPU: {error}"));
+    }
+    Ok(AsrOutput {
+        stream: TranscriptStream {
+            source_kind: SourceKind::Asr,
+            language: parsed.language.clone(),
+            source_path: Some(json_path),
+            text: parsed.text.clone(),
+            segments: parsed.segments.into_iter().map(Into::into).collect(),
+            source_cues: Vec::new(),
+            message: Some(message),
+        },
+        run: json!({
+            "provider": "native-whisperx",
+            "revision": NATIVE_WHISPERX_REVISION,
+            "executionProvider": provenance.provider,
+            "modelId": provenance.model_id,
+            "device": device,
+            "cpuFallback": gpu_error,
+            "config": native_config_identity(),
+        }),
+    })
+}
+
+fn native_config(media_path: &Path, device: DevicePreference) -> NativeWhisperxConfig {
+    NativeWhisperxConfig {
+        input: InputSource::Path {
+            path: media_path.to_path_buf(),
+        },
+        asr: AsrConfig {
+            model_id: NATIVE_ASR_MODEL.to_string(),
+            device,
+            ..AsrConfig::default()
+        },
+        translation: TranslationConfig::default(),
+        vad: VadConfig::default(),
+        // Corpus segments are retrieval passages; word alignment is not used.
+        alignment: AlignmentConfig {
+            enabled: false,
+            ..AlignmentConfig::default()
+        },
+        diarization: DiarizationConfig::default(),
+        // The corpus writes its own Whisper JSON evidence file.
+        output: OutputConfig {
+            formats: Vec::new(),
+            ..OutputConfig::default()
+        },
+    }
+}
+
+/// The explicit compatibility provider: a Whisper-CLI-compatible command.
+async fn transcribe_with_command(
+    media_path: &Path,
+    output_dir: &Path,
+    command: &Path,
+    args: &[String],
+    timeout_seconds: Option<u64>,
+) -> anyhow::Result<AsrOutput> {
+    let output_path = whisper_json_path(media_path, output_dir)?;
     if tokio::fs::try_exists(&output_path).await? {
         tokio::fs::remove_file(&output_path).await?;
     }
 
-    run_whisper_command(&command, media_path, &output_dir, args, timeout_seconds).await?;
+    run_whisper_command(command, media_path, output_dir, args, timeout_seconds).await?;
 
     let bytes = tokio::fs::read(&output_path).await.with_context(|| {
         format!(
@@ -46,15 +248,18 @@ pub async fn transcribe_with_command(
     let mut parsed = text_transcripts::parse_whisper_json(&bytes)?;
     parsed.source = Some(output_path.to_string_lossy().into_owned());
 
-    Ok(Some(TranscriptStream {
-        source_kind: SourceKind::Asr,
-        language: parsed.language.clone(),
-        source_path: parsed.source.as_deref().map(PathBuf::from),
-        text: parsed.text.clone(),
-        segments: parsed.segments.into_iter().map(Into::into).collect(),
-        source_cues: Vec::new(),
-        message: Some(format!("ASR generated by {}", command.display())),
-    }))
+    Ok(AsrOutput {
+        stream: TranscriptStream {
+            source_kind: SourceKind::Asr,
+            language: parsed.language.clone(),
+            source_path: parsed.source.as_deref().map(PathBuf::from),
+            text: parsed.text.clone(),
+            segments: parsed.segments.into_iter().map(Into::into).collect(),
+            source_cues: Vec::new(),
+            message: Some(format!("ASR generated by {}", command.display())),
+        },
+        run: json!({ "provider": "command", "command": command, "args": args }),
+    })
 }
 
 async fn run_whisper_command(
@@ -114,19 +319,135 @@ fn whisper_json_path(media_path: &Path, output_dir: &Path) -> anyhow::Result<Pat
     Ok(output_dir.join(output_name))
 }
 
-pub(crate) fn resolve_command(command: &str) -> Option<PathBuf> {
-    std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths)
-            .map(|dir| dir.join(command))
-            .find(|path| path.is_file())
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
-    use super::whisper_json_path;
+    use native_whisperx::{
+        DevicePreference, NativeWhisperxConfig, NativeWhisperxError, NativeWhisperxReport,
+    };
+
+    use super::{producer_identity, transcribe_native, whisper_json_path, NativeAsrBackend};
+
+    /// Fails on anything but the CPU when `gpu_fails`, and records every requested device.
+    struct FakeBackend {
+        gpu_fails: bool,
+        devices: Vec<DevicePreference>,
+    }
+
+    impl NativeAsrBackend for FakeBackend {
+        fn run(
+            &mut self,
+            config: NativeWhisperxConfig,
+        ) -> Result<NativeWhisperxReport, NativeWhisperxError> {
+            self.devices.push(config.asr.device);
+            assert_eq!(config.asr.model_id, "small");
+            assert!(!config.alignment.enabled);
+            if self.gpu_fails && config.asr.device != DevicePreference::Cpu {
+                return Err(NativeWhisperxError::InvalidConfig(
+                    "CUDA out of memory".to_string(),
+                ));
+            }
+            let device = if config.asr.device == DevicePreference::Cpu {
+                "cpu"
+            } else {
+                "cuda:0"
+            };
+            Ok(serde_json::from_value(serde_json::json!({
+                "transcript": {
+                    "language": "en",
+                    "text": "Hello corpus. Music under speech.",
+                    "segments": [
+                        {"index": 0, "startSeconds": 0.0, "endSeconds": 1.5,
+                         "text": "Hello corpus.", "isFinal": true},
+                        {"index": 1, "startSeconds": 1.5, "endSeconds": 3.0,
+                         "text": "Music under speech.", "isFinal": true}
+                    ]
+                },
+                "provenance": {"provider": "candle-whisper", "modelId": "small", "device": device}
+            }))
+            .expect("fake native report"))
+        }
+    }
+
+    #[test]
+    fn native_gpu_run_persists_segments_and_provenance() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut backend = FakeBackend {
+            gpu_fails: false,
+            devices: Vec::new(),
+        };
+        let output = transcribe_native(
+            &mut backend,
+            Path::new("/media/talk.webm"),
+            dir.path(),
+            true,
+        )
+        .unwrap();
+        assert_eq!(backend.devices, [DevicePreference::Auto]);
+        assert_eq!(output.stream.segments.len(), 2);
+        assert_eq!(output.stream.segments[1].text, "Music under speech.");
+        assert_eq!(output.stream.language.as_deref(), Some("en"));
+        assert!(dir.path().join("talk.json").is_file());
+        assert_eq!(output.run["device"], "cuda:0");
+        assert_eq!(output.run["revision"], super::NATIVE_WHISPERX_REVISION);
+        assert!(output.run["cpuFallback"].is_null());
+    }
+
+    #[test]
+    fn failed_gpu_run_falls_back_to_the_cpu() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut backend = FakeBackend {
+            gpu_fails: true,
+            devices: Vec::new(),
+        };
+        let output = transcribe_native(
+            &mut backend,
+            Path::new("/media/talk.webm"),
+            dir.path(),
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            backend.devices,
+            [DevicePreference::Auto, DevicePreference::Cpu]
+        );
+        assert_eq!(output.run["device"], "cpu");
+        assert!(output.run["cpuFallback"]
+            .as_str()
+            .unwrap()
+            .contains("CUDA out of memory"));
+        assert!(output
+            .stream
+            .message
+            .unwrap()
+            .contains("GPU run failed, used the CPU"));
+    }
+
+    #[test]
+    fn cpu_only_build_never_asks_for_the_gpu() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut backend = FakeBackend {
+            gpu_fails: true,
+            devices: Vec::new(),
+        };
+        transcribe_native(
+            &mut backend,
+            Path::new("/media/talk.webm"),
+            dir.path(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(backend.devices, [DevicePreference::Cpu]);
+    }
+
+    #[test]
+    fn producer_identity_pins_the_native_revision() {
+        let identity = producer_identity(None).unwrap();
+        assert_eq!(identity["provider"], "native-whisperx");
+        assert_eq!(identity["revision"], super::NATIVE_WHISPERX_REVISION);
+        assert_eq!(identity["config"]["modelId"], "small");
+    }
 
     #[test]
     fn whisper_json_path_uses_media_file_stem() {

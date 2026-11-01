@@ -552,8 +552,8 @@ pub struct PlanRunRequest {
     /// Keep downloaded media after processing instead of deleting it once every enabled
     /// media stage stored current output (#127).
     pub keep_media: bool,
-    /// ASR transcriber for videos no tracked source configures one for; None falls back to
-    /// `whisper` on PATH.
+    /// Explicit compatibility transcriber for videos no tracked source configures one for;
+    /// None uses the default native-whisperx provider (#73).
     pub transcriber: Option<TranscriberConfig>,
 }
 
@@ -857,17 +857,12 @@ async fn existing_output(
                 };
                 if matching {
                     if detector == "asr" {
-                        let Some(command) = reprocess
-                            .transcriber_command
-                            .clone()
-                            .or_else(|| crate::asr::resolve_command("whisper"))
+                        let Ok(current) =
+                            crate::asr::producer_identity(reprocess.transcriber_command.as_deref())
                         else {
                             continue;
                         };
-                        let Ok(current) = crate::detector_status::file_identity(&command) else {
-                            continue;
-                        };
-                        if stored.get("transcriberExecutable") != Some(&current) {
+                        if stored.get("asrProducer") != Some(&current) {
                             continue;
                         }
                         // The transcribed media: the present file, or downloaded media

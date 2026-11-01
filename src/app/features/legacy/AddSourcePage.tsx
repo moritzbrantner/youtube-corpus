@@ -418,11 +418,11 @@ export function AddSourcePage({
                 />
               </label>
               <label className="grid gap-2">
-                <span className="text-sm font-medium">Transcriber command</span>
+                <span className="text-sm font-medium">Transcriber command (optional)</span>
                 <Input
                   value={transcriberCommand}
                   onChange={(event) => setTranscriberCommand(event.target.value)}
-                  placeholder="whisper"
+                  placeholder="native-whisperx built in"
                   spellCheck={false}
                 />
               </label>

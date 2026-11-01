@@ -224,6 +224,7 @@ async fn ingest_item(
     let mut asr_state = "skipped";
     let mut asr_message = None;
     let mut media_lease = None;
+    let mut asr_run = None;
     if request.asr_enabled {
         media_lease = Some(crate::media_acquisition::lease(pool, video_id).await?);
         asr_attempt = Some(
@@ -235,7 +236,7 @@ async fn ingest_item(
             )
             .await?,
         );
-        let result: anyhow::Result<Option<TranscriptStream>> = async {
+        let result: anyhow::Result<crate::asr::AsrOutput> = async {
             let media_path = match &video_path {
                 Some(path) => path.clone(),
                 None => {
@@ -253,7 +254,7 @@ async fn ingest_item(
                     path
                 }
             };
-            crate::asr::transcribe_with_command(
+            crate::asr::transcribe(
                 &media_path,
                 &item_dir,
                 request.transcriber_command.as_ref(),
@@ -264,7 +265,9 @@ async fn ingest_item(
         }
         .await;
         match result {
-            Ok(Some(stream)) => {
+            Ok(output) => {
+                let stream = output.stream;
+                asr_run = Some(output.run);
                 asr_state = if stream.segments.is_empty() {
                     "skipped"
                 } else {
@@ -272,9 +275,6 @@ async fn ingest_item(
                 };
                 asr_message = stream.message.clone();
                 streams.push(stream);
-            }
-            Ok(None) => {
-                asr_message = Some("Transcriber returned no transcript.".to_string());
             }
             Err(error) => {
                 asr_state = "failed";
@@ -312,14 +312,9 @@ async fn ingest_item(
             processing_config["input"] = crate::detector_status::file_identity(path)?;
         }
         if stream.source_kind == crate::config::SourceKind::Asr {
-            if let Some(command) = request
-                .transcriber_command
-                .clone()
-                .or_else(|| crate::asr::resolve_command("whisper"))
-            {
-                processing_config["transcriberExecutable"] =
-                    crate::detector_status::file_identity(&command)?;
-            }
+            processing_config["asrProducer"] =
+                crate::asr::producer_identity(request.transcriber_command.as_deref())?;
+            processing_config["asrRun"] = asr_run.clone().unwrap_or(serde_json::Value::Null);
         }
         let indexed = upsert_stream(
             &mut tx,

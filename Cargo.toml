@@ -34,7 +34,7 @@ sqlx = { version = "0.9", default-features = false, features = [
   "macros",
 ] }
 thiserror = "2.0"
-tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "process", "fs", "time"] }
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "process", "fs", "time", "sync"] }
 tower-http = { version = "0.7.0", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
@@ -76,8 +76,11 @@ audio-analysis-core = { package = "moenarch-audio-analysis-core", git = "https:/
 audio-analysis-io = { package = "moenarch-audio-analysis-io", git = "https://github.com/moritzbrantner/audio-analysis", rev = "48cbb1da8b839f2986827feaa25a45cb53767aa4" }
 audio-analysis-processing = { package = "moenarch-audio-analysis-processing", git = "https://github.com/moritzbrantner/audio-analysis", rev = "48cbb1da8b839f2986827feaa25a45cb53767aa4" }
 
-# Translation planner/executor and native OPUS-MT provider (#69, native-whisperx #373).
+# Default ASR through one reused `TranscriptionSession` (#73), plus the translation
+# planner/executor and native OPUS-MT provider (#69, native-whisperx #373).
 native-whisperx = { git = "https://github.com/moritzbrantner/native-whisperx", rev = "40f16b6d7e054356d3154f3d99ea4e5466044ae7", default-features = false, features = [
+  "native",
+  "media-decode",
   "translation",
 ] }
 
@@ -85,6 +88,11 @@ native-whisperx = { git = "https://github.com/moritzbrantner/native-whisperx", r
 search-engine = { git = "https://github.com/moritzbrantner/search-engine", rev = "3bde04c958fb2bba19e9e75584793518999bfb33" }
 
 audio-contracts = { package = "moenarch-audio-contracts", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
+
+[features]
+# Default ASR on CUDA when a GPU is present (building needs the CUDA toolkit). Without it, or
+# when a GPU run fails, ASR runs on the CPU (#73).
+cuda = ["native-whisperx/cuda"]
 
 [dev-dependencies]
 tempfile = "=3.27.0"
@@ -122,6 +130,7 @@ moenarch-text-core = { git = "https://github.com/moritzbrantner/nlp-stack", rev 
 # AHC speaker clustering of audio-analysis#206 (youtube-corpus#159).
 moenarch-audio-analysis-speakers = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "48cbb1da8b839f2986827feaa25a45cb53767aa4" }
 moenarch-audio-analysis-transcription = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "48cbb1da8b839f2986827feaa25a45cb53767aa4" }
+moenarch-audio-analysis-io = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "48cbb1da8b839f2986827feaa25a45cb53767aa4" }
 moenarch-text-transcripts = { git = "https://github.com/moritzbrantner/nlp-stack", rev = "19b0e1e86ac1fd36117921a4c027c2653ff97fd5" }
 moenarch-video-analysis-core = { git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004" }
 # Foundation c2c1ab1 depends on the registry name `search-kernels` and resolves it to this exact

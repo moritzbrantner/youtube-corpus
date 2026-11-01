@@ -79,7 +79,8 @@ metadata.
    file into video items.
 3. YouTube sources use `yt-dlp` for discovery and metadata.
 4. Caption files are downloaded and parsed when enabled.
-5. ASR runs only when enabled and a transcriber command is available.
+5. When enabled, ASR runs through the pinned native-whisperx library (one model-reusing
+   session, GPU with CPU fallback in `cuda` builds), or an explicitly configured command.
 6. Transcript streams and segments are written to Postgres.
 7. Deterministic text embeddings are generated for semantic search.
 
