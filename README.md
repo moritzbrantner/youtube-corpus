@@ -151,7 +151,8 @@ cargo run -- ingest --url "$URL" --no-asr
 By default the tool requests manual and auto captions in English and transcribes
 the audio with [native-whisperx](https://github.com/moritzbrantner/native-whisperx),
 linked as a library at the exact revision pinned in `Cargo.toml` (Whisper `small`,
-language detected per video, no word alignment). One transcription session keeps
+no word alignment). It decodes in the first requested caption language, because
+native language detection does not work yet (native-whisperx#434). One transcription session keeps
 the model loaded across videos; it downloads into the Hugging Face cache on first
 use. Build with `--features cuda` to run it on the GPU when one is present; a
 failed GPU run is retried on the CPU. Every ASR stream records the producer
