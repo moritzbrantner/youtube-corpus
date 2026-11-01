@@ -857,10 +857,9 @@ async fn existing_output(
                 };
                 if matching {
                     if detector == "asr" {
-                        let Ok(current) = crate::asr::producer_identity(
-                            reprocess.transcriber_command.as_deref(),
-                            &reprocess.caption_languages,
-                        ) else {
+                        let Ok(current) =
+                            crate::asr::producer_identity(reprocess.transcriber_command.as_deref())
+                        else {
                             continue;
                         };
                         if stored.get("asrProducer") != Some(&current) {

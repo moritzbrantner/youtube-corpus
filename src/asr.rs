@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -26,17 +26,6 @@ use crate::translation::NATIVE_WHISPERX_REVISION;
 /// Whisper checkpoint of the default native provider (multilingual).
 pub const NATIVE_ASR_MODEL: &str = "small";
 
-/// The language native ASR decodes in: the source's first requested caption language
-/// (`en-US` → `en`). Native language detection returns punctuation-only transcripts at the
-/// pinned revision (native-whisperx#434), so the corpus always passes a language.
-pub fn native_language(caption_languages: &[String]) -> Option<String> {
-    caption_languages
-        .iter()
-        .map(|language| language.split(['-', '_']).next().unwrap_or("").trim())
-        .find(|language| !language.is_empty())
-        .map(str::to_ascii_lowercase)
-}
-
 /// A transcript plus the producer facts recorded in the stream's provenance.
 #[derive(Debug)]
 pub struct AsrOutput {
@@ -47,10 +36,7 @@ pub struct AsrOutput {
 
 /// Stable identity of the ASR producer a request selects. Stored with every ASR stream and
 /// compared on reuse, so a changed revision, model or command invalidates earlier output.
-pub fn producer_identity(
-    command: Option<&Path>,
-    caption_languages: &[String],
-) -> anyhow::Result<Value> {
+pub fn producer_identity(command: Option<&Path>) -> anyhow::Result<Value> {
     Ok(match command {
         Some(command) => json!({
             "provider": "command",
@@ -59,13 +45,14 @@ pub fn producer_identity(
         None => json!({
             "provider": "native-whisperx",
             "revision": NATIVE_WHISPERX_REVISION,
-            "config": native_config_identity(native_language(caption_languages).as_deref()),
+            "config": native_config_identity(),
         }),
     })
 }
 
-fn native_config_identity(language: Option<&str>) -> Value {
-    json!({ "modelId": NATIVE_ASR_MODEL, "language": language, "alignment": false,
+/// Native ASR detects the spoken language itself (Whisper language ID on the first 30 s).
+fn native_config_identity() -> Value {
+    json!({ "modelId": NATIVE_ASR_MODEL, "language": "detect", "alignment": false,
         "vad": "energy", "diarization": false })
 }
 
@@ -76,7 +63,6 @@ pub async fn transcribe(
     command: Option<&PathBuf>,
     args: &[String],
     timeout_seconds: Option<u64>,
-    caption_languages: &[String],
 ) -> anyhow::Result<AsrOutput> {
     let output_dir = work_dir.join("asr");
     tokio::fs::create_dir_all(&output_dir).await?;
@@ -85,53 +71,29 @@ pub async fn transcribe(
             transcribe_with_command(media_path, &output_dir, command, args, timeout_seconds).await
         }
         None => {
-            let (reply, answer) = tokio::sync::oneshot::channel();
-            NATIVE_WORKER
-                .send(NativeJob {
-                    media_path: media_path.to_path_buf(),
-                    output_dir,
-                    language: native_language(caption_languages),
-                    reply,
-                })
-                .context("native ASR worker stopped")?;
-            answer.await.context("native ASR worker stopped")?
+            let media_path = media_path.to_path_buf();
+            tokio::task::spawn_blocking(move || {
+                // A panic fails only that video; later videos keep using the session.
+                let mut session = NATIVE_SESSION
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                transcribe_native(
+                    &mut *session,
+                    &media_path,
+                    &output_dir,
+                    cfg!(feature = "cuda"),
+                )
+            })
+            .await
+            .context("native-whisperx panicked")?
         }
     }
 }
 
-struct NativeJob {
-    media_path: PathBuf,
-    output_dir: PathBuf,
-    language: Option<String>,
-    reply: tokio::sync::oneshot::Sender<anyhow::Result<AsrOutput>>,
-}
-
-/// One worker thread owns the process's [`TranscriptionSession`] (it is not `Send`,
-/// native-whisperx#432), so the
-/// Whisper model stays loaded between videos and jobs run one at a time.
-static NATIVE_WORKER: LazyLock<std::sync::mpsc::Sender<NativeJob>> = LazyLock::new(|| {
-    let (jobs, queue) = std::sync::mpsc::channel::<NativeJob>();
-    std::thread::Builder::new()
-        .name("native-asr".to_string())
-        .spawn(move || {
-            let mut session = TranscriptionSession::new();
-            for job in queue {
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    transcribe_native(
-                        &mut session,
-                        &job.media_path,
-                        &job.output_dir,
-                        job.language.as_deref(),
-                        cfg!(feature = "cuda"),
-                    )
-                }))
-                .unwrap_or_else(|_| Err(anyhow::anyhow!("native-whisperx panicked")));
-                let _ = job.reply.send(result);
-            }
-        })
-        .expect("start the native ASR worker thread");
-    jobs
-});
+/// The process's [`TranscriptionSession`]: the Whisper model stays loaded between videos and
+/// jobs run one at a time.
+static NATIVE_SESSION: LazyLock<Mutex<TranscriptionSession>> =
+    LazyLock::new(|| Mutex::new(TranscriptionSession::new()));
 
 /// The native ASR seam: the real [`TranscriptionSession`] in production, a fake in tests.
 pub trait NativeAsrBackend {
@@ -156,7 +118,6 @@ pub fn transcribe_native(
     backend: &mut dyn NativeAsrBackend,
     media_path: &Path,
     output_dir: &Path,
-    language: Option<&str>,
     gpu_capable: bool,
 ) -> anyhow::Result<AsrOutput> {
     let first = if gpu_capable {
@@ -164,7 +125,7 @@ pub fn transcribe_native(
     } else {
         DevicePreference::Cpu
     };
-    let config = |device| native_config(media_path, output_dir, language, device);
+    let config = |device| native_config(media_path, output_dir, device);
     let (report, gpu_error) = match backend.run(config(first)) {
         Ok(report) => (report, None),
         // A configuration error fails the same way on the CPU.
@@ -213,7 +174,7 @@ pub fn transcribe_native(
             "modelId": provenance.model_id,
             "device": device,
             "cpuFallback": gpu_error,
-            "config": native_config_identity(language),
+            "config": native_config_identity(),
         }),
     })
 }
@@ -221,7 +182,6 @@ pub fn transcribe_native(
 fn native_config(
     media_path: &Path,
     output_dir: &Path,
-    language: Option<&str>,
     device: DevicePreference,
 ) -> NativeWhisperxConfig {
     NativeWhisperxConfig {
@@ -230,7 +190,7 @@ fn native_config(
         },
         asr: AsrConfig {
             model_id: NATIVE_ASR_MODEL.to_string(),
-            language: language.map(str::to_string),
+            language: None,
             device,
             ..AsrConfig::default()
         },
@@ -369,7 +329,7 @@ mod tests {
             self.devices.push(config.asr.device);
             assert_eq!(config.asr.model_id, "small");
             assert!(!config.alignment.enabled);
-            assert_eq!(config.asr.language.as_deref(), Some("en"));
+            assert_eq!(config.asr.language, None, "native ASR detects the language");
             if self.gpu_fails && config.asr.device != DevicePreference::Cpu {
                 return Err(NativeWhisperxError::Transcription(
                     "CUDA out of memory".to_string(),
@@ -408,7 +368,6 @@ mod tests {
             &mut backend,
             Path::new("/media/talk.webm"),
             dir.path(),
-            Some("en"),
             true,
         )
         .unwrap();
@@ -433,7 +392,6 @@ mod tests {
             &mut backend,
             Path::new("/media/talk.webm"),
             dir.path(),
-            Some("en"),
             true,
         )
         .unwrap();
@@ -464,7 +422,6 @@ mod tests {
             &mut backend,
             Path::new("/media/talk.webm"),
             dir.path(),
-            Some("en"),
             false,
         )
         .unwrap();
@@ -473,21 +430,11 @@ mod tests {
 
     #[test]
     fn producer_identity_pins_the_native_revision() {
-        let identity = producer_identity(None, &["en-US".to_string()]).unwrap();
+        let identity = producer_identity(None).unwrap();
         assert_eq!(identity["provider"], "native-whisperx");
         assert_eq!(identity["revision"], super::NATIVE_WHISPERX_REVISION);
         assert_eq!(identity["config"]["modelId"], "small");
-        assert_eq!(identity["config"]["language"], "en");
-    }
-
-    #[test]
-    fn native_language_is_the_first_caption_language() {
-        use super::native_language;
-        assert_eq!(
-            native_language(&["de_DE".into(), "en".into()]).as_deref(),
-            Some("de")
-        );
-        assert_eq!(native_language(&[]), None);
+        assert_eq!(identity["config"]["language"], "detect");
     }
 
     #[test]

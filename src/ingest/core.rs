@@ -260,7 +260,6 @@ async fn ingest_item(
                 request.transcriber_command.as_ref(),
                 &request.transcriber_args,
                 request.transcriber_timeout_seconds,
-                &request.caption.languages,
             )
             .await
         }
@@ -313,10 +312,8 @@ async fn ingest_item(
             processing_config["input"] = crate::detector_status::file_identity(path)?;
         }
         if stream.source_kind == crate::config::SourceKind::Asr {
-            processing_config["asrProducer"] = crate::asr::producer_identity(
-                request.transcriber_command.as_deref(),
-                &request.caption.languages,
-            )?;
+            processing_config["asrProducer"] =
+                crate::asr::producer_identity(request.transcriber_command.as_deref())?;
             processing_config["asrRun"] = asr_run.clone().unwrap_or(serde_json::Value::Null);
         }
         let indexed = upsert_stream(
