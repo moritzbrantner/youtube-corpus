@@ -241,7 +241,7 @@ pub struct ExtractEntitiesArgs {
     /// Corpus id or slug.
     #[arg(long)]
     pub corpus: String,
-    /// Directory holding (or receiving) the bert-base-NER model bundle.
+    /// Directory holding (or receiving) the multilingual NER model bundle.
     #[arg(long, default_value = crate::entities::DEFAULT_MODEL_DIR)]
     pub model_dir: PathBuf,
     /// Fail instead of downloading a missing model bundle.

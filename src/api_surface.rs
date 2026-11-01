@@ -244,7 +244,7 @@ pub fn package_surface() -> PackageSurface {
             surface_operation(
                 "corpus.entities.extract",
                 "Extract entity mentions",
-                "Runs the canonical nlp-stack bert-base-NER producer over each corpus video's transcript and visible-text tracks, replacing that video's previous mentions.",
+                "Runs the canonical nlp-stack multilingual (en/de/es) NER producer over each corpus video's transcript and visible-text tracks, replacing that video's previous mentions.",
                 serde_json::json!({
                     "corpusId": "00000000-0000-0000-0000-000000000000",
                     "allowDownload": true

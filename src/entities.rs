@@ -1,7 +1,9 @@
 //! Source-grounded entity occurrences (Decision Atlas 4.1-4.3, issue #62).
 //!
 //! Named-entity recognition is consumed from the canonical nlp-stack producer
-//! (`text-linguistics` with the local `bert-base-NER` token classifier); this module only
+//! (`text-linguistics` with the local multilingual `distilbert-multilingual-ner-hrl` token
+//! classifier for English, German and Spanish). Each sentence is routed by its detected language
+//! and sentences in other languages are skipped rather than tagged as English; this module only
 //! adapts its output into time-linked mentions of transcript segments and visible-text (OCR)
 //! tracks, and explores them. A mention ("Spoken" or "On-screen text") is never merged with a
 //! person shown on screen or heard: those come from the corpus `people` identities owned by the
@@ -15,14 +17,19 @@ use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 use text_core::{split_sentence_spans, tokenize, TextProcessingOptions};
 use text_linguistics::{
-    extract_named_entities_with_labeler, CandleTokenClassifier, EntityType, NamedEntity,
+    extract_named_entities_with_labeler, CandleTokenClassifier, EntityType, LanguageDecision,
+    LanguageDetectionOptions, LanguageDetector, ModelPreset, NamedEntity,
 };
 use uuid::Uuid;
 
 /// Producer identity recorded on every extraction run.
 pub const ENTITY_PRODUCER: &str = "nlp-stack/text-linguistics";
 /// Exact nlp-stack revision this repository pins (see `Cargo.toml`).
-pub const ENTITY_PRODUCER_VERSION: &str = "19b0e1e86ac1fd36117921a4c027c2653ff97fd5";
+pub const ENTITY_PRODUCER_VERSION: &str = "3a82bc7e497bf41c5f2dd9d9ba9a5a12536979ab";
+/// The nlp-stack NER preset; it covers [`ModelPreset::supported_languages`] (en, de, es).
+pub const ENTITY_PRESET: ModelPreset = ModelPreset::DistilbertMultilingualNerHrl;
+/// Model id recorded in stage identities, so a model change re-extracts stored mentions.
+pub const ENTITY_MODEL: &str = "distilbert-multilingual-ner-hrl";
 /// Mentions below this producer confidence are dropped as unreliable.
 pub const MIN_ENTITY_CONFIDENCE: f32 = 0.6;
 /// Default directory for downloaded model bundles (generated material lives in
@@ -74,15 +81,16 @@ pub struct RecognizedEntity {
 /// The canonical local NER model, loaded once and reused for every text.
 pub struct EntityRecognizer {
     labeler: CandleTokenClassifier,
+    detector: LanguageDetector,
     model: String,
 }
 
 impl EntityRecognizer {
-    /// Loads the `bert-base-NER` bundle from `model_dir`, downloading it from Hugging Face
+    /// Loads the multilingual NER bundle from `model_dir`, downloading it from Hugging Face
     /// first when it is missing and `allow_download` is set.
     pub fn load(model_dir: &Path, allow_download: bool) -> anyhow::Result<Self> {
-        use model_runtime::{HuggingFaceDownloader, ModelBundleStore, ModelPreset};
-        let spec = ModelPreset::BertBaseNer.spec();
+        use model_runtime::{HuggingFaceDownloader, ModelBundleStore};
+        let spec = ENTITY_PRESET.spec();
         let revision = spec.revision_value().unwrap_or("main").to_string();
         let store = ModelBundleStore::new(model_dir)
             .downloader(HuggingFaceDownloader::new().progress(true).max_retries(2));
@@ -101,7 +109,10 @@ impl EntityRecognizer {
             .with_context(|| format!("failed to load NER model {}", spec.name))?;
         Ok(Self {
             labeler,
-            model: format!("{}@{revision}", spec.name),
+            detector: LanguageDetector {
+                options: LanguageDetectionOptions::default(),
+            },
+            model: format!("{}@{revision}", ENTITY_PRESET.repo_id()),
         })
     }
 
@@ -109,7 +120,28 @@ impl EntityRecognizer {
         &self.model
     }
 
-    pub fn recognize(&mut self, text: &str) -> anyhow::Result<Vec<RecognizedEntity>> {
+    /// The detected language of `text` (ISO 639-1), only when the detector decided it.
+    pub fn detect_language(&self, text: &str) -> Option<String> {
+        match self.detector.classify(text) {
+            (LanguageDecision::Detected, candidates) => candidates
+                .into_iter()
+                .next()
+                .map(|prediction| prediction.language),
+            _ => None,
+        }
+    }
+
+    /// Recognizes entities in the sentences of `text` whose language the model supports.
+    ///
+    /// Each sentence is routed by its own detected language; a sentence whose language is
+    /// undecided (too short or ambiguous) takes `fallback_language` (the source's declared
+    /// language, else the video's detected one). Sentences in any other language, or with no
+    /// language at all, are skipped instead of being tagged as English.
+    pub fn recognize(
+        &mut self,
+        text: &str,
+        fallback_language: Option<&str>,
+    ) -> anyhow::Result<Vec<RecognizedEntity>> {
         if text.trim().is_empty() {
             return Ok(Vec::new());
         }
@@ -117,11 +149,36 @@ impl EntityRecognizer {
             include_punctuation: true,
             ..TextProcessingOptions::default()
         };
-        let sentences = split_sentence_spans(text, &processing);
-        let tokens = tokenize(text, &processing);
-        let entities =
-            extract_named_entities_with_labeler(text, &sentences, &tokens, &mut self.labeler)?;
-        Ok(align_entities(text, &entities))
+        let mut recognized = Vec::new();
+        for sentence in split_sentence_spans(text, &processing) {
+            let detected = self.detect_language(&sentence.text);
+            let Some(language) = detected.as_deref().or(fallback_language) else {
+                continue;
+            };
+            if !ENTITY_PRESET.supports_language(language) {
+                continue;
+            }
+            let offset = sentence.span.byte_start;
+            let sentence_text = &text[offset..sentence.span.byte_end];
+            let sentences = split_sentence_spans(sentence_text, &processing);
+            let tokens = tokenize(sentence_text, &processing);
+            let entities = extract_named_entities_with_labeler(
+                sentence_text,
+                &sentences,
+                &tokens,
+                &mut self.labeler,
+            )?;
+            recognized.extend(
+                align_entities(sentence_text, &entities)
+                    .into_iter()
+                    .map(|entity| RecognizedEntity {
+                        byte_start: entity.byte_start + offset,
+                        byte_end: entity.byte_end + offset,
+                        ..entity
+                    }),
+            );
+        }
+        Ok(recognized)
     }
 }
 
@@ -334,6 +391,8 @@ pub(crate) struct TextSource {
     pub(crate) start_seconds: Option<f64>,
     pub(crate) end_seconds: Option<f64>,
     pub(crate) text: String,
+    /// Declared language of the segment (else its stream) or track, if any.
+    pub(crate) language: Option<String>,
 }
 
 /// A video's analyzable text: the segments of its preferred (or best) transcript stream first,
@@ -353,8 +412,10 @@ pub(crate) async fn video_text_sources(
     let mut sources = Vec::new();
     if let Some(stream_id) = stream_id {
         let rows = sqlx::query(
-            "SELECT id, start_seconds, end_seconds, text FROM transcript_segments
-             WHERE stream_id = $1 ORDER BY segment_index",
+            "SELECT t.id, t.start_seconds, t.end_seconds, t.text,
+                    coalesce(t.language, s.language) AS language
+             FROM transcript_segments t JOIN transcript_streams s ON s.id = t.stream_id
+             WHERE t.stream_id = $1 ORDER BY t.segment_index",
         )
         .bind(stream_id)
         .fetch_all(pool)
@@ -366,12 +427,13 @@ pub(crate) async fn video_text_sources(
                 start_seconds: row.try_get("start_seconds")?,
                 end_seconds: row.try_get("end_seconds")?,
                 text: row.try_get("text")?,
+                language: row.try_get("language")?,
             });
         }
     }
     let segments = sources.len();
     let rows = sqlx::query(
-        "SELECT id, start_seconds, end_seconds, text FROM visual_text_tracks
+        "SELECT id, start_seconds, end_seconds, text, language FROM visual_text_tracks
          WHERE video_id = $1 ORDER BY start_seconds NULLS LAST, id",
     )
     .bind(video_id)
@@ -384,6 +446,7 @@ pub(crate) async fn video_text_sources(
             start_seconds: row.try_get("start_seconds")?,
             end_seconds: row.try_get("end_seconds")?,
             text: row.try_get("text")?,
+            language: row.try_get("language")?,
         });
     }
     Ok(VideoTextSources {
@@ -453,9 +516,23 @@ async fn extract_entities_for_videos(
         }
 
         let (returned, mentions) = tokio::task::spawn_blocking(move || {
+            // Undecided sentences without a declared language take the language detected
+            // over the video's whole transcript (or visible text when it has none).
+            let video_text = |modality| {
+                sources
+                    .iter()
+                    .filter(|source| source.modality == modality)
+                    .map(|source| source.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            let video_language = recognizer
+                .detect_language(&video_text(EntityModality::Spoken))
+                .or_else(|| recognizer.detect_language(&video_text(EntityModality::VisibleText)));
             let mut mentions = Vec::new();
             for source in &sources {
-                let entities = match recognizer.recognize(&source.text) {
+                let fallback = source.language.as_deref().or(video_language.as_deref());
+                let entities = match recognizer.recognize(&source.text, fallback) {
                     Ok(entities) => entities,
                     Err(error) => return (recognizer, Err(error)),
                 };
@@ -1056,14 +1133,14 @@ mod tests {
 
     #[test]
     fn subword_pieces_snap_to_whole_words_and_merge() {
-        // Pieces the bert-base-NER classifier actually returns for this sentence.
+        // Sub-word pieces as a token classifier returns them for this sentence.
         let text = "Welcome to the Helios conference in Berlin with Alan Turing";
         let aligned = align_entities(
             text,
             &[
-                entity(EntityType::Misc, 15, 17, 0.85),
-                entity(EntityType::Organization, 17, 20, 0.46),
-                entity(EntityType::Misc, 20, 21, 0.54),
+                entity(EntityType::Organization, 15, 17, 0.85),
+                entity(EntityType::Person, 17, 20, 0.46),
+                entity(EntityType::Organization, 20, 21, 0.54),
                 entity(EntityType::Location, 36, 42, 0.99),
                 entity(EntityType::Person, 48, 58, 0.99),
             ],
@@ -1081,7 +1158,7 @@ mod tests {
         assert_eq!(
             names,
             [
-                ("misc", "Helios", "helios"),
+                ("organization", "Helios", "helios"),
                 ("location", "Berlin", "berlin"),
                 ("person", "Alan Turing", "alan turing"),
             ]

@@ -79,7 +79,7 @@ pub const DETECTORS: &[DetectorInfo] = &[
     DetectorInfo {
         id: "entities",
         label: "Named entities",
-        producer: "nlp-stack text-linguistics bert-base-NER",
+        producer: "nlp-stack text-linguistics distilbert-multilingual-ner-hrl",
         available: true,
         note: None,
         takes_languages: false,
@@ -1049,7 +1049,7 @@ async fn stage_identity(
     ).bind(video).bind(stream).fetch_one(pool).await?;
     Ok(serde_json::json!({ "detector": detector, "input": input,
         "producerRevision": crate::entities::ENTITY_PRODUCER_VERSION,
-        "model": "bert-base-NER", "minConfidence": crate::entities::MIN_ENTITY_CONFIDENCE }))
+        "model": crate::entities::ENTITY_MODEL, "minConfidence": crate::entities::MIN_ENTITY_CONFIDENCE }))
 }
 
 async fn run_stage(

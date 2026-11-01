@@ -143,8 +143,8 @@ export function CorpusEntities({ corpusId }: { corpusId: string }) {
         </form>
         {extractMutation.isPending ? (
           <p className="text-sm text-muted-foreground">
-            Running the nlp-stack bert-base-NER model over transcripts and visible text. The first
-            run downloads the model (about 400 MB).
+            Running the nlp-stack multilingual NER model over en/de/es transcripts and visible text. The first
+            run downloads the model (about 540 MB).
           </p>
         ) : null}
         {extractMutation.data ? (
