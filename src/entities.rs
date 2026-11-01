@@ -25,7 +25,7 @@ use uuid::Uuid;
 /// Producer identity recorded on every extraction run.
 pub const ENTITY_PRODUCER: &str = "nlp-stack/text-linguistics";
 /// Exact nlp-stack revision this repository pins (see `Cargo.toml`).
-pub const ENTITY_PRODUCER_VERSION: &str = "3a82bc7e497bf41c5f2dd9d9ba9a5a12536979ab";
+pub const ENTITY_PRODUCER_VERSION: &str = "22174b23fe30678a41491d71c510337e056d7615";
 /// The nlp-stack NER preset; it covers [`ModelPreset::supported_languages`] (en, de, es).
 pub const ENTITY_PRESET: ModelPreset = ModelPreset::DistilbertMultilingualNerHrl;
 /// Model id recorded in stage identities, so a model change re-extracts stored mentions.
