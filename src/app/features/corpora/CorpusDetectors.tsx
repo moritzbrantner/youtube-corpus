@@ -91,8 +91,8 @@ export function PipelineStages({ corpusId }: { corpusId: string }) {
         <SurfaceDescription>
           The corpus sets the default; a tracked source can switch single stages on or off; a video
           can be overridden within this corpus only. A video found through several sources gets
-          every stage any of them requests, run once. Reusable workflow definitions are not
-          integrated yet, so this corpus detector plan is the pipeline.
+          every stage any of them requests, run once. Running a processing workflow replaces the
+          corpus default with that workflow's enabled stages.
         </SurfaceDescription>
       </SurfaceHeader>
       <SurfaceContent className="grid gap-6">

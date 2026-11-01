@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as React from "react";
 
 import {
   Badge,
@@ -30,6 +31,7 @@ import {
 } from "./api";
 import { PipelineStages, VideoPlan, useDetectorProfiles } from "./CorpusDetectors";
 import { errorMessage } from "./CorpusLabels";
+import { ProcessingWorkflows } from "./ProcessingWorkflows";
 import { corpusKeys } from "./query-keys";
 import {
   attemptUrl,
@@ -40,28 +42,47 @@ import {
 } from "./url-state";
 import { StageStateBadge, VideoProcessing } from "./VideoProcessing";
 
+// The shared Workflow Editor is large (graph canvas, TypeScript port checker); load it only
+// when a definition is opened for editing.
+const ProcessingWorkflowEditor = React.lazy(() => import("./ProcessingWorkflowEditor"));
+
 type ProcessingPageProps = {
   corpusId: string;
   attemptId: string | null;
+  editWorkflowId: string | null;
   state: CorpusUrlState;
   onUpdate: (patch: Partial<CorpusUrlState>) => void;
 };
 
 /**
- * `/processing`: the corpus pipeline, recorded runs and one selected video's stages;
- * `/processing/attempts/:id`: one recorded attempt (#103, Atlas 6.2).
+ * `/processing`: the shared processing workflow, the corpus pipeline, recorded runs and one
+ * selected video's stages; `/processing/attempts/:id`: one recorded attempt (#103, Atlas 6.2);
+ * `/processing/workflows/:id`: the shared Workflow Editor on one definition (#108).
  */
 export function CorpusProcessingPage({
   corpusId,
   attemptId,
+  editWorkflowId,
   state,
   onUpdate,
 }: ProcessingPageProps) {
   if (attemptId) {
     return <AttemptInspector corpusId={corpusId} attemptId={attemptId} />;
   }
+  if (editWorkflowId) {
+    return (
+      <React.Suspense fallback={<LoadingState label="Loading the Workflow Editor" />}>
+        <ProcessingWorkflowEditor
+          key={editWorkflowId}
+          corpusId={corpusId}
+          workflowId={editWorkflowId}
+        />
+      </React.Suspense>
+    );
+  }
   return (
     <div className="grid gap-4">
+      <ProcessingWorkflows corpusId={corpusId} />
       <PipelineStages corpusId={corpusId} />
       <div className="grid gap-4 xl:grid-cols-2">
         <RunList corpusId={corpusId} state={state} onUpdate={onUpdate} />

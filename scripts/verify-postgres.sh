@@ -30,6 +30,7 @@ cargo test --test video_inspection_db -- --ignored
 cargo test --test processing_runs_db -- --ignored
 cargo test --test entity_explorer_db -- --ignored
 cargo test --test detector_profiles_db -- --ignored
+cargo test --test processing_workflows_db -- --ignored
 cargo test --test face_matching_db -- --ignored
 cargo test --test face_matching_acceptance_db -- --ignored
 cargo test --test voice_matching_db -- --ignored
