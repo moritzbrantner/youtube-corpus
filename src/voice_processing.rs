@@ -27,7 +27,7 @@ use crate::multimodal::{
     UpsertVoiceObservationRequest, UpsertVoiceTrackRequest,
 };
 
-pub const AUDIO_ANALYSIS_REVISION: &str = "48cbb1da8b839f2986827feaa25a45cb53767aa4";
+pub const AUDIO_ANALYSIS_REVISION: &str = "c058cac6235c6471779bd0a87f5076549c47958b";
 pub const VOICE_PROCESSOR: &str = "youtube-corpus/voices";
 pub const VOICE_MODEL: &str = "Wespeaker/wespeaker-voxceleb-resnet34-LM";
 pub const VOICE_MODEL_VERSION: &str = "f0c48c298fd835726c27956a5d617bad7115627e";
