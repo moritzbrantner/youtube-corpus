@@ -139,6 +139,44 @@ pub enum Command {
     /// Runs a workflow plan: ingest its videos into a corpus, run the enabled stages, write
     /// the citable exports and release downloaded media (#128).
     Process(ProcessArgs),
+    /// Cuts a verifiable scene clip, audio-only excerpt and keyframes of a span (or of stored
+    /// scenes) with a SHA-256 manifest (#116).
+    Extract(ExtractArgs),
+}
+
+#[derive(Debug, Parser)]
+#[command(args_override_self = true)]
+pub struct ExtractArgs {
+    #[arg(long)]
+    pub youtube_id: String,
+    /// Span start in seconds (with --end); the clip covers every stored scene it overlaps.
+    #[arg(long, requires = "end", conflicts_with = "scene")]
+    pub start: Option<f64>,
+    #[arg(long, requires = "start")]
+    pub end: Option<f64>,
+    /// Stored scene id to extract (repeatable), instead of a span.
+    #[arg(long, required_unless_present = "start")]
+    pub scene: Vec<Uuid>,
+    /// What to cut (default: all).
+    #[arg(long, value_enum, value_delimiter = ',')]
+    pub kind: Vec<crate::media_extracts::ExtractKind>,
+    /// Tallest source video to cut from.
+    #[arg(long, default_value_t = crate::media_acquisition::SCENES_MAX_HEIGHT)]
+    pub max_height: u32,
+    /// Extracts land in `<out-dir>/<youtube id>/<span or scenes>/` with `manifest.json`.
+    #[arg(long, default_value = "use-case-output/extracts")]
+    pub out_dir: PathBuf,
+    #[arg(long, default_value = "use-case-output/youtube-corpus")]
+    pub work_dir: PathBuf,
+    /// Owner opt-in: extract a video whose licence is not Creative Commons.
+    #[arg(long)]
+    pub allow_non_cc: bool,
+    /// Keep source media this extract had to download instead of deleting it once cut.
+    #[arg(long)]
+    pub keep_media: bool,
+    /// Revision recorded in the manifest; defaults to `youtube-corpus@<version>`.
+    #[arg(long)]
+    pub producer_revision: Option<String>,
 }
 
 #[derive(Debug, Parser)]

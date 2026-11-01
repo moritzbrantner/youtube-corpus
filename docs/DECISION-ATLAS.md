@@ -151,6 +151,10 @@ This is the repository-owned, feature-oriented source for **what YouTube Corpus 
   Status: adopted 2026-10-31 (issue #128 defaults).  
   A workflow plan names a corpus, its videos and its enabled stages. Running it ingests metadata and captions, runs the corpus plan under 2.11 and 2.12, and writes the corpus's versioned exports with a report of every stage outcome and of the media lifecycle. A video whose stated YouTube licence does not match the plan's required licence (Creative Commons by default) is not stored. Re-running an unchanged plan reuses every stage and downloads nothing. When a run must acquire media again, every enabled media stage runs on the new file, so no stage output refers to replaced media and the new file is released afterwards.
 
+- **2.14 Verifiable media extracts of a span replace bundling whole videos.**  
+  Status: adopted 2026-11-01 (issue #116 defaults; owner direction 2026-10-22, belief-lab#35).  
+  For a span or stored scenes of a video the corpus cuts a scene clip and an audio-only excerpt covering the persisted scenes the span overlaps, at their stored boundaries, and one keyframe per covering scene. A span without scene evidence gets only an audio excerpt of exactly the span and is reported without scenes; no scene is invented. A manifest records each file's SHA-256 and size, the source media's SHA-256 and format ids, the exact range and scene ids, the video's stated licence, and the producer, cutter and scene-detector revisions with the cutter's config hash. Videos whose licence is not Creative Commons are refused unless the owner opts in. Plan extracts are cut before the media is released; extracting released media acquires it again and deletes it once cut. The same inputs give the same bytes, and an intact earlier extract is reused.
+
 ## 3. Finding material inside videos
 
 - **3.1 Search transcript words, phrases, and passages across the corpus.**  

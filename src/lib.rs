@@ -25,6 +25,7 @@ pub mod identities;
 pub mod ingest;
 pub mod media_acquisition;
 pub mod media_evidence;
+pub mod media_extracts;
 pub mod multimodal;
 pub mod person_names;
 pub mod provenance;

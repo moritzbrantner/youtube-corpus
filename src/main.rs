@@ -230,6 +230,45 @@ async fn run_command(
                 report.failures
             );
         }
+        Command::Extract(args) => {
+            use youtube_corpus::media_extracts::{
+                extract_media, ExtractRequest, ExtractSelection, DEFAULT_REQUIRED_LICENSE,
+            };
+            let config = AppConfig::from_env_and_cli(database_url)?;
+            let pool = youtube_corpus::db::connect(&config.database_url).await?;
+            let video_id: uuid::Uuid =
+                sqlx::query_scalar("SELECT id FROM videos WHERE youtube_id = $1")
+                    .bind(&args.youtube_id)
+                    .fetch_optional(&pool)
+                    .await?
+                    .with_context(|| format!("video {} is not in the corpus", args.youtube_id))?;
+            let mut request = ExtractRequest::new(
+                video_id,
+                ExtractSelection {
+                    start_seconds: args.start,
+                    end_seconds: args.end,
+                    scene_ids: args.scene,
+                },
+                args.out_dir,
+            );
+            if !args.kind.is_empty() {
+                request.kinds = args.kind.into_iter().collect();
+            }
+            request.max_height = args.max_height;
+            request.work_dir = args.work_dir;
+            request.required_license = if args.allow_non_cc {
+                String::new()
+            } else {
+                DEFAULT_REQUIRED_LICENSE.to_string()
+            };
+            if let Some(revision) = args.producer_revision {
+                request.producer_revision = revision;
+            }
+            request.keep_media = args.keep_media;
+            let client = youtube_corpus::yt_dlp::YtDlpClient::new(yt_dlp);
+            let report = extract_media(&pool, &client, &request).await?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
         Command::Events(args) => match args.command {
             youtube_corpus::cli::EventsCommand::Extract(args) => {
                 let config = AppConfig::from_env_and_cli(database_url)?;
