@@ -22,7 +22,7 @@ use text_lexical::CorpusOptions;
 use uuid::Uuid;
 
 /// Exact native-whisperx revision pinned in `Cargo.toml`.
-pub const NATIVE_WHISPERX_REVISION: &str = "40f16b6d7e054356d3154f3d99ea4e5466044ae7";
+pub const NATIVE_WHISPERX_REVISION: &str = "0e5e25787ce03e1b01cf264ab74718bc21edae1c";
 /// Version of the corpus' translated-record shape; part of every configuration identity.
 pub const TRANSLATION_RECORD_VERSION: &str = "1";
 
