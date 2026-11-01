@@ -48,15 +48,15 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 url = "2.5.8"
 uuid = { version = "1.11", features = ["v4", "v5", "serde"] }
 
-text-core = { package = "moenarch-text-core", git = "https://github.com/moritzbrantner/nlp-stack", rev = "3a82bc7e497bf41c5f2dd9d9ba9a5a12536979ab" }
-text-embeddings = { package = "moenarch-text-embeddings", git = "https://github.com/moritzbrantner/nlp-stack", rev = "3a82bc7e497bf41c5f2dd9d9ba9a5a12536979ab" }
-text-lexical = { package = "moenarch-text-lexical", git = "https://github.com/moritzbrantner/nlp-stack", rev = "3a82bc7e497bf41c5f2dd9d9ba9a5a12536979ab" }
-text-linguistics = { package = "moenarch-text-linguistics", git = "https://github.com/moritzbrantner/nlp-stack", rev = "3a82bc7e497bf41c5f2dd9d9ba9a5a12536979ab", features = [
+text-core = { package = "moenarch-text-core", git = "https://github.com/moritzbrantner/nlp-stack", rev = "22174b23fe30678a41491d71c510337e056d7615" }
+text-embeddings = { package = "moenarch-text-embeddings", git = "https://github.com/moritzbrantner/nlp-stack", rev = "22174b23fe30678a41491d71c510337e056d7615" }
+text-lexical = { package = "moenarch-text-lexical", git = "https://github.com/moritzbrantner/nlp-stack", rev = "22174b23fe30678a41491d71c510337e056d7615" }
+text-linguistics = { package = "moenarch-text-linguistics", git = "https://github.com/moritzbrantner/nlp-stack", rev = "22174b23fe30678a41491d71c510337e056d7615", features = [
   "candle",
   "model-bundles",
 ] }
 model-runtime = { package = "moenarch-model-runtime", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-text-transcripts = { package = "moenarch-text-transcripts", git = "https://github.com/moritzbrantner/nlp-stack", rev = "3a82bc7e497bf41c5f2dd9d9ba9a5a12536979ab" }
+text-transcripts = { package = "moenarch-text-transcripts", git = "https://github.com/moritzbrantner/nlp-stack", rev = "22174b23fe30678a41491d71c510337e056d7615" }
 media-core = { package = "moenarch-media-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
 corpus-core = { package = "moenarch-corpus-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
 runtime-core = { package = "moenarch-runtime-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
@@ -110,9 +110,9 @@ tower = { version = "=0.5.3", features = ["util"] }
 # visual-analysis on text-core); these patches resolve them to the same exact revisions, so the
 # graph holds one copy of each crate. The foundation rev is c2c1ab1 (foundation main with the
 # media-core rolling-caption projection, foundation#138 for #92); the foundation crate versions
-# that nlp-stack 3a82bc7 and visual-analysis 35a5320 require resolve there. Visual OCR supports
+# that nlp-stack 22174b2 and visual-analysis 35a5320 require resolve there. Visual OCR supports
 # the pinned byte-span API.
-# Current set: foundation c2c1ab1, nlp-stack 3a82bc7 (temporal normalizer nlp-stack#156, multilingual NER #167, per-sentence language routing #171),
+# Current set: foundation c2c1ab1, nlp-stack 22174b2 (temporal normalizer nlp-stack#156, multilingual NER #167, per-sentence language routing #171, NER weights loaded once #173),
 # visual-analysis 35a5320 (OCR span compatibility; see visual-analysis #87).
 [patch.crates-io]
 moenarch-math-signal-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
@@ -129,7 +129,7 @@ moenarch-runtime-onnx = { git = "https://github.com/moritzbrantner/moenarch-foun
 moenarch-tensor-data = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
 moenarch-vector-analysis-core = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
 moenarch-vector-analysis-index = { git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "c2c1ab148cc2d0eab94dfcfa6379aacbc1bd7f72" }
-moenarch-text-core = { git = "https://github.com/moritzbrantner/nlp-stack", rev = "3a82bc7e497bf41c5f2dd9d9ba9a5a12536979ab" }
+moenarch-text-core = { git = "https://github.com/moritzbrantner/nlp-stack", rev = "22174b23fe30678a41491d71c510337e056d7615" }
 # native-whisperx (#69) declares registry requirements on audio-analysis, nlp-stack and
 # visual-analysis crates; resolve them to the revisions pinned above so the graph keeps one copy.
 # native-whisperx needs audio-analysis APIs newer than the published releases. audio-analysis
@@ -138,7 +138,7 @@ moenarch-text-core = { git = "https://github.com/moritzbrantner/nlp-stack", rev 
 moenarch-audio-analysis-speakers = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "c058cac6235c6471779bd0a87f5076549c47958b" }
 moenarch-audio-analysis-transcription = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "c058cac6235c6471779bd0a87f5076549c47958b" }
 moenarch-audio-analysis-io = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "c058cac6235c6471779bd0a87f5076549c47958b" }
-moenarch-text-transcripts = { git = "https://github.com/moritzbrantner/nlp-stack", rev = "3a82bc7e497bf41c5f2dd9d9ba9a5a12536979ab" }
+moenarch-text-transcripts = { git = "https://github.com/moritzbrantner/nlp-stack", rev = "22174b23fe30678a41491d71c510337e056d7615" }
 moenarch-video-analysis-core = { git = "https://github.com/moritzbrantner/visual-analysis", rev = "35a53204cea66e7f438b962afe23b6cef1de0004" }
 # Foundation c2c1ab1 depends on the registry name `search-kernels` and resolves it to this exact
 # rust-kernels revision through its own workspace patch; mirror that patch here.
