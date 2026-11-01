@@ -14,6 +14,7 @@ dist/
 *.wav
 *.vtt
 *.srt
+!/tests/fixtures/canonical-ner/*.vtt
 *.json.tmp
 /test-results/
 /playwright-report/

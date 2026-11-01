@@ -21,6 +21,20 @@ type NerState =
   | { phase: "canceled" }
   | { phase: "error"; message: string };
 
+// One adapter per page, created on the first opt-in run. Its worker keeps the loaded model
+// across transcripts: a reload from the browser cache costs 2–5 s, a warm run well under 1 s.
+// Aborting a request (cancel, or the panel unmounting for a new transcript) terminates the
+// worker inside the adapter, and the next request spawns a fresh one.
+let sharedNer: Promise<CanonicalNer> | null = null;
+
+function canonicalNer() {
+  sharedNer ??= loadCanonicalNer().catch((error: unknown) => {
+    sharedNer = null;
+    throw error;
+  });
+  return sharedNer;
+}
+
 /**
  * Opt-in canonical NER from NLP Stack, shown next to (never merged with) the advisory
  * lexical preview. Mount it keyed by report so a new transcript drops stale results.
@@ -29,16 +43,9 @@ export function CanonicalNerPanel({ report }: { report: VideoAnalysisReport }) {
   const streamLanguage = primaryLanguage(report.streams[0]?.language);
   const [language, setLanguage] = React.useState(streamLanguage ?? "");
   const [state, setState] = React.useState<NerState>({ phase: "idle" });
-  const ner = React.useRef<CanonicalNer | null>(null);
   const controller = React.useRef<AbortController | null>(null);
 
-  React.useEffect(
-    () => () => {
-      controller.current?.abort();
-      ner.current?.dispose();
-    },
-    [],
-  );
+  React.useEffect(() => () => controller.current?.abort(), []);
 
   async function run() {
     controller.current?.abort();
@@ -49,8 +56,8 @@ export function CanonicalNerPanel({ report }: { report: VideoAnalysisReport }) {
     setState({ phase: "running", loaded: 0, total: 0, startedAt });
 
     try {
-      ner.current ??= await loadCanonicalNer();
-      const result = await ner.current.analyze(
+      const ner = await canonicalNer();
+      const result = await ner.analyze(
         { language: language || null, segments: nerSegments(report.segments) },
         {
           signal: request.signal,
@@ -99,9 +106,9 @@ export function CanonicalNerPanel({ report }: { report: VideoAnalysisReport }) {
       </div>
       <p className="browser-provenance">
         Runs NLP Stack&apos;s model-backed browser NER on this transcript. Nothing is downloaded
-        until you start it: the first run fetches the pinned model (about 135 MB) from Hugging Face
-        and caches it in this browser. The lexical analysis above stays advisory and is not merged
-        with these results. No sentiment model is offered.
+        until you start it: the first run fetches the pinned model and its runtime (about 140 MB)
+        from Hugging Face and jsDelivr and caches them in this browser. The lexical analysis above
+        stays advisory and is not merged with these results. No sentiment model is offered.
       </p>
       <div className="canonical-ner-controls">
         <label htmlFor="canonical-ner-language">Transcript language</label>
