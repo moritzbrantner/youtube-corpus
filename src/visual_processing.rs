@@ -209,6 +209,18 @@ fn fingerprint_bytes(bytes: &[u8]) -> String {
     format!("fnv1a64:{state:016x}")
 }
 
+/// The default content-scene settings' identity, shared by scene reuse and OCR links.
+pub(crate) fn default_scene_config_hash() -> String {
+    fingerprint_bytes(
+        format!(
+            "content-threshold={:08x};min-scene-len={}",
+            DEFAULT_CONTENT_THRESHOLD.to_bits(),
+            DEFAULT_MIN_SCENE_LEN
+        )
+        .as_bytes(),
+    )
+}
+
 const FNV1A_OFFSET: u64 = 0xcbf29ce484222325;
 const FNV1A_PRIME: u64 = 0x100000001b3;
 
@@ -238,14 +250,7 @@ pub(crate) async fn has_current_scene_output(pool: &PgPool, video: Uuid) -> anyh
             None => return Ok(false),
         },
     };
-    let config = fingerprint_bytes(
-        format!(
-            "content-threshold={:08x};min-scene-len={}",
-            DEFAULT_CONTENT_THRESHOLD.to_bits(),
-            DEFAULT_MIN_SCENE_LEN
-        )
-        .as_bytes(),
-    );
+    let config = default_scene_config_hash();
     Ok(sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM media_processing_runs r
         WHERE video_id = $1 AND modality = 'scene' AND processor = 'visual-analysis'

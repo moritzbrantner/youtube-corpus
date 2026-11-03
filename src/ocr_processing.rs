@@ -357,12 +357,13 @@ async fn matching_scene_ids(
          FROM video_scenes s JOIN media_processing_runs r ON r.id = s.run_id
          WHERE s.video_id = $1 AND r.modality = 'scene'
            AND r.processor = 'visual-analysis' AND r.processor_version = $2
-           AND r.model = $3 AND r.input_hash = $4",
+           AND r.model = $3 AND r.input_hash = $4 AND r.config_hash = $5",
     )
     .bind(video_id)
     .bind(crate::visual_processing::VISUAL_ANALYSIS_SCENE_REVISION)
     .bind(crate::visual_processing::SCENE_MODEL)
     .bind(&batch.scene_input_hash)
+    .bind(crate::visual_processing::default_scene_config_hash())
     .fetch_all(pool)
     .await?;
     let mut result = BTreeMap::new();
