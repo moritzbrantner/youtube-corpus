@@ -377,6 +377,45 @@ download failure leaves earlier evidence intact and is reported as failed.
 OCR media is managed by the same acquire-on-demand, release-after-processing
 policy as the other media detectors.
 
+### Real-video OCR acceptance
+
+The checked-in [Terminology UX OCR plan](workflows/terminology-ux-ocr.plan.json)
+exercises OCR on Albrecht Schmidt's 12:49-minute [Terminology User Experience
+lecture](https://www.youtube.com/watch?v=xgd_jVhJzEc). YouTube reports a
+Creative Commons Attribution licence. The publisher supplies the
+[original 19-slide PDF](https://hci-lecture.de/HCI/topics/intro/03-TermiUX/TermiUX20200413.pdf)
+under CC BY-SA 4.0, giving a reference for recognition quality. Credit:
+Albrecht Schmidt, [HCI Lecture](https://hci-lecture.org/introduction/).
+
+With the usual local Postgres service and `yt-dlp`, FFmpeg and ONNX Runtime
+available, run from the repository root:
+
+```bash
+cargo run --release --locked -- process \
+  --plan workflows/terminology-ux-ocr.plan.json \
+  --out-dir use-case-output/terminology-ux-ocr --migrate
+
+cargo run --release --locked -- search \
+  --corpus terminology-ux-ocr-acceptance \
+  --youtube-id xgd_jVhJzEc --source-kind visual-ocr \
+  --mode fts --query "interaction design" --format text
+```
+
+Inspect `use-case-output/terminology-ux-ocr/workflow-report.json`: the video
+must be `processed`, the `ocr` stage `completed` or `reused`, and
+`retainedMedia` must be `null` after a successful first run (`media.deleted`
+lists the released download). Search must return **visible** OCR evidence with
+source timestamps; a completed OCR stage alone does not prove useful text was
+recognized. Compare its recognized lines with the PDF's “The 5 Dimensions of
+Interaction Design” (page 6), “One cannot not communicate” (pages 10–11), and
+“Experience Economy” (page 14). These are quality probes, not promises of exact
+line transcription by the current line-oriented TrOCR model. The publisher's
+1280×720 MP4 visibly shows the first reference slide around **04:00**; an
+independent Tesseract check of that frame recognized its heading, which is a
+useful positive control rather than proof that TrOCR will succeed. Repeating the
+workflow without `--refresh` should reuse the prior OCR output without
+downloading the video again.
+
 ## Translated text
 
 Translation is opt-in per detector profile, separately for **spoken transcripts**
