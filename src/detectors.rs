@@ -69,11 +69,9 @@ pub const DETECTORS: &[DetectorInfo] = &[
     DetectorInfo {
         id: "ocr",
         label: "On-screen text (OCR)",
-        producer: "visual-analysis OCR",
-        available: false,
-        note: Some(
-            "No OCR producer is integrated yet (#71); existing OCR evidence stays searchable.",
-        ),
+        producer: "visual-analysis scene-aware OCR / TrOCR ONNX",
+        available: true,
+        note: Some("Samples representative scene frames; downloads the printed-text model when first requested. Needs video media and ONNX Runtime API 24."),
         takes_languages: false,
     },
     DetectorInfo {
@@ -893,6 +891,7 @@ async fn existing_output(
         "scenes" => {
             crate::visual_processing::has_current_scene_output(pool, request.video_id).await
         }
+        "ocr" => crate::ocr_processing::has_current_ocr_output(pool, request.video_id).await,
         "faces" => crate::face_processing::has_current_face_output(pool, request.video_id).await,
         "voices" => crate::voice_processing::has_current_voice_output(pool, request.video_id).await,
         // The translation stage reuses unchanged translations per span and target itself.
@@ -1033,6 +1032,16 @@ async fn stage_identity(
             "producerRevision": crate::visual_processing::VISUAL_ANALYSIS_SCENE_REVISION,
             "model": "scenedetect-core:content", "threshold": 27.0, "minSceneLen": 15 }));
     }
+    if detector == "ocr" {
+        let input = crate::media_acquisition::source_input_hash(pool, video).await?;
+        return Ok(serde_json::json!({ "detector": detector, "input": input,
+            "producerRevision": crate::visual_processing::VISUAL_ANALYSIS_SCENE_REVISION,
+            "model": crate::ocr_processing::OCR_MODEL,
+            "modelVersion": crate::ocr_processing::OCR_MODEL_VERSION,
+            "configuration": crate::ocr_processing::OCR_CONFIG_VERSION,
+            "sceneThresholdBits": crate::visual_processing::DEFAULT_CONTENT_THRESHOLD.to_bits(),
+            "minimumSceneFrames": crate::visual_processing::DEFAULT_MIN_SCENE_LEN }));
+    }
     if let Some(modality) = crate::translation::TranslationModality::from_detector(detector) {
         let input = crate::translation::source_identity(pool, video, modality).await?;
         return Ok(serde_json::json!({ "detector": detector, "input": input,
@@ -1133,6 +1142,28 @@ async fn run_stage_inner(
             Ok((
                 StageOutcome::Completed,
                 Some(format!("{} scenes", report.scenes.len())),
+            ))
+        }
+        "ocr" => {
+            let report = crate::ocr_processing::analyze_stored_video_ocr(
+                pool,
+                crate::ocr_processing::OcrAnalysisRequest {
+                    video_id: request.video_id,
+                    model_dir: request.model_dir.clone(),
+                    refresh: request.refresh,
+                },
+            )
+            .await?;
+            Ok((
+                if report.reused {
+                    StageOutcome::Reused
+                } else {
+                    StageOutcome::Completed
+                },
+                Some(format!(
+                    "{} OCR observations, {} text tracks from {} representative frames",
+                    report.observations, report.tracks, report.sampled_frames
+                )),
             ))
         }
         "voices" => {

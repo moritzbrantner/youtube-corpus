@@ -28,6 +28,7 @@ pub mod media_acquisition;
 pub mod media_evidence;
 pub mod media_extracts;
 pub mod multimodal;
+pub mod ocr_processing;
 pub mod person_names;
 pub mod processing_workflows;
 pub mod processing_workflows_web;

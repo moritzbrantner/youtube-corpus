@@ -283,8 +283,17 @@ pub async fn upsert_visual_text_observation(
     pool: &PgPool,
     request: UpsertVisualTextObservationRequest,
 ) -> anyhow::Result<VisualTextObservation> {
+    let mut connection = pool.acquire().await?;
+    upsert_visual_text_observation_with(&mut connection, request).await
+}
+
+/// Same as [`upsert_visual_text_observation`], on a caller-owned transaction.
+pub async fn upsert_visual_text_observation_with(
+    connection: &mut PgConnection,
+    request: UpsertVisualTextObservationRequest,
+) -> anyhow::Result<VisualTextObservation> {
     validate_visual_run(
-        pool,
+        &mut *connection,
         request.run_id,
         request.video_id,
         VisualProcessingKind::Ocr,
@@ -339,7 +348,7 @@ pub async fn upsert_visual_text_observation(
     .bind(height)
     .bind(request.confidence)
     .bind(request.attributes)
-    .fetch_one(pool)
+    .fetch_one(&mut *connection)
     .await?;
     observation_from_row(row)
 }
@@ -348,8 +357,20 @@ pub async fn upsert_visual_text_track(
     pool: &PgPool,
     request: UpsertVisualTextTrackRequest,
 ) -> anyhow::Result<VisualTextTrack> {
+    let mut tx = pool.begin().await?;
+    let stored = upsert_visual_text_track_with(&mut tx, request).await?;
+    tx.commit().await?;
+    Ok(stored)
+}
+
+/// Same as [`upsert_visual_text_track`], on a caller-owned transaction. Track membership
+/// and the track record are updated together, with the caller controlling the commit.
+pub async fn upsert_visual_text_track_with(
+    connection: &mut PgConnection,
+    request: UpsertVisualTextTrackRequest,
+) -> anyhow::Result<VisualTextTrack> {
     validate_visual_run(
-        pool,
+        &mut *connection,
         request.run_id,
         request.video_id,
         VisualProcessingKind::Ocr,
@@ -372,7 +393,6 @@ pub async fn upsert_visual_text_track(
     let (x, y, width, height) = region_columns(request.region);
     let language = normalize_optional_text(request.language);
 
-    let mut tx = pool.begin().await?;
     let row = sqlx::query(
         "INSERT INTO visual_text_tracks (
            id, run_id, video_id, track_key, text, role, language, sample_count,
@@ -427,12 +447,12 @@ pub async fn upsert_visual_text_track(
     .bind(height)
     .bind(request.metadata)
     .bind(embedding)
-    .fetch_one(&mut *tx)
+    .fetch_one(&mut *connection)
     .await?;
 
     sqlx::query("DELETE FROM visual_text_track_observations WHERE track_id = $1")
         .bind(id)
-        .execute(&mut *tx)
+        .execute(&mut *connection)
         .await?;
     for observation_id in dedup_ids(request.observation_ids) {
         let result = sqlx::query(
@@ -444,7 +464,7 @@ pub async fn upsert_visual_text_track(
         .bind(id)
         .bind(observation_id)
         .bind(request.video_id)
-        .execute(&mut *tx)
+        .execute(&mut *connection)
         .await?;
         if result.rows_affected() != 1 {
             anyhow::bail!(
@@ -456,7 +476,7 @@ pub async fn upsert_visual_text_track(
 
     sqlx::query("DELETE FROM visual_text_track_scenes WHERE track_id = $1")
         .bind(id)
-        .execute(&mut *tx)
+        .execute(&mut *connection)
         .await?;
     for scene_id in dedup_ids(request.scene_ids) {
         let result = sqlx::query(
@@ -468,7 +488,7 @@ pub async fn upsert_visual_text_track(
         .bind(id)
         .bind(scene_id)
         .bind(request.video_id)
-        .execute(&mut *tx)
+        .execute(&mut *connection)
         .await?;
         if result.rows_affected() != 1 {
             anyhow::bail!(
@@ -478,7 +498,6 @@ pub async fn upsert_visual_text_track(
         }
     }
 
-    tx.commit().await?;
     track_from_row(row)
 }
 
