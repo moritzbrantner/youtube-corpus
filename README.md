@@ -387,14 +387,17 @@ Creative Commons Attribution licence. The publisher supplies the
 under CC BY-SA 4.0, giving a reference for recognition quality. Credit:
 Albrecht Schmidt, [HCI Lecture](https://hci-lecture.org/introduction/).
 
-With the usual local Postgres service and `yt-dlp`, FFmpeg and ONNX Runtime
-available, run from the repository root:
+With `yt-dlp`, FFmpeg and ONNX Runtime available, run from the repository
+root (or use your existing `DATABASE_URL` instead of the sample local one):
 
 ```bash
+docker compose up -d --wait postgres
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus \
 cargo run --release --locked -- process \
   --plan workflows/terminology-ux-ocr.plan.json \
   --out-dir use-case-output/terminology-ux-ocr --migrate
 
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/youtube_corpus \
 cargo run --release --locked -- search \
   --corpus terminology-ux-ocr-acceptance \
   --youtube-id xgd_jVhJzEc --source-kind visual-ocr \
