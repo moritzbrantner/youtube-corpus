@@ -60,20 +60,20 @@ text-transcripts = { package = "moenarch-text-transcripts", git = "https://githu
 media-core = { package = "moenarch-media-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
 corpus-core = { package = "moenarch-corpus-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
 runtime-core = { package = "moenarch-runtime-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
-video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b" }
-video-analysis-ingest = { package = "moenarch-video-analysis-ingest", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b", features = [
+video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", git = "https://github.com/moritzbrantner/visual-analysis", rev = "be782cee52506785b46e2c471a003f879508275b" }
+video-analysis-ingest = { package = "moenarch-video-analysis-ingest", git = "https://github.com/moritzbrantner/visual-analysis", rev = "be782cee52506785b46e2c471a003f879508275b", features = [
   "ocr",
 ] }
-video-analysis-core = { package = "moenarch-video-analysis-core", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b" }
-video-analysis-recognition = { package = "moenarch-video-analysis-recognition", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b" }
-image-analysis-core = { package = "moenarch-image-analysis-core", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b" }
-image-analysis-ocr = { package = "moenarch-image-analysis-ocr", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b", features = [
+video-analysis-core = { package = "moenarch-video-analysis-core", git = "https://github.com/moritzbrantner/visual-analysis", rev = "be782cee52506785b46e2c471a003f879508275b" }
+video-analysis-recognition = { package = "moenarch-video-analysis-recognition", git = "https://github.com/moritzbrantner/visual-analysis", rev = "be782cee52506785b46e2c471a003f879508275b" }
+image-analysis-core = { package = "moenarch-image-analysis-core", git = "https://github.com/moritzbrantner/visual-analysis", rev = "be782cee52506785b46e2c471a003f879508275b" }
+image-analysis-ocr = { package = "moenarch-image-analysis-ocr", git = "https://github.com/moritzbrantner/visual-analysis", rev = "be782cee52506785b46e2c471a003f879508275b", features = [
   "local-onnx",
 ] }
-image-analysis-detection = { package = "moenarch-image-analysis-detection", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b", features = [
+image-analysis-detection = { package = "moenarch-image-analysis-detection", git = "https://github.com/moritzbrantner/visual-analysis", rev = "be782cee52506785b46e2c471a003f879508275b", features = [
   "onnx",
 ] }
-image-analysis-embeddings = { package = "moenarch-image-analysis-embeddings", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b", features = [
+image-analysis-embeddings = { package = "moenarch-image-analysis-embeddings", git = "https://github.com/moritzbrantner/visual-analysis", rev = "be782cee52506785b46e2c471a003f879508275b", features = [
   "onnx",
 ] }
 runtime-onnx = { package = "moenarch-runtime-onnx", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920", features = [
@@ -146,7 +146,7 @@ moenarch-audio-analysis-speakers = { git = "https://github.com/moritzbrantner/au
 moenarch-audio-analysis-transcription = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "d7c78028a1e84d0ebde8f6a93a19c4565534b0bc" }
 moenarch-audio-analysis-io = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "d7c78028a1e84d0ebde8f6a93a19c4565534b0bc" }
 moenarch-text-transcripts = { git = "https://github.com/moritzbrantner/nlp-stack", rev = "22174b23fe30678a41491d71c510337e056d7615" }
-moenarch-video-analysis-core = { git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b" }
+moenarch-video-analysis-core = { git = "https://github.com/moritzbrantner/visual-analysis", rev = "be782cee52506785b46e2c471a003f879508275b" }
 # Foundation c2c1ab1 depends on the registry name `search-kernels` and resolves it to this exact
 # rust-kernels revision through its own workspace patch; mirror that patch here.
 search-kernels = { git = "https://github.com/moritzbrantner/rust-kernels", rev = "51ef7878165b83db0d10ad7420fee6b4aba97099" }

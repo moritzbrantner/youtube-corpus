@@ -2690,7 +2690,7 @@ dependencies = [
 [[package]]
 name = "moenarch-image-analysis-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "moenarch-runtime-core",
  "moenarch-tensor-data",
@@ -2702,7 +2702,7 @@ dependencies = [
 [[package]]
 name = "moenarch-image-analysis-detection"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "moenarch-image-analysis-core",
  "moenarch-image-analysis-io",
@@ -2720,7 +2720,7 @@ dependencies = [
 [[package]]
 name = "moenarch-image-analysis-embeddings"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "moenarch-image-analysis-core",
  "moenarch-image-analysis-detection",
@@ -2742,7 +2742,7 @@ dependencies = [
 [[package]]
 name = "moenarch-image-analysis-io"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "image",
  "moenarch-image-analysis-core",
@@ -2755,7 +2755,7 @@ dependencies = [
 [[package]]
 name = "moenarch-image-analysis-ocr"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "moenarch-image-analysis-core",
  "moenarch-image-analysis-io",
@@ -2774,7 +2774,7 @@ dependencies = [
 [[package]]
 name = "moenarch-image-analysis-processing"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "image",
  "moenarch-image-analysis-core",
@@ -2789,7 +2789,7 @@ dependencies = [
 [[package]]
 name = "moenarch-image-analysis-segmentation"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "moenarch-image-analysis-core",
  "moenarch-model-runtime",
@@ -2802,7 +2802,7 @@ dependencies = [
 [[package]]
 name = "moenarch-image-analysis-synthesis"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "moenarch-data-inversion-core",
  "moenarch-image-analysis-core",
@@ -3037,7 +3037,7 @@ dependencies = [
 [[package]]
 name = "moenarch-video-analysis-core"
 version = "0.1.3"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "moenarch-audio-contracts",
  "moenarch-math-geometry-2d",
@@ -3054,7 +3054,7 @@ dependencies = [
 [[package]]
 name = "moenarch-video-analysis-detectors"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "moenarch-runtime-core",
  "moenarch-video-analysis-core",
@@ -3066,7 +3066,7 @@ dependencies = [
 [[package]]
 name = "moenarch-video-analysis-ffmpeg"
 version = "0.1.1"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "moenarch-runtime-core",
  "moenarch-video-analysis-core",
@@ -3079,7 +3079,7 @@ dependencies = [
 [[package]]
 name = "moenarch-video-analysis-ingest"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "moenarch-image-analysis-ocr",
  "moenarch-runtime-core",
@@ -3093,7 +3093,7 @@ dependencies = [
 [[package]]
 name = "moenarch-video-analysis-recognition"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "base64 0.23.1",
  "moenarch-image-analysis-core",
@@ -3111,7 +3111,7 @@ dependencies = [
 [[package]]
 name = "moenarch-vision-core"
 version = "0.1.0"
-source = "git+https://github.com/moritzbrantner/visual-analysis?rev=40176fb6f552082daa414d9fda268132b127d37b#40176fb6f552082daa414d9fda268132b127d37b"
+source = "git+https://github.com/moritzbrantner/visual-analysis?rev=be782cee52506785b46e2c471a003f879508275b#be782cee52506785b46e2c471a003f879508275b"
 dependencies = [
  "moenarch-math-geometry-2d",
  "moenarch-runtime-core",
