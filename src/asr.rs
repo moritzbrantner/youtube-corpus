@@ -461,10 +461,9 @@ mod tests {
             .trim()
             .is_empty());
         assert!(output.stream.segments.is_empty());
-        let persisted: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(dir.path().join("music-only.json")).unwrap(),
-        )
-        .unwrap();
+        let persisted: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join("music-only.json")).unwrap())
+                .unwrap();
         assert_eq!(persisted["segments"], serde_json::json!([]));
         assert_eq!(output.run["provider"], "native-whisperx");
     }
