@@ -15,11 +15,11 @@ use crate::visual_timeline::{
 };
 
 /// Exact visual-analysis revision consumed by this source-first integration.
-pub const VISUAL_ANALYSIS_SCENE_REVISION: &str = "35a53204cea66e7f438b962afe23b6cef1de0004";
-const SCENE_MODEL: &str = "scenedetect-core:content";
+pub const VISUAL_ANALYSIS_SCENE_REVISION: &str = "be782cee52506785b46e2c471a003f879508275b";
+pub(crate) const SCENE_MODEL: &str = "scenedetect-core:content";
 const SCENE_MODEL_VERSION: &str = "0.1.0";
-const DEFAULT_CONTENT_THRESHOLD: f32 = 27.0;
-const DEFAULT_MIN_SCENE_LEN: u64 = 15;
+pub(crate) const DEFAULT_CONTENT_THRESHOLD: f32 = 27.0;
+pub(crate) const DEFAULT_MIN_SCENE_LEN: u64 = 15;
 
 #[derive(Debug, Clone)]
 pub struct SceneAnalysisRequest {
@@ -209,6 +209,18 @@ fn fingerprint_bytes(bytes: &[u8]) -> String {
     format!("fnv1a64:{state:016x}")
 }
 
+/// The default content-scene settings' identity, shared by scene reuse and OCR links.
+pub(crate) fn default_scene_config_hash() -> String {
+    fingerprint_bytes(
+        format!(
+            "content-threshold={:08x};min-scene-len={}",
+            DEFAULT_CONTENT_THRESHOLD.to_bits(),
+            DEFAULT_MIN_SCENE_LEN
+        )
+        .as_bytes(),
+    )
+}
+
 const FNV1A_OFFSET: u64 = 0xcbf29ce484222325;
 const FNV1A_PRIME: u64 = 0x100000001b3;
 
@@ -238,14 +250,7 @@ pub(crate) async fn has_current_scene_output(pool: &PgPool, video: Uuid) -> anyh
             None => return Ok(false),
         },
     };
-    let config = fingerprint_bytes(
-        format!(
-            "content-threshold={:08x};min-scene-len={}",
-            DEFAULT_CONTENT_THRESHOLD.to_bits(),
-            DEFAULT_MIN_SCENE_LEN
-        )
-        .as_bytes(),
-    );
+    let config = default_scene_config_hash();
     Ok(sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM media_processing_runs r
         WHERE video_id = $1 AND modality = 'scene' AND processor = 'visual-analysis'

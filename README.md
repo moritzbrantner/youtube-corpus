@@ -216,8 +216,8 @@ their output. Finally it writes the corpus's exports (`source-span.json`,
 `corpus-core.jsonl`, `belief-evidence.json`) and `workflow-report.json` into
 `--out-dir`. The report lists each video's licence, every stage outcome, the
 deleted or retained media, and each export's SHA-256. The command exits non-zero
-when a video or an enabled stage failed. Unavailable producers, such as OCR, are
-reported but are not failures.
+when a video or an enabled stage failed. A missing OCR model, ONNX Runtime or video
+decoder is a failed stage, not a successful scan with no on-screen text.
 
 | Plan field         | Default            | Meaning                                                                                         |
 | ------------------ | ------------------ | ----------------------------------------------------------------------------------------------- |
@@ -340,7 +340,7 @@ The corpus workspace's Detectors panel sets which analyses run: a corpus default
 on/off overrides, and per-video overrides that apply only inside that corpus. A video tracked
 through several sources gets every detector any of them requests. Pick a video to see its
 effective plan and who requested each detector, then **Run plan**: existing output is reused,
-and detectors without an integrated producer (OCR) are reported as unavailable.
+and unavailable inputs or producers are reported explicitly.
 
 In **Videos**, expand **Processing stages** to inspect the effective per-detector state,
 retained output and source languages. Translation reports each requested target separately.
@@ -355,6 +355,27 @@ older binary have no attempt history; only their retained evidence can be report
 The status API is `GET /api/corpora/{corpusId}/videos/{videoId}/processing-status`.
 `POST …/detector-plan/run` accepts `{"detectors":["asr"],"refresh":false}` to target
 one enabled stage; omitting `detectors` runs the enabled plan.
+
+## On-screen text (OCR)
+
+Enable **On-screen text (OCR)** in a detector profile and run the video plan. The
+corpus acquires 720p video as needed, detects content scenes through its pinned
+`visual-analysis` adapter and recognizes text in representative scene frames using
+the upstream TrOCR printed-text ONNX model. The upstream tracker groups repeated
+observations into time-aligned visual-text tracks. The corpus stores both raw
+observations and independently searchable tracks, with frame/time, scene, model,
+input and configuration provenance. A completed scan with no recognized text is
+recorded distinctly from a video that has not been scanned.
+
+The model bundle downloads into the configured model cache under `ocr/` only on a
+requested run; opening the app does not download it. ONNX Runtime 1.24 (API 24)
+is required; set `ORT_DYLIB_PATH` when its shared library is outside the loader
+path. The printed-text recognizer is line-oriented: dense slide layouts and
+complex multilingual text still need real-video quality acceptance, and no
+language is inferred when the producer does not supply one. An inference or
+download failure leaves earlier evidence intact and is reported as failed.
+OCR media is managed by the same acquire-on-demand, release-after-processing
+policy as the other media detectors.
 
 ## Translated text
 

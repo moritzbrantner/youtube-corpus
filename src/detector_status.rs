@@ -191,9 +191,9 @@ async fn status_for_plan(
         } else if !planned.available {
             StageState::Unavailable
         } else if count > 0
-            || (matches!(planned.detector.as_str(), "faces" | "voices")
+            || (matches!(planned.detector.as_str(), "faces" | "voices" | "ocr")
                 && sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM media_processing_runs WHERE video_id = $1 AND modality = $2 AND processing_config->>'complete' = 'true')")
-                    .bind(plan.video_id).bind(if planned.detector == "faces" { "face" } else { "voice" }).fetch_one(pool).await?)
+                    .bind(plan.video_id).bind(match planned.detector.as_str() { "faces" => "face", "ocr" => "ocr", _ => "voice" }).fetch_one(pool).await?)
         {
             StageState::Completed
         } else {

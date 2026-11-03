@@ -129,6 +129,16 @@ async fn two_corpora_reuse_one_definition_with_their_own_stages_and_histories() 
             .unwrap();
     }
     let files = tempfile::tempdir().unwrap();
+    // Keep this workflow-definition test independent from real OCR models and network
+    // acquisition. The enabled OCR stage must report a genuine decode failure.
+    let invalid_media = files.path().join("invalid-ocr-media.mp4");
+    std::fs::write(&invalid_media, b"not a video").unwrap();
+    sqlx::query("UPDATE videos SET local_video_path = $2 WHERE id = $1")
+        .bind(video)
+        .bind(invalid_media.to_str().unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
     let caption = files.path().join("caption.vtt");
     std::fs::write(&caption, "hello").unwrap();
     let stream = Uuid::new_v4();
@@ -235,7 +245,7 @@ async fn two_corpora_reuse_one_definition_with_their_own_stages_and_histories() 
         outcomes(&runs[0]),
         [
             ("captions".to_string(), "reused".to_string()),
-            ("ocr".to_string(), "unavailable".to_string()),
+            ("ocr".to_string(), "failed".to_string()),
             ("translate_ocr".to_string(), "skipped".to_string()),
         ]
     );
@@ -243,7 +253,7 @@ async fn two_corpora_reuse_one_definition_with_their_own_stages_and_histories() 
         outcomes(&runs[1]),
         [
             ("captions".to_string(), "reused".to_string()),
-            ("ocr".to_string(), "unavailable".to_string()),
+            ("ocr".to_string(), "failed".to_string()),
         ]
     );
     assert_eq!(runs[0]["fingerprint"], created["fingerprint"]);

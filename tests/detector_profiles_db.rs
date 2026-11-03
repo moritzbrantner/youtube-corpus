@@ -260,7 +260,7 @@ async fn overlapping_profiles_union_with_corpus_scoped_video_overrides() {
     let ocr = detector(&shared, "ocr");
     assert_eq!(ocr["enabled"], true);
     assert_eq!(contributors(ocr), ["Playlist A", "Playlist B"]);
-    assert_eq!(ocr["available"], false);
+    assert_eq!(ocr["available"], true);
     let scenes = detector(&shared, "scenes");
     assert_eq!(scenes["enabled"], true);
     assert_eq!(contributors(scenes), ["Playlist B"]);
@@ -345,7 +345,7 @@ async fn overlapping_profiles_union_with_corpus_scoped_video_overrides() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|d| d["id"] == "ocr" && d["available"] == false));
+        .any(|d| d["id"] == "ocr" && d["available"] == true));
 
     // Validation.
     assert_eq!(
@@ -391,7 +391,7 @@ async fn overlapping_profiles_union_with_corpus_scoped_video_overrides() {
 
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
-async fn running_a_plan_reuses_existing_output_and_reports_unavailable_detectors() {
+async fn running_a_plan_reuses_existing_output_and_reports_ocr_decode_failure() {
     let Some(seed) = seed().await else {
         return;
     };
@@ -406,6 +406,18 @@ async fn running_a_plan_reuses_existing_output_and_reports_unavailable_detectors
         ]),
     )
     .await;
+    // An invalid retained video fails deterministically at frame decoding, without
+    // downloading a real YouTube video or a TrOCR model for this workflow test.
+    let invalid_video = seed._files.path().join("invalid-ocr-media.mp4");
+    std::fs::write(&invalid_video, b"not a video").unwrap();
+    let database_url = std::env::var("DATABASE_URL").unwrap();
+    let pool = youtube_corpus::db::connect(&database_url).await.unwrap();
+    sqlx::query("UPDATE videos SET local_video_path = $2 WHERE id = $1")
+        .bind(seed.shared)
+        .bind(invalid_video.to_str().unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
     let (status, report) = call(
         &seed.app,
         Method::POST,
@@ -429,7 +441,7 @@ async fn running_a_plan_reuses_existing_output_and_reports_unavailable_detectors
         outcomes,
         [
             ("captions".to_string(), "reused".to_string()),
-            ("ocr".to_string(), "unavailable".to_string()),
+            ("ocr".to_string(), "failed".to_string()),
             // No OCR evidence exists, so nothing is translated or reported translated.
             ("translate_ocr".to_string(), "skipped".to_string()),
         ]
