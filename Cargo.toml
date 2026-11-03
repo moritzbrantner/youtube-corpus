@@ -61,11 +61,15 @@ media-core = { package = "moenarch-media-core", git = "https://github.com/moritz
 corpus-core = { package = "moenarch-corpus-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
 runtime-core = { package = "moenarch-runtime-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
 video-analysis-ffmpeg = { package = "moenarch-video-analysis-ffmpeg", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b" }
-video-analysis-ingest = { package = "moenarch-video-analysis-ingest", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b", features = ["ocr"] }
+video-analysis-ingest = { package = "moenarch-video-analysis-ingest", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b", features = [
+  "ocr",
+] }
 video-analysis-core = { package = "moenarch-video-analysis-core", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b" }
 video-analysis-recognition = { package = "moenarch-video-analysis-recognition", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b" }
 image-analysis-core = { package = "moenarch-image-analysis-core", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b" }
-image-analysis-ocr = { package = "moenarch-image-analysis-ocr", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b", features = ["local-onnx"] }
+image-analysis-ocr = { package = "moenarch-image-analysis-ocr", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b", features = [
+  "local-onnx",
+] }
 image-analysis-detection = { package = "moenarch-image-analysis-detection", git = "https://github.com/moritzbrantner/visual-analysis", rev = "40176fb6f552082daa414d9fda268132b127d37b", features = [
   "onnx",
 ] }
