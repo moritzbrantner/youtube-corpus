@@ -32,7 +32,7 @@
     "@moenarch/editor-core": "git+https://github.com/moritzbrantner/editor-core.git#05ae0d0ef9f782ff70d65e8db0675e6aa2dd6870",
     "@moritzbrantner/graph-editor": "git+https://github.com/moritzbrantner/graph-editor.git#56af1b4c027900aa71c4dc1149a385edf1231505",
     "@moritzbrantner/ui": "1.1.0",
-    "@moritzbrantner/workflow-editor": "git+https://github.com/moritzbrantner/workflow-editor.git#618530abbf819fc4ca6f7c625296c405d2f4a759",
+    "@moritzbrantner/workflow-editor": "git+https://github.com/moritzbrantner/workflow-editor.git#706056f483ab55e251ecef86a1d3f9b35f148c8c",
     "@tanstack/react-query": "^5.100.6",
     "lucide-react": "^1.7.0",
     "react": "^19.2.5",
