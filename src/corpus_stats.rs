@@ -861,7 +861,7 @@ pub async fn collect_corpus_stats(
         }
     }
     let mut disk = DiskStats {
-        work_dir: request.work_dir.display().to_string(),
+        work_dir: display_path(&request.work_dir),
         work_dir_exists: request.work_dir.is_dir(),
         ..Default::default()
     };
@@ -904,7 +904,7 @@ pub async fn collect_corpus_stats(
         }
         disk.shared.push(SharedDirStats {
             label: label.clone(),
-            path: path.display().to_string(),
+            path: display_path(path),
             exists,
             files: files.len() as u64,
             bytes: files.iter().map(|(_, b)| b).sum(),
@@ -1367,6 +1367,17 @@ pub async fn collect_corpus_stats(
     })
 }
 
+/// A path for the report, with the home directory shown as `~`.
+fn display_path(path: &Path) -> String {
+    match std::env::var_os("HOME").map(PathBuf::from) {
+        Some(home) if !home.as_os_str().is_empty() => match path.strip_prefix(&home) {
+            Ok(rest) => Path::new("~").join(rest).display().to_string(),
+            Err(_) => path.display().to_string(),
+        },
+        _ => path.display().to_string(),
+    }
+}
+
 fn walk_files(dir: &Path, out: &mut Vec<(PathBuf, u64)>) -> anyhow::Result<()> {
     let mut entries = std::fs::read_dir(dir)?.collect::<Result<Vec<_>, _>>()?;
     entries.sort_by_key(|e| e.file_name());
@@ -1533,9 +1544,9 @@ pub fn render_markdown(report: &CorpusStatsReport) -> String {
     let _ = writeln!(md, "\n### Largest tables\n");
     let _ = writeln!(
         md,
-        "| Table | Artifact | Rows | Heap | TOAST | Indexes | Total |"
+        "| Table | Artifact | Rows | Dead rows | Heap | TOAST | Indexes | Total |"
     );
-    let _ = writeln!(md, "|---|---|---:|---:|---:|---:|---:|");
+    let _ = writeln!(md, "|---|---|---:|---:|---:|---:|---:|---:|");
     let mut tables = report.database.tables.iter().collect::<Vec<_>>();
     tables.sort_by(|a, b| {
         b.total_bytes
