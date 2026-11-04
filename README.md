@@ -539,6 +539,20 @@ cargo run --release -- reembed --table transcript-segments --limit 500   # trial
 `reembed` skips rows already embedded by the same model id, revision and pooling, so an
 interrupted run continues where it stopped.
 
+### Corpus stats (#200)
+
+```bash
+cargo run --release -- stats                       # JSON on stdout; read-only
+cargo run --release -- stats --markdown-out docs/corpus-stats.md --json-out use-case-output/corpus-stats.json
+cargo run --release -- stats --sponsorblock missing   # also fetch SponsorBlock for videos without a snapshot
+```
+
+`stats` reports storage per artifact (Postgres heap, TOAST and index bytes, plus files under
+`--work-dir`), findings per video, averages per video-minute and per length bucket, and the
+share of each video SponsorBlock marks as skippable with the storage, transcription and
+embedding work skipping it would save. The current numbers are in
+[docs/corpus-stats.md](docs/corpus-stats.md).
+
 Search results include the video id, stream id, transcript source, timestamps,
 source URL, title, snippet text, and scores. Each CLI hit also carries a
 `citation`: the YouTube id, channel, upload date, `transcriptSource`

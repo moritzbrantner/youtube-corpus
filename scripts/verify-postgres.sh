@@ -46,3 +46,4 @@ cargo test --test source_monitor_db -- --ignored
 # Needs the multilingual-e5-base bundle (TEXT_EMBEDDINGS_MODEL_DIR); skips without it.
 cargo test --test process_workflow_db -- --ignored
 cargo test --test media_extracts_db -- --ignored
+cargo test --test corpus_stats_db -- --ignored

@@ -54,7 +54,10 @@ pub struct SponsorBlockSegment {
 struct HashMatch {
     #[serde(rename = "videoID")]
     video_id: String,
-    hash: String,
+    /// Full SHA-256 of the video id; the live API stopped sending it (2026-11), so a match is
+    /// by `videoID` and, when present, the hash.
+    #[serde(default)]
+    hash: Option<String>,
     segments: Vec<ApiSegment>,
 }
 
@@ -115,9 +118,13 @@ pub fn parse_hash_response(
     let expected_hash = sha256_hex(youtube_id.as_bytes());
     let categories = normalized_categories(categories);
     let matches: Vec<HashMatch> = serde_json::from_slice(bytes)?;
-    let selected = matches
-        .into_iter()
-        .find(|candidate| candidate.video_id == youtube_id && candidate.hash == expected_hash);
+    let selected = matches.into_iter().find(|candidate| {
+        candidate.video_id == youtube_id
+            && candidate
+                .hash
+                .as_deref()
+                .is_none_or(|hash| hash == expected_hash)
+    });
 
     let segments = selected
         .map(|entry| entry.segments)
@@ -372,6 +379,45 @@ mod tests {
             snapshot.segments[0].metadata["dataLicense"],
             SPONSORBLOCK_DATA_LICENSE
         );
+    }
+
+    #[test]
+    fn matches_by_video_id_when_the_api_omits_the_hash() {
+        let youtube_id = "target-video";
+        let json = serde_json::json!([
+            {"videoID": "other-video", "segments": [
+                {"category": "sponsor", "segment": [1.0, 2.0], "UUID": "other"}
+            ]},
+            {"videoID": youtube_id, "segments": [
+                {"category": "sponsor", "actionType": "skip", "segment": [0.0, 6.2], "UUID": "own",
+                 "videoDuration": 85.5, "locked": 0, "votes": 0, "description": ""}
+            ]}
+        ]);
+        let snapshot = parse_hash_response(
+            youtube_id,
+            &["sponsor".to_string()],
+            &serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(snapshot.segments.len(), 1);
+        assert_eq!(snapshot.segments[0].uuid, "own");
+    }
+
+    #[test]
+    fn a_mismatching_hash_is_ignored() {
+        let youtube_id = "target-video";
+        let json = serde_json::json!([{
+            "videoID": youtube_id,
+            "hash": sha256_hex(b"other-video"),
+            "segments": [{"category": "sponsor", "segment": [1.0, 2.0], "UUID": "x"}]
+        }]);
+        let snapshot = parse_hash_response(
+            youtube_id,
+            &["sponsor".to_string()],
+            &serde_json::to_vec(&json).unwrap(),
+        )
+        .unwrap();
+        assert!(snapshot.segments.is_empty());
     }
 
     #[test]

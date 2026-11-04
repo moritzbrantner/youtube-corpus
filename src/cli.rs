@@ -145,6 +145,55 @@ pub enum Command {
     /// Fills missing or stale text embeddings with the pinned multilingual-e5-base model, in
     /// resumable batches (#192).
     Reembed(ReembedArgs),
+    /// Reports storage per artifact, findings per video and SponsorBlock savings, normalised
+    /// by video length (#200). Read-only unless `--sponsorblock` fetches snapshots.
+    Stats(StatsArgs),
+}
+
+#[derive(Debug, Parser)]
+#[command(args_override_self = true)]
+pub struct StatsArgs {
+    /// Per-item media and output directory written by ingest.
+    #[arg(long, default_value = "use-case-output/youtube-corpus")]
+    pub work_dir: PathBuf,
+    /// Shared model directory, measured as a whole (default: `TEXT_EMBEDDINGS_MODEL_DIR`,
+    /// else `use-case-output/models`).
+    #[arg(long)]
+    pub model_dir: Option<PathBuf>,
+    /// Tantivy search index directory, measured as a whole.
+    #[arg(long)]
+    pub tantivy_index_dir: Option<PathBuf>,
+    /// Fetch SponsorBlock snapshots before reporting (stores them; default: stored only).
+    #[arg(long, value_enum, default_value_t = crate::corpus_stats::SponsorBlockFetch::Off)]
+    pub sponsorblock: crate::corpus_stats::SponsorBlockFetch,
+    /// Print markdown instead of JSON on stdout.
+    #[arg(long)]
+    pub markdown: bool,
+    /// Also write the markdown report to this file.
+    #[arg(long)]
+    pub markdown_out: Option<PathBuf>,
+    /// Also write the JSON report to this file.
+    #[arg(long)]
+    pub json_out: Option<PathBuf>,
+}
+
+impl StatsArgs {
+    pub fn into_request(self) -> crate::corpus_stats::CorpusStatsRequest {
+        let model_dir = self.model_dir.unwrap_or_else(|| {
+            std::env::var_os("TEXT_EMBEDDINGS_MODEL_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("use-case-output/models"))
+        });
+        let mut shared_dirs = vec![("models".to_string(), model_dir)];
+        if let Some(dir) = self.tantivy_index_dir {
+            shared_dirs.push(("tantivy index".to_string(), dir));
+        }
+        crate::corpus_stats::CorpusStatsRequest {
+            work_dir: self.work_dir,
+            shared_dirs,
+            sponsorblock: self.sponsorblock,
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
