@@ -1345,6 +1345,8 @@ fn span_cli_parses_the_citation_arguments() {
         "search",
         "--query",
         "alpha",
+        "--mode",
+        "fts",
         "--youtube-id",
         "abc123XYZ_0",
         "--corpus",
@@ -1359,8 +1361,15 @@ fn span_cli_parses_the_citation_arguments() {
         panic!("search command");
     };
     assert_eq!(args.context, Some(ContextWindow::Seconds(30.0)));
-    assert!(
-        Cli::try_parse_from(["youtube-corpus", "search", "--query", "a", "--context", "x"])
-            .is_err()
-    );
+    assert!(Cli::try_parse_from([
+        "youtube-corpus",
+        "search",
+        "--query",
+        "a",
+        "--mode",
+        "fts",
+        "--context",
+        "x"
+    ])
+    .is_err());
 }

@@ -148,7 +148,10 @@ async fn reembed_table(
         let batch_embedder = embedder.clone();
         let batch_texts = texts.clone();
         let vectors = tokio::task::spawn_blocking(move || {
-            let inputs = batch_texts.iter().map(|text| text.trim()).collect::<Vec<_>>();
+            let inputs = batch_texts
+                .iter()
+                .map(|text| text.trim())
+                .collect::<Vec<_>>();
             batch_embedder.embed_passages(&inputs)
         })
         .await??;

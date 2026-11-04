@@ -360,7 +360,10 @@ pub async fn translate_video_modality(
                 missing.len()
             );
             let vectors = crate::embeddings::embed_passage_literals(
-                segments.iter().map(|segment| segment.text.clone()).collect(),
+                segments
+                    .iter()
+                    .map(|segment| segment.text.clone())
+                    .collect(),
             )
             .await?;
             let mut tx = pool.begin().await?;

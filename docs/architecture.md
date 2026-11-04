@@ -137,7 +137,8 @@ repository history, or generated documentation.
 
 ## Search Flow
 
-1. CLI or `/api/search` builds a `SearchRequest`.
+1. CLI or `/api/search` builds a `SearchRequest`. The caller always names the mode
+   (`fts`, `semantic` or `hybrid`); there is no default mode.
 2. `src/search.rs` applies source, language, timestamp, metadata, and count
    filters.
 3. FTS mode uses Postgres `tsvector` ranking. Each row's tsvector uses the text search

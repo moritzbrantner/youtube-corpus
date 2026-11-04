@@ -6,7 +6,7 @@
 #![allow(dead_code)]
 
 use text_embeddings::testing::HashedFixtureEmbedder;
-use text_embeddings::{TextEmbeddingBackend, TextEmbeddingConfig};
+use text_embeddings::TextEmbeddingConfig;
 use youtube_corpus::embeddings::{
     install_shared, CorpusEmbedder, EmbeddingIdentity, EMBEDDING_DIMENSIONS,
 };

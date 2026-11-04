@@ -776,7 +776,9 @@ pub struct SearchArgs {
     pub query: String,
     #[arg(long, default_value_t = 10)]
     pub top_k: i64,
-    #[arg(long, value_enum, default_value_t = SearchMode::Hybrid)]
+    /// Search mode, chosen explicitly: `fts` (lexical, language-aware), `semantic`
+    /// (multilingual-e5-base vectors) or `hybrid` (#192: there is no default mode).
+    #[arg(long, value_enum)]
     pub mode: SearchMode,
     #[arg(long, value_enum)]
     pub source_kind: Option<SourceKind>,

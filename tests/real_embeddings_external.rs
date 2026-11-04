@@ -33,10 +33,7 @@ const SEGMENTS: &[(&str, &str)] = &[
         "en",
         "The stock market fell sharply after the interest rate decision.",
     ),
-    (
-        "de",
-        "Der Rhein fließt von den Alpen bis zur Nordsee.",
-    ),
+    ("de", "Der Rhein fließt von den Alpen bis zur Nordsee."),
     (
         "es",
         "La paella es un plato tradicional de Valencia con arroz.",
@@ -64,7 +61,10 @@ async fn german_query_finds_english_segment_with_real_e5() {
         embedder.identity().pooling,
         started.elapsed().as_secs_f64()
     );
-    assert_eq!(embedder.identity().model_id, "intfloat/multilingual-e5-base");
+    assert_eq!(
+        embedder.identity().model_id,
+        "intfloat/multilingual-e5-base"
+    );
     assert_eq!(embedder.identity().pooling, "mean");
 
     let pool = youtube_corpus::db::connect(&database_url).await.unwrap();

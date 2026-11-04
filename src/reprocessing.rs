@@ -8,8 +8,8 @@ use uuid::Uuid;
 use crate::captions::TranscriptStream;
 use crate::config::{CaptionConfig, CorpusSource, YtDlpConfig};
 use crate::ingest::{
-    add_passage_metadata, embed_stream_segments, ingest_corpus, stream_segment_id, transcript_segment_contract,
-    transcript_segment_metadata, with_segmentation, write_source_cues,
+    add_passage_metadata, embed_stream_segments, ingest_corpus, stream_segment_id,
+    transcript_segment_contract, transcript_segment_metadata, with_segmentation, write_source_cues,
     IngestReport, IngestRequest, TranscriptSegmentContractInput,
 };
 

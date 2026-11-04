@@ -31,6 +31,20 @@ pub const MODEL_DIR_ENV: &str = "TEXT_EMBEDDINGS_MODEL_DIR";
 /// Set to `1` to let the shared embedder download the pinned bundle when it is missing.
 pub const ALLOW_DOWNLOAD_ENV: &str = "YOUTUBE_CORPUS_EMBEDDING_DOWNLOAD";
 
+/// A required model is missing or unusable. Nothing substitutes heuristic output for it
+/// (owner decision 2026-11-03); callers can downcast to this type to tell "install the model"
+/// apart from other failures.
+#[derive(Debug, thiserror::Error)]
+#[error("model required: {capability} is not available; {hint}")]
+pub struct ModelRequired {
+    /// What needs the model, with the pinned model id and revision.
+    pub capability: String,
+    /// How to make the model available.
+    pub hint: String,
+    #[source]
+    pub source: anyhow::Error,
+}
+
 /// Identity recorded for every stored vector.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -102,19 +116,24 @@ impl CorpusEmbedder {
             download_progress: config.allow_download,
             hf_token: None,
         };
-        let backend = load_embedding_preset(EMBEDDING_PRESET, &options).with_context(|| {
-            format!(
-                "embedding model {}@{} is not usable from {}; place the pinned bundle at \
-                 {}/{}/{}/ (set {MODEL_DIR_ENV} to use another directory, for example \
-                 ~/.cache/model-runtime) or allow the download ({ALLOW_DOWNLOAD_ENV}=1, or \
-                 `reembed` without --no-download). There is no fallback embedder.",
-                EMBEDDING_PRESET.repo_id(),
-                EMBEDDING_PRESET.revision(),
-                config.model_dir.display(),
-                config.model_dir.display(),
-                EMBEDDING_PRESET.as_str(),
-                EMBEDDING_PRESET.revision(),
-            )
+        let backend = load_embedding_preset(EMBEDDING_PRESET, &options).map_err(|source| {
+            anyhow::Error::new(ModelRequired {
+                capability: format!(
+                    "text embeddings ({}@{})",
+                    EMBEDDING_PRESET.repo_id(),
+                    EMBEDDING_PRESET.revision()
+                ),
+                hint: format!(
+                    "place the pinned bundle at {}/{}/{}/ (set {MODEL_DIR_ENV} to use another \
+                     directory, for example ~/.cache/model-runtime) or allow the download \
+                     ({ALLOW_DOWNLOAD_ENV}=1, or `reembed` without --no-download); there is no \
+                     fallback embedder",
+                    config.model_dir.display(),
+                    EMBEDDING_PRESET.as_str(),
+                    EMBEDDING_PRESET.revision(),
+                ),
+                source: anyhow::anyhow!("{source}"),
+            })
         })?;
         let info = backend.model_info();
         let identity = EmbeddingIdentity {
@@ -218,7 +237,9 @@ static SHARED: Mutex<SharedState> = Mutex::new(SharedState {
 });
 
 fn lock() -> std::sync::MutexGuard<'static, SharedState> {
-    SHARED.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    SHARED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Sets where the shared embedder loads its model from. Takes effect only before the model
@@ -247,7 +268,10 @@ pub fn shared() -> anyhow::Result<Arc<CorpusEmbedder>> {
     if let Some(embedder) = &state.embedder {
         return Ok(embedder.clone());
     }
-    let config = state.config.clone().unwrap_or_else(EmbedderConfig::from_env);
+    let config = state
+        .config
+        .clone()
+        .unwrap_or_else(EmbedderConfig::from_env);
     let embedder = Arc::new(CorpusEmbedder::load(&config)?);
     tracing::info!(
         model = %embedder.identity.model_id,
@@ -399,7 +423,10 @@ mod tests {
     fn preset_identity_is_pinned_e5_base() {
         let identity = EmbeddingIdentity::preset();
         assert_eq!(identity.model_id, "intfloat/multilingual-e5-base");
-        assert_eq!(identity.revision, "d128750597153bb5987e10b1c3493a34e5a4502a");
+        assert_eq!(
+            identity.revision,
+            "d128750597153bb5987e10b1c3493a34e5a4502a"
+        );
         assert_eq!(identity.pooling, "mean");
         assert_eq!(identity.dimensions, EMBEDDING_DIMENSIONS);
     }
@@ -420,8 +447,15 @@ mod tests {
             allow_download: false,
         })
         .unwrap_err();
+        let required = error
+            .downcast_ref::<ModelRequired>()
+            .expect("a missing bundle is a ModelRequired error");
+        assert!(required.capability.contains(EMBEDDING_PRESET.revision()));
         let message = format!("{error:#}");
-        assert!(message.contains("intfloat/multilingual-e5-base"), "{message}");
+        assert!(
+            message.contains("intfloat/multilingual-e5-base"),
+            "{message}"
+        );
         assert!(message.contains("no fallback"), "{message}");
     }
 }
