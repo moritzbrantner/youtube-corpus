@@ -368,17 +368,13 @@ where
     E: sqlx::PgExecutor<'e>,
 {
     let id = sqlx::query_scalar::<_, i32>(
-        "WITH inserted AS (
-           INSERT INTO embedding_models (model_id, revision, pooling, dimensions)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (model_id, revision, pooling) DO NOTHING
-           RETURNING id
-         )
-         SELECT id FROM inserted
-         UNION ALL
-         SELECT id FROM embedding_models
-         WHERE model_id = $1 AND revision = $2 AND pooling = $3
-         LIMIT 1",
+        // `DO UPDATE` (a no-op assignment) returns the existing row even when a concurrent
+        // transaction inserted it first; `DO NOTHING` plus a fallback SELECT would miss a row
+        // committed after this statement's snapshot.
+        "INSERT INTO embedding_models (model_id, revision, pooling, dimensions)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (model_id, revision, pooling) DO UPDATE SET model_id = EXCLUDED.model_id
+         RETURNING id",
     )
     .bind(&identity.model_id)
     .bind(&identity.revision)
