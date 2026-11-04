@@ -5,6 +5,8 @@
 //!
 //! Requires `DATABASE_URL`; skipped otherwise (run through `bun run verify:postgres`).
 
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{json, Value};
@@ -168,6 +170,7 @@ impl Ctx {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn canonical_identities_link_on_shared_evidence_and_keep_researcher_decisions() {
+    fixture_embedder::install_fixture_embedder();
     let Some(database_url) = std::env::var("DATABASE_URL").ok() else {
         return;
     };
@@ -394,6 +397,7 @@ async fn canonical_identities_link_on_shared_evidence_and_keep_researcher_decisi
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn profile_evidence_carries_known_publication_dates_only() {
+    fixture_embedder::install_fixture_embedder();
     let Some(database_url) = std::env::var("DATABASE_URL").ok() else {
         return;
     };

@@ -1,6 +1,9 @@
+mod fixture_embedder;
+
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn migrations_run_against_postgres() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         eprintln!("DATABASE_URL unset; skipping");
         return;

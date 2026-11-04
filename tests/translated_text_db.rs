@@ -7,6 +7,8 @@
 //!
 //! Requires `DATABASE_URL`; skipped otherwise (run through `bun run verify:postgres`).
 
+mod fixture_embedder;
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -331,6 +333,7 @@ fn only(results: &[Value], video: Uuid) -> &Value {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn modalities_are_translated_independently_and_searchable_with_provenance() {
+    fixture_embedder::install_fixture_embedder();
     let Some(ctx) = Ctx::new().await else {
         return;
     };
@@ -516,6 +519,7 @@ async fn modalities_are_translated_independently_and_searchable_with_provenance(
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn multiple_targets_are_inherited_deduplicated_and_added_incrementally() {
+    fixture_embedder::install_fixture_embedder();
     let Some(ctx) = Ctx::new().await else {
         return;
     };
@@ -669,6 +673,7 @@ async fn multiple_targets_are_inherited_deduplicated_and_added_incrementally() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn failed_missing_and_unsupported_sources_are_never_reported_translated() {
+    fixture_embedder::install_fixture_embedder();
     let Some(ctx) = Ctx::new().await else {
         return;
     };
@@ -744,6 +749,7 @@ async fn failed_missing_and_unsupported_sources_are_never_reported_translated() 
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and downloads the OPUS-MT en-de model"]
 async fn native_opus_mt_translation_is_indexed_and_searchable() {
+    fixture_embedder::install_fixture_embedder();
     let Some(ctx) = Ctx::new().await else {
         return;
     };

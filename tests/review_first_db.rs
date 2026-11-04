@@ -3,6 +3,8 @@
 //! Discovery and ingestion need yt-dlp and the network, so this drives the admission and
 //! settlement steps a source check uses, plus the policy/pending HTTP API, on seeded items.
 
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{header, Method, Request, StatusCode};
 use serde_json::{json, Value};
@@ -113,6 +115,7 @@ async fn call(
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn review_first_holds_only_videos_no_automatic_source_wants() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         return;
     };

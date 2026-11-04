@@ -1,3 +1,5 @@
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{header, Method, Request};
 use serde_json::{json, Value};
@@ -17,6 +19,7 @@ use youtube_corpus::{
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn ocr_hits_keep_identity_coverage_and_provenance_across_routes() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         return;
     };
@@ -320,6 +323,7 @@ async fn post(app: &axum::Router, uri: &str, body: Value) -> Value {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn renaming_an_unknown_label_is_not_found_even_with_a_blank_name() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         return;
     };

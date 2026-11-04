@@ -153,6 +153,8 @@
 //!   shifts too; nothing else in those records changes, and every other line is identical.
 //! - Format 3: that record's `source.revision` and the batch `revision`.
 
+mod fixture_embedder;
+
 mod support;
 
 use clap::Parser;
@@ -992,6 +994,7 @@ fn export_command_rejects_an_empty_revision() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn snapshot_loader_matches_the_database_source_span_export() {
+    fixture_embedder::install_fixture_embedder();
     use youtube_corpus::{
         begin_visual_processing_run, export_source_span_batch, upsert_visual_text_track,
         BeginVisualProcessingRunRequest, ProcessingProvenance, UpsertVisualTextTrackRequest,

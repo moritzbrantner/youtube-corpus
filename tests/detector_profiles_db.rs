@@ -1,5 +1,7 @@
 //! Detector profiles and effective plans (#63, Atlas 2.3, 2.6, 2.8, 2.10) through the HTTP API.
 
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{header, Method, Request, StatusCode};
 use serde_json::{json, Value};
@@ -214,6 +216,7 @@ fn contributors(entry: &Value) -> Vec<String> {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn overlapping_profiles_union_with_corpus_scoped_video_overrides() {
+    fixture_embedder::install_fixture_embedder();
     let Some(seed) = seed().await else {
         return;
     };
@@ -392,6 +395,7 @@ async fn overlapping_profiles_union_with_corpus_scoped_video_overrides() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn running_a_plan_reuses_existing_output_and_reports_ocr_decode_failure() {
+    fixture_embedder::install_fixture_embedder();
     let Some(seed) = seed().await else {
         return;
     };
@@ -479,6 +483,7 @@ fn stage<'a>(status: &'a Value, detector: &str) -> &'a Value {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn status_tracks_effective_selection_failures_review_and_each_translation_language() {
+    fixture_embedder::install_fixture_embedder();
     let Some(seed) = seed().await else {
         return;
     };
@@ -620,6 +625,7 @@ async fn status_tracks_effective_selection_failures_review_and_each_translation_
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn interrupted_attempts_are_not_reported_as_running_and_retained_outputs_survive() {
+    fixture_embedder::install_fixture_embedder();
     let Some(seed) = seed().await else {
         return;
     };
@@ -658,6 +664,7 @@ async fn interrupted_attempts_are_not_reported_as_running_and_retained_outputs_s
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 #[cfg(unix)]
 async fn targeted_asr_reuses_only_identical_input_producer_and_config_and_preserves_failures() {
+    fixture_embedder::install_fixture_embedder();
     use std::os::unix::fs::PermissionsExt;
     let Some(seed) = seed().await else {
         return;
@@ -792,6 +799,7 @@ out.mkdir(parents=True, exist_ok=True)
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn faces_reuses_empty_completed_runs_and_preserves_them_after_failed_refresh() {
+    fixture_embedder::install_fixture_embedder();
     use sha2::{Digest, Sha256};
     use youtube_corpus::face_processing::{
         FaceAnalysisConfig, FACE_MODEL, FACE_MODEL_VERSION, FACE_PROCESSOR,
@@ -893,6 +901,7 @@ async fn faces_reuses_empty_completed_runs_and_preserves_them_after_failed_refre
 #[tokio::test]
 #[ignore = "requires DATABASE_URL, CORPUS_FACE_TEST_MEDIA, CORPUS_FACE_TEST_MODELS and ONNX Runtime API 24"]
 async fn native_faces_store_model_observations_and_adjacent_tracks() {
+    fixture_embedder::install_fixture_embedder();
     use youtube_corpus::face_processing::{
         analyze_stored_video_faces, FaceAnalysisConfig, FaceAnalysisRequest,
     };
@@ -955,6 +964,7 @@ async fn native_faces_store_model_observations_and_adjacent_tracks() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn voices_without_retained_audio_report_a_real_failure() {
+    fixture_embedder::install_fixture_embedder();
     let Some(seed) = seed().await else {
         return;
     };
@@ -989,6 +999,7 @@ async fn voices_without_retained_audio_report_a_real_failure() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL, CORPUS_VOICE_TEST_MEDIA, CORPUS_VOICE_TEST_MODELS and ONNX Runtime API 24"]
 async fn native_voices_store_model_observations_tracks_and_survive_failed_refresh() {
+    fixture_embedder::install_fixture_embedder();
     use youtube_corpus::detectors::{run_video_plan, PlanRunRequest, StageOutcome};
     let Ok(media) = std::env::var("CORPUS_VOICE_TEST_MEDIA") else {
         return;

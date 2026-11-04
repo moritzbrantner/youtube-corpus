@@ -3,6 +3,8 @@
 //! videos (an untracked, recognized channel has none) and counts videos without channel
 //! metadata; `GET /api/corpora/{corpus}/videos` narrows to one `sourceId` or `channelId`.
 
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use serde_json::Value;
@@ -37,6 +39,7 @@ fn ids(value: &Value) -> Vec<String> {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn channel_directory_and_scoped_video_lists() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         return;
     };

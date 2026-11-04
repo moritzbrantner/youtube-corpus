@@ -1,3 +1,5 @@
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{header, Method, Request, StatusCode};
 use serde_json::{json, Value};
@@ -16,6 +18,7 @@ use youtube_corpus::{
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn one_corpus_query_ranks_speech_and_ocr_tracks_with_provenance() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         return;
     };

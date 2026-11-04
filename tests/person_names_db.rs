@@ -6,6 +6,8 @@
 //!
 //! Requires `DATABASE_URL`; skipped otherwise (run through `bun run verify:postgres`).
 
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{json, Value};
@@ -260,6 +262,7 @@ fn name_of(report: &PersonNamesReport, person: Uuid) -> Option<(String, String)>
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn aligned_name_tags_name_people_and_corrections_survive_reruns() {
+    fixture_embedder::install_fixture_embedder();
     let Some(ctx) = Ctx::new().await else {
         return;
     };
@@ -423,6 +426,7 @@ async fn aligned_name_tags_name_people_and_corrections_survive_reruns() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn two_visible_faces_or_conflicting_tags_leave_names_unresolved() {
+    fixture_embedder::install_fixture_embedder();
     let Some(ctx) = Ctx::new().await else {
         return;
     };
@@ -636,6 +640,7 @@ impl Ctx {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn spoken_self_introductions_name_voice_people_but_guest_introductions_do_not() {
+    fixture_embedder::install_fixture_embedder();
     let Some(ctx) = Ctx::new().await else {
         return;
     };
@@ -740,6 +745,7 @@ async fn spoken_self_introductions_name_voice_people_but_guest_introductions_do_
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn self_introduction_forms_a_single_video_person_that_later_videos_join() {
+    fixture_embedder::install_fixture_embedder();
     use youtube_corpus::voice_matching::{match_corpus_voices, VoiceMatchStatus};
     let Some(ctx) = Ctx::new().await else {
         return;

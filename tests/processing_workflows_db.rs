@@ -1,5 +1,7 @@
 //! Shared processing workflow definitions run through the corpus plan runner (#108).
 
+mod fixture_embedder;
+
 use std::time::Duration;
 
 use axum::body::{to_bytes, Body};
@@ -92,6 +94,7 @@ fn outcomes(run: &Value) -> Vec<(String, String)> {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn two_corpora_reuse_one_definition_with_their_own_stages_and_histories() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         return;
     };

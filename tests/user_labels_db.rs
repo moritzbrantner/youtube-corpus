@@ -48,6 +48,8 @@
 //! shared across corpora, and case-insensitive name uniqueness. All label names therefore carry
 //! a per-test unique suffix.
 
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{header, Method, Request, StatusCode};
 use serde_json::{json, Value};
@@ -441,6 +443,7 @@ fn assert_error(status: StatusCode, body: &Value, expected: StatusCode, context:
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn shared_and_direct_videos_appear_once_with_their_memberships() {
+    fixture_embedder::install_fixture_embedder();
     let Some(fx) = Fixture::seed().await else {
         return;
     };
@@ -503,6 +506,7 @@ async fn shared_and_direct_videos_appear_once_with_their_memberships() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn label_round_trip_on_sources_and_videos() {
+    fixture_embedder::install_fixture_embedder();
     let Some(fx) = Fixture::seed().await else {
         return;
     };
@@ -585,6 +589,7 @@ async fn label_round_trip_on_sources_and_videos() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn filtering_the_catalog_by_a_video_label_changes_results() {
+    fixture_embedder::install_fixture_embedder();
     let Some(fx) = Fixture::seed().await else {
         return;
     };
@@ -629,6 +634,7 @@ async fn filtering_the_catalog_by_a_video_label_changes_results() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn source_label_filters_the_catalog_to_that_sources_videos() {
+    fixture_embedder::install_fixture_embedder();
     let Some(fx) = Fixture::seed().await else {
         return;
     };
@@ -657,6 +663,7 @@ async fn source_label_filters_the_catalog_to_that_sources_videos() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn removing_labels_keeps_youtube_metadata_memberships_and_evidence() {
+    fixture_embedder::install_fixture_embedder();
     let Some(fx) = Fixture::seed().await else {
         return;
     };
@@ -726,6 +733,7 @@ async fn removing_labels_keeps_youtube_metadata_memberships_and_evidence() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn user_labels_are_distinct_from_youtube_tags() {
+    fixture_embedder::install_fixture_embedder();
     let Some(fx) = Fixture::seed().await else {
         return;
     };
@@ -764,6 +772,7 @@ async fn user_labels_are_distinct_from_youtube_tags() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn label_errors_are_intelligible() {
+    fixture_embedder::install_fixture_embedder();
     let Some(fx) = Fixture::seed().await else {
         return;
     };

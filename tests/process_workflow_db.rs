@@ -2,6 +2,8 @@
 //! plan takes freely licensed videos through ingest, captions, ASR and scenes, writes the
 //! citable exports, deletes the downloaded media, and a second run reuses everything.
 
+mod fixture_embedder;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -146,6 +148,7 @@ fn stage<'a>(video: &'a Value, detector: &str) -> &'a str {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn process_plan_ingests_exports_and_releases_media_then_reuses_everything() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         eprintln!("DATABASE_URL unset; skipping");
         return;

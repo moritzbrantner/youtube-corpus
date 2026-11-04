@@ -1,6 +1,8 @@
 //! #134 contract checks with synthetic 256-D vectors: cross-video voice matching into corpus
 //! people, reversible corrections, and face-to-voice link suggestions. Real WeSpeaker
 //! embeddings are produced by the voices detector and are not needed here.
+mod fixture_embedder;
+
 use axum::{
     body::{to_bytes, Body},
     http::{Method, Request, StatusCode},
@@ -219,6 +221,7 @@ fn person_of(review: &VoiceMatchReview, track: Uuid) -> Option<Uuid> {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn voices_match_across_videos_as_reviewable_suggestions() {
+    fixture_embedder::install_fixture_embedder();
     let Some(f) = Fixture::new().await else {
         return;
     };
@@ -344,6 +347,7 @@ async fn futures_collect(
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn faces_link_to_cooccurring_voices_only_after_review() {
+    fixture_embedder::install_fixture_embedder();
     let Some(f) = Fixture::new().await else {
         return;
     };

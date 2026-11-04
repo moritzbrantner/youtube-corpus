@@ -5,6 +5,8 @@
 //! SQL (`start_seconds NULLS LAST, track_key, id` under the database collation). The snapshot
 //! loader must keep both.
 
+mod fixture_embedder;
+
 mod support;
 
 use serde_json::Value;
@@ -82,6 +84,7 @@ async fn assert_snapshot_matches_database(pool: &sqlx::PgPool, video_id: Option<
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn loader_exports_only_persisted_speaker_turn_rows_with_original_provenance() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         eprintln!("DATABASE_URL unset; skipping");
         return;
@@ -171,6 +174,7 @@ async fn loader_exports_only_persisted_speaker_turn_rows_with_original_provenanc
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn loader_keeps_segment_video_scope_and_database_track_order() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         eprintln!("DATABASE_URL unset; skipping");
         return;
@@ -415,6 +419,7 @@ async fn loader_keeps_segment_video_scope_and_database_track_order() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn resegmentation_records_actual_processor_without_restamping_other_streams() {
+    fixture_embedder::install_fixture_embedder();
     use youtube_corpus::config::YtDlpConfig;
     use youtube_corpus::reprocessing::{reprocess_video, ReprocessRequest, ReprocessStage};
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL");

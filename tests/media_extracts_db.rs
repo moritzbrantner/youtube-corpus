@@ -3,6 +3,8 @@
 //! them, `extract` re-acquires released media on demand and cuts identical bytes, and a
 //! non-CC video without scene evidence needs the owner's opt-in and gets no invented scenes.
 
+mod fixture_embedder;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -117,6 +119,7 @@ fn kinds(manifest: &Value) -> Vec<String> {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn extracts_are_cut_before_release_reused_and_reacquired_on_demand() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         eprintln!("DATABASE_URL unset; skipping");
         return;

@@ -2,6 +2,8 @@
 //! existing `/api/search` route: same query on both providers, spoken-only, visible-only and
 //! missing-OCR records, exact source/timestamp IDs, edits, deletes and restarts.
 
+mod fixture_embedder;
+
 use std::sync::Arc;
 
 use axum::body::{to_bytes, Body};
@@ -18,6 +20,7 @@ use youtube_corpus::{
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn tantivy_pilot_matches_literal_terms_and_follows_postgres_edits() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         return;
     };
