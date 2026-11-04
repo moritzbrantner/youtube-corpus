@@ -11,6 +11,7 @@ pub mod cli;
 pub mod config;
 pub mod corpora;
 pub mod corpus_export;
+pub mod corpus_stats;
 pub mod db;
 pub mod detector_status;
 pub mod detectors;

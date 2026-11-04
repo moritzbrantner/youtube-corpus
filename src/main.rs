@@ -233,6 +233,35 @@ async fn run_command(
                 }
             }
         }
+        Command::Stats(args) => {
+            let config = AppConfig::from_env_and_cli(database_url)?;
+            let pool = youtube_corpus::db::connect(&config.database_url).await?;
+            let markdown = args.markdown;
+            let markdown_out = args.markdown_out.clone();
+            let json_out = args.json_out.clone();
+            let report =
+                youtube_corpus::corpus_stats::collect_corpus_stats(&pool, &args.into_request())
+                    .await
+                    .context("stats failed")?;
+            let json = serde_json::to_string_pretty(&report)?;
+            let rendered = youtube_corpus::corpus_stats::render_markdown(&report);
+            if let Some(path) = markdown_out {
+                std::fs::write(&path, &rendered)
+                    .with_context(|| format!("failed to write {}", path.display()))?;
+            }
+            if let Some(path) = json_out {
+                if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&path, format!("{json}\n"))
+                    .with_context(|| format!("failed to write {}", path.display()))?;
+            }
+            if markdown {
+                print!("{rendered}");
+            } else {
+                println!("{json}");
+            }
+        }
         Command::Diagnostics(args) => {
             let report =
                 youtube_corpus::diagnostics::run(database_url, args.transcriber_command).await;
