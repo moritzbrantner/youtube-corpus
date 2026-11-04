@@ -514,10 +514,30 @@ and execution-plan metadata.
 ## Search
 
 ```bash
-cargo run -- search --query "first uploaded youtube video" --top-k 5
+cargo run -- search --query "first uploaded youtube video" --top-k 5 --mode hybrid
 cargo run -- search --query "rust pipeline" --mode fts
 cargo run -- search --query "semantic topic" --mode semantic
 ```
+
+`--mode` is required: there is no default search mode. Semantic and hybrid search use the pinned multilingual `intfloat/multilingual-e5-base`
+model (nlp-stack preset, revision `d128750…`, 768 dimensions): a German query finds English
+or Spanish segments. The model bundle (about 1.1 GB) is read from
+`TEXT_EMBEDDINGS_MODEL_DIR` (default `use-case-output/models`) as
+`<dir>/multilingual-e5-base/<revision>/`; ingest, translation, OCR and search fail with an
+error naming that path when it is missing (`YOUTUBE_CORPUS_EMBEDDING_DOWNLOAD=1` lets them
+download it). There is no fallback embedder. Full-text search stems per segment language
+(German, English, Spanish; other languages are tokenized without stemming).
+
+After upgrading from hashed vectors (migration 0033 drops them), fill the new vectors:
+
+```bash
+cargo run --release -- migrate
+cargo run --release -- reembed            # all tables; resumable, prints progress
+cargo run --release -- reembed --table transcript-segments --limit 500   # trial run
+```
+
+`reembed` skips rows already embedded by the same model id, revision and pooling, so an
+interrupted run continues where it stopped.
 
 Search results include the video id, stream id, transcript source, timestamps,
 source URL, title, snippet text, and scores. Each CLI hit also carries a
@@ -529,9 +549,9 @@ labels of stored speaker turns that overlap it (labels, not identities).
 
 ```bash
 # Hits of one recording, two segments of context on each side, as plain text
-cargo run -- search --query "free will" --youtube-id dQw4w9WgXcQ --context 2 --format text
+cargo run -- search --query "free will" --mode hybrid --youtube-id dQw4w9WgXcQ --context 2 --format text
 # Hits within 30 s of context, limited to a corpus (id or slug) and a diarization label
-cargo run -- search --query "free will" --corpus debates --speaker-label SPEAKER_01 --context 30s
+cargo run -- search --query "free will" --mode hybrid --corpus debates --speaker-label SPEAKER_01 --context 30s
 # Pin a citation: the segments overlapping [start, end) and their span_sha256
 cargo run -- span --youtube-id dQw4w9WgXcQ --start 754 --end 781 \
   --transcript-source caption_manual --language en --producer-revision "git:$(git rev-parse HEAD)"

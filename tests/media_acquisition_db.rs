@@ -1,6 +1,8 @@
 //! Plan-driven media acquisition and release against Postgres with a stubbed yt-dlp
 //! (#126, #120, #127).
 
+mod fixture_embedder;
+
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -83,6 +85,7 @@ async fn acquisition(pool: &sqlx::PgPool, video: Uuid) -> MediaAcquisition {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn acquires_only_what_the_plan_needs_and_reacquires_removed_media() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         eprintln!("DATABASE_URL unset; skipping");
         return;
@@ -338,6 +341,7 @@ impl Release {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn deletes_media_after_every_enabled_media_stage_stored_output_and_reuses_it_after() {
+    fixture_embedder::install_fixture_embedder();
     let Some(t) = Release::new().await else {
         eprintln!("DATABASE_URL or ffmpeg unavailable; skipping");
         return;
@@ -438,6 +442,7 @@ async fn deletes_media_after_every_enabled_media_stage_stored_output_and_reuses_
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn deletes_superseded_files_keeps_on_request_and_is_idempotent() {
+    fixture_embedder::install_fixture_embedder();
     let Some(t) = Release::new().await else {
         eprintln!("DATABASE_URL or ffmpeg unavailable; skipping");
         return;
@@ -476,6 +481,7 @@ async fn deletes_superseded_files_keeps_on_request_and_is_idempotent() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn never_deletes_changed_symlinked_unrecorded_or_local_files() {
+    fixture_embedder::install_fixture_embedder();
     let Some(t) = Release::new().await else {
         eprintln!("DATABASE_URL or ffmpeg unavailable; skipping");
         return;

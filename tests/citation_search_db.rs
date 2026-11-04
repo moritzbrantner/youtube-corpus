@@ -1,15 +1,13 @@
 //! Citation-oriented CLI search against Postgres (#140): youtube-id, corpus and speaker-label
 //! filters, citation identifiers, context windows and the per-span hash.
 
-use text_embeddings::{HashedTextEmbedder, TextEmbeddingConfig};
-use text_lexical::CorpusOptions;
+mod fixture_embedder;
 use uuid::Uuid;
 use youtube_corpus::citations::{
     attach_citations, media_spans, render_search_text, ContextWindow, SpanQuery,
 };
 use youtube_corpus::config::SearchMode;
 use youtube_corpus::corpus_export::load_export_snapshot;
-use youtube_corpus::ingest::vector_literal;
 use youtube_corpus::search::{search_corpus, SearchReport, SearchRequest};
 
 const CORPUS_DEBATES: Uuid = Uuid::from_u128(0xc1000000000000000000000000000001);
@@ -181,6 +179,7 @@ async fn citation_search_filters_enriches_and_pins_spans() {
 }
 
 async fn seed(pool: &sqlx::PgPool) {
+    fixture_embedder::install_fixture_embedder();
     sqlx::query("TRUNCATE transcript_segments, transcript_streams, videos CASCADE")
         .execute(pool)
         .await
@@ -283,14 +282,13 @@ async fn seed(pool: &sqlx::PgPool) {
 }
 
 async fn insert_segment(pool: &sqlx::PgPool, stream: Uuid, video: Uuid, index: usize, text: &str) {
-    let embedder =
-        HashedTextEmbedder::new(TextEmbeddingConfig::default(), CorpusOptions::default()).unwrap();
-    let embedding = vector_literal(embedder.embed_text(text).unwrap().as_slice());
+    let embedding = fixture_embedder::fixture_vector_literal(text);
+    let model = fixture_embedder::fixture_model_row(pool).await;
     sqlx::query(
         "INSERT INTO transcript_segments
          (id, stream_id, video_id, segment_index, start_seconds, end_seconds, text, language,
-          metadata, embedding)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'en', '{}'::jsonb, $8::vector)",
+          metadata, embedding, embedding_model)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'en', '{}'::jsonb, $8::vector, $9)",
     )
     .bind(segment_id(stream, index as u128))
     .bind(stream)
@@ -300,6 +298,7 @@ async fn insert_segment(pool: &sqlx::PgPool, stream: Uuid, video: Uuid, index: u
     .bind(index as f64 * 10.0 + 10.0)
     .bind(text)
     .bind(embedding)
+    .bind(model)
     .execute(pool)
     .await
     .unwrap();

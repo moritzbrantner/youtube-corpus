@@ -32,7 +32,7 @@ Run command-line workflows directly with Cargo after source-mode activation:
 ```bash
 cargo run -- migrate
 cargo run -- api-schema
-cargo run -- search --query "first uploaded youtube video" --top-k 5
+cargo run -- search --query "first uploaded youtube video" --top-k 5 --mode hybrid
 cargo run -- status
 ```
 

@@ -153,6 +153,8 @@
 //!   shifts too; nothing else in those records changes, and every other line is identical.
 //! - Format 3: that record's `source.revision` and the batch `revision`.
 
+mod fixture_embedder;
+
 mod support;
 
 use clap::Parser;
@@ -992,6 +994,7 @@ fn export_command_rejects_an_empty_revision() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn snapshot_loader_matches_the_database_source_span_export() {
+    fixture_embedder::install_fixture_embedder();
     use youtube_corpus::{
         begin_visual_processing_run, export_source_span_batch, upsert_visual_text_track,
         BeginVisualProcessingRunRequest, ProcessingProvenance, UpsertVisualTextTrackRequest,
@@ -1345,6 +1348,8 @@ fn span_cli_parses_the_citation_arguments() {
         "search",
         "--query",
         "alpha",
+        "--mode",
+        "fts",
         "--youtube-id",
         "abc123XYZ_0",
         "--corpus",
@@ -1359,8 +1364,15 @@ fn span_cli_parses_the_citation_arguments() {
         panic!("search command");
     };
     assert_eq!(args.context, Some(ContextWindow::Seconds(30.0)));
-    assert!(
-        Cli::try_parse_from(["youtube-corpus", "search", "--query", "a", "--context", "x"])
-            .is_err()
-    );
+    assert!(Cli::try_parse_from([
+        "youtube-corpus",
+        "search",
+        "--query",
+        "a",
+        "--mode",
+        "fts",
+        "--context",
+        "x"
+    ])
+    .is_err());
 }

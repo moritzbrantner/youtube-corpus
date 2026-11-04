@@ -167,14 +167,19 @@ fn parses_search_command() {
         "rust transcript",
         "--top-k",
         "3",
+        "--mode",
+        "hybrid",
     ]);
     match cli.command {
         Some(Command::Search(args)) => {
             assert_eq!(args.query, "rust transcript");
             assert_eq!(args.top_k, 3);
+            assert_eq!(args.mode, youtube_corpus::config::SearchMode::Hybrid);
         }
         other => panic!("expected search command, got {other:?}"),
     }
+    // #192: search has no default mode.
+    assert!(Cli::try_parse_from(["youtube-corpus", "search", "--query", "rust"]).is_err());
 }
 
 #[test]

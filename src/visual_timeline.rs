@@ -1,11 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{PgConnection, PgPool, Postgres, Row};
-use text_embeddings::{HashedTextEmbedder, TextEmbeddingConfig};
-use text_lexical::CorpusOptions;
 use uuid::Uuid;
 
-use crate::ingest::vector_literal;
 use crate::multimodal::ProcessingProvenance;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -388,7 +385,9 @@ pub async fn upsert_visual_text_track_with(
         "visual text timestamp",
     )?;
     validate_region(request.region)?;
-    let embedding = text_embedding_literal(&text)?;
+    let vectors = crate::embeddings::embed_passage_literals(vec![text.clone()]).await?;
+    let model = vectors.model_row(&mut *connection).await?;
+    let embedding = vectors.literals.into_iter().next().flatten();
     let id = Uuid::new_v5(&request.run_id, format!("track:{track_key}").as_bytes());
     let (x, y, width, height) = region_columns(request.region);
     let language = normalize_optional_text(request.language);
@@ -397,11 +396,11 @@ pub async fn upsert_visual_text_track_with(
         "INSERT INTO visual_text_tracks (
            id, run_id, video_id, track_key, text, role, language, sample_count,
            start_frame, end_frame, start_seconds, end_seconds,
-           bbox_x, bbox_y, bbox_width, bbox_height, metadata, embedding
+           bbox_x, bbox_y, bbox_width, bbox_height, metadata, embedding, embedding_model
          )
          VALUES (
            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-           $13, $14, $15, $16, $17, CAST(CAST($18 AS text) AS vector)
+           $13, $14, $15, $16, $17, CAST(CAST($18 AS text) AS vector), $19
          )
          ON CONFLICT (run_id, track_key) DO UPDATE SET
            text = EXCLUDED.text,
@@ -418,6 +417,7 @@ pub async fn upsert_visual_text_track_with(
            bbox_height = EXCLUDED.bbox_height,
            metadata = EXCLUDED.metadata,
            embedding = EXCLUDED.embedding,
+           embedding_model = EXCLUDED.embedding_model,
            updated_at = now()
          RETURNING id, run_id, video_id, track_key, text, role, language, sample_count,
                    start_frame, end_frame, start_seconds, end_seconds,
@@ -446,7 +446,8 @@ pub async fn upsert_visual_text_track_with(
     .bind(width)
     .bind(height)
     .bind(request.metadata)
-    .bind(embedding)
+    .bind(&embedding)
+    .bind(embedding.as_ref().and(model))
     .fetch_one(&mut *connection)
     .await?;
 
@@ -658,13 +659,6 @@ fn region_columns(
             Some(i64::from(region.height)),
         )
     })
-}
-
-fn text_embedding_literal(text: &str) -> anyhow::Result<String> {
-    let embedder =
-        HashedTextEmbedder::new(TextEmbeddingConfig::default(), CorpusOptions::default())?;
-    let embedding = embedder.embed_text(text)?;
-    Ok(vector_literal(embedding.as_slice()))
 }
 
 fn i64_from_u64(value: u64, name: &str) -> anyhow::Result<i64> {

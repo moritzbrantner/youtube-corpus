@@ -1,3 +1,5 @@
+mod fixture_embedder;
+
 use serde_json::json;
 use uuid::Uuid;
 use youtube_corpus::config::CorpusSource;
@@ -11,6 +13,7 @@ use youtube_corpus::ingest::{IngestItemReport, IngestReport};
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn discovery_frontier_is_idempotent_prioritized_and_expands_ingest_evidence() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         eprintln!("DATABASE_URL unset; skipping");
         return;

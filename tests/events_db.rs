@@ -4,6 +4,8 @@
 //! Claims are recorded by a researcher from transcript segments; automatic extraction is S7.
 //! Requires `DATABASE_URL`; skipped otherwise (run through `bun run verify:postgres`).
 
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{json, Value};
@@ -158,6 +160,7 @@ fn summary<'a>(list: &'a Value, id: &str) -> Option<&'a Value> {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn event_claims_stay_separate_through_review_merge_split_and_restart() {
+    fixture_embedder::install_fixture_embedder();
     let Some(database_url) = std::env::var("DATABASE_URL").ok() else {
         return;
     };

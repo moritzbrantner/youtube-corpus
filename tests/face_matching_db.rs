@@ -1,5 +1,7 @@
 //! #64 contract checks use synthetic non-biometric 128-D vectors. Actual face
 //! extraction is exercised separately by the optional native producer test.
+mod fixture_embedder;
+
 use axum::{
     body::{to_bytes, Body},
     http::{Method, Request, StatusCode},
@@ -182,6 +184,7 @@ fn person(group: &Value) -> Uuid {
 #[ignore = "requires DATABASE_URL and pgvector"]
 async fn compatible_faces_link_automatically_while_negative_and_incompatible_evidence_stays_unresolved(
 ) {
+    fixture_embedder::install_fixture_embedder();
     let Some(f) = Fixture::new().await else {
         return;
     };
@@ -227,6 +230,7 @@ async fn compatible_faces_link_automatically_while_negative_and_incompatible_evi
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and pgvector"]
 async fn ambiguous_similarity_chains_never_turn_into_an_inferred_person() {
+    fixture_embedder::install_fixture_embedder();
     let Some(f) = Fixture::new().await else {
         return;
     };
@@ -242,6 +246,7 @@ async fn ambiguous_similarity_chains_never_turn_into_an_inferred_person() {
 #[ignore = "requires DATABASE_URL and pgvector"]
 async fn split_unlink_link_and_confirmation_survive_reruns_and_update_existing_entity_occurrences()
 {
+    fixture_embedder::install_fixture_embedder();
     let Some(f) = Fixture::new().await else {
         return;
     };
@@ -344,6 +349,7 @@ async fn split_unlink_link_and_confirmation_survive_reruns_and_update_existing_e
 #[ignore = "requires DATABASE_URL and pgvector"]
 async fn compatible_reprocessing_replaces_automatic_membership_without_deleting_old_source_evidence(
 ) {
+    fixture_embedder::install_fixture_embedder();
     let Some(f) = Fixture::new().await else {
         return;
     };
@@ -371,6 +377,7 @@ async fn compatible_reprocessing_replaces_automatic_membership_without_deleting_
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and pgvector"]
 async fn a_candidate_with_two_equally_supported_existing_people_stays_unresolved() {
+    fixture_embedder::install_fixture_embedder();
     let Some(f) = Fixture::new().await else {
         return;
     };
@@ -392,6 +399,7 @@ async fn a_candidate_with_two_equally_supported_existing_people_stays_unresolved
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and pgvector"]
 async fn simultaneous_faces_in_one_run_are_contradictory_evidence() {
+    fixture_embedder::install_fixture_embedder();
     let Some(f) = Fixture::new().await else {
         return;
     };
@@ -453,6 +461,7 @@ async fn simultaneous_faces_in_one_run_are_contradictory_evidence() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL, CORPUS_FACE_TEST_MEDIA, CORPUS_FACE_TEST_MODELS and ONNX Runtime API 24"]
 async fn native_face_output_matches_across_videos_and_honors_a_correction_after_refresh() {
+    fixture_embedder::install_fixture_embedder();
     use youtube_corpus::detectors::{run_video_plan, PlanRunRequest, StageOutcome};
     use youtube_corpus::face_matching::{
         correct_face_matches, review_face_matches, FaceCorrectionAction, FaceCorrectionRequest,
@@ -552,6 +561,7 @@ async fn native_face_output_matches_across_videos_and_honors_a_correction_after_
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and pgvector"]
 async fn rejecting_one_person_does_not_disable_a_different_supported_automatic_match() {
+    fixture_embedder::install_fixture_embedder();
     let Some(f) = Fixture::new().await else {
         return;
     };

@@ -10,6 +10,8 @@
 //!
 //! Requires `DATABASE_URL`; skipped otherwise (run through `bun run verify:postgres`).
 
+mod fixture_embedder;
+
 use std::collections::BTreeSet;
 
 use axum::body::{to_bytes, Body};
@@ -259,6 +261,7 @@ fn not_verified(source: Option<&str>) {
 #[ignore = "requires DATABASE_URL"]
 async fn high_confidence_repeats_group_automatically_while_weak_ambiguous_and_foreign_evidence_stays_apart(
 ) {
+    fixture_embedder::install_fixture_embedder();
     let Some(ctx) = context("Face acceptance: grouping").await else {
         return;
     };
@@ -387,6 +390,7 @@ async fn futures_videos(ctx: &Ctx, count: usize) -> Vec<Uuid> {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn simultaneous_faces_in_one_video_are_never_the_same_person() {
+    fixture_embedder::install_fixture_embedder();
     let Some(ctx) = context("Face acceptance: contradiction").await else {
         return;
     };
@@ -418,6 +422,7 @@ async fn simultaneous_faces_in_one_video_are_never_the_same_person() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn corrections_change_links_and_totals_keep_evidence_and_survive_reprocessing() {
+    fixture_embedder::install_fixture_embedder();
     let Some(ctx) = context("Face acceptance: corrections").await else {
         return;
     };
@@ -538,6 +543,7 @@ async fn corrections_change_links_and_totals_keep_evidence_and_survive_reprocess
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn a_newer_compatible_producer_run_replaces_superseded_evidence_without_duplicates() {
+    fixture_embedder::install_fixture_embedder();
     let Some(ctx) = context("Face acceptance: producer revision").await else {
         return;
     };
@@ -623,6 +629,7 @@ async fn call(
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn http_review_correction_and_occurrence_contract() {
+    fixture_embedder::install_fixture_embedder();
     let Some(ctx) = context("Face acceptance: HTTP").await else {
         return;
     };

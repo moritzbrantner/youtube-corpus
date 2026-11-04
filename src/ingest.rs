@@ -3,7 +3,7 @@ mod core;
 use std::collections::HashSet;
 
 pub use core::{
-    add_passage_metadata, stream_segment_id, transcript_segment_contract,
+    add_passage_metadata, embed_stream_segments, stream_segment_id, transcript_segment_contract,
     transcript_segment_metadata, vector_literal, with_segmentation, write_source_cues,
     IngestItemReport, IngestReport, IngestRequest, TranscriptSegmentContractInput,
 };

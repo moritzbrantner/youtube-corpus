@@ -1,6 +1,10 @@
 //! `youtube-corpus process` end to end with a fake yt-dlp and a fake transcriber (#128): a
 //! plan takes freely licensed videos through ingest, captions, ASR and scenes, writes the
 //! citable exports, deletes the downloaded media, and a second run reuses everything.
+//!
+//! The binary runs as a subprocess, so the in-process fixture embedder cannot reach it: ingest
+//! embeds with the real multilingual-e5-base bundle (#192, no fallback). The test needs
+//! `TEXT_EMBEDDINGS_MODEL_DIR` pointing at that bundle and skips without it.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -144,8 +148,12 @@ fn stage<'a>(video: &'a Value, detector: &str) -> &'a str {
 }
 
 #[tokio::test]
-#[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
+#[ignore = "requires DATABASE_URL, a pgvector-enabled Postgres database and TEXT_EMBEDDINGS_MODEL_DIR"]
 async fn process_plan_ingests_exports_and_releases_media_then_reuses_everything() {
+    if std::env::var_os("TEXT_EMBEDDINGS_MODEL_DIR").is_none() {
+        eprintln!("TEXT_EMBEDDINGS_MODEL_DIR unset (the multilingual-e5-base bundle); skipping");
+        return;
+    }
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         eprintln!("DATABASE_URL unset; skipping");
         return;

@@ -5,6 +5,8 @@
 //! model end to end and is skipped unless `YOUTUBE_CORPUS_NER_MODEL_DIR` points at a
 //! directory holding (or allowed to receive) the model bundle.
 
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{json, Value};
@@ -375,6 +377,7 @@ async fn seed_people(seed: &Seed) -> (Uuid, Uuid) {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn entity_occurrences_are_counted_per_modality_with_provenance() {
+    fixture_embedder::install_fixture_embedder();
     let Some(seed) = seed().await else {
         return;
     };
@@ -512,6 +515,7 @@ async fn entity_occurrences_are_counted_per_modality_with_provenance() {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and YOUTUBE_CORPUS_NER_MODEL_DIR"]
 async fn real_producer_extracts_spoken_and_visible_mentions() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(model_dir) = std::env::var("YOUTUBE_CORPUS_NER_MODEL_DIR") else {
         return;
     };

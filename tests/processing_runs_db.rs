@@ -3,6 +3,8 @@
 //! vs newest, filters) and `GET .../detector-attempts/{id}` returns one attempt with its
 //! recorded identity and stage history. Attempts of videos outside the corpus never leak.
 
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Request, StatusCode};
 use serde_json::{json, Value};
@@ -64,6 +66,7 @@ fn ids(body: &Value) -> Vec<String> {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn processing_lists_and_inspects_recorded_attempts_of_corpus_videos() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         return;
     };

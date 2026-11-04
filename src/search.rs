@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgArguments;
 use sqlx::query::Query;
 use sqlx::{PgPool, Postgres, Row};
-use text_embeddings::{HashedTextEmbedder, TextEmbeddingConfig};
-use text_lexical::CorpusOptions;
 use uuid::Uuid;
 
 use crate::config::{SearchMode, SourceKind};
@@ -190,16 +188,15 @@ pub async fn search_corpus(request: SearchRequest) -> anyhow::Result<SearchRepor
 
 async fn fts_search(pool: &PgPool, request: &SearchRequest) -> anyhow::Result<Vec<SearchResult>> {
     let filters = SearchFilterParams::try_from(request)?;
-    rows_to_results(
-        sqlx::query(
-            "SELECT s.id, s.video_id, s.stream_id, s.source_kind, s.language, s.start_seconds,
+    let sql = with_fts(
+        "SELECT s.id, s.video_id, s.stream_id, s.source_kind, s.language, s.start_seconds,
                     s.end_seconds, s.text, v.source_url, v.title,
-                    ts_rank(s.search_vector, plainto_tsquery('simple', $1))::float8 AS fts_score,
+                    {fts_rank}::float8 AS fts_score,
                     0::float8 AS semantic_score,
-                    ts_rank(s.search_vector, plainto_tsquery('simple', $1))::float8 AS score
+                    {fts_rank}::float8 AS score
              FROM corpus_search_segments s
              JOIN videos v ON v.id = s.video_id
-             WHERE s.search_vector @@ plainto_tsquery('simple', $1)
+             WHERE {fts_match}
                AND ($3::text IS NULL OR s.source_kind = $3)
                AND ($4::uuid IS NULL OR s.video_id = $4)
                AND ($5::text IS NULL OR s.language = $5)
@@ -253,12 +250,14 @@ async fn fts_search(pool: &PgPool, request: &SearchRequest) -> anyhow::Result<Ve
                ))
              ORDER BY score DESC
              LIMIT $2",
-        )
-        .bind(&request.query)
-        .bind(request.top_k)
-        .bind_search_filters(&filters)
-        .fetch_all(pool)
-        .await?,
+    );
+    rows_to_results(
+        sqlx::query(sqlx::AssertSqlSafe(sql))
+            .bind(&request.query)
+            .bind(request.top_k)
+            .bind_search_filters(&filters)
+            .fetch_all(pool)
+            .await?,
     )
 }
 
@@ -266,7 +265,7 @@ async fn semantic_search(
     pool: &PgPool,
     request: &SearchRequest,
 ) -> anyhow::Result<Vec<SearchResult>> {
-    let query_vector = query_vector(&request.query)?;
+    let (query_vector, model) = query_vector(pool, &request.query).await?;
     let filters = SearchFilterParams::try_from(request)?;
     rows_to_results(
         sqlx::query(
@@ -277,7 +276,7 @@ async fn semantic_search(
                     (1 - (s.embedding <=> $1::vector))::float8 AS score
              FROM corpus_search_segments s
              JOIN videos v ON v.id = s.video_id
-             WHERE s.embedding IS NOT NULL
+             WHERE s.embedding_model = $23
                AND ($3::text IS NULL OR s.source_kind = $3)
                AND ($4::uuid IS NULL OR s.video_id = $4)
                AND ($5::text IS NULL OR s.language = $5)
@@ -335,6 +334,7 @@ async fn semantic_search(
         .bind(query_vector)
         .bind(request.top_k)
         .bind_search_filters(&filters)
+        .bind(model)
         .fetch_all(pool)
         .await?,
     )
@@ -344,15 +344,14 @@ async fn hybrid_search(
     pool: &PgPool,
     request: &SearchRequest,
 ) -> anyhow::Result<Vec<SearchResult>> {
-    let query_vector = query_vector(&request.query)?;
+    let (query_vector, model) = query_vector(pool, &request.query).await?;
     let filters = SearchFilterParams::try_from(request)?;
-    rows_to_results(
-        sqlx::query(
-            "WITH fts AS (
-                SELECT s.id, ts_rank(s.search_vector, plainto_tsquery('simple', $1))::float8 AS score
+    let sql = with_fts(
+        "WITH fts AS (
+                SELECT s.id, {fts_rank}::float8 AS score
                 FROM corpus_search_segments s
                 JOIN videos v ON v.id = s.video_id
-                WHERE s.search_vector @@ plainto_tsquery('simple', $1)
+                WHERE {fts_match}
                   AND ($4::text IS NULL OR s.source_kind = $4)
                   AND ($5::uuid IS NULL OR s.video_id = $5)
                   AND ($6::text IS NULL OR s.language = $6)
@@ -411,7 +410,7 @@ async fn hybrid_search(
                 SELECT s.id, (1 - (s.embedding <=> $2::vector))::float8 AS score
                 FROM corpus_search_segments s
                 JOIN videos v ON v.id = s.video_id
-                WHERE s.embedding IS NOT NULL
+                WHERE s.embedding_model = $24
                   AND ($4::text IS NULL OR s.source_kind = $4)
                   AND ($5::uuid IS NULL OR s.video_id = $5)
                   AND ($6::text IS NULL OR s.language = $6)
@@ -469,25 +468,62 @@ async fn hybrid_search(
               merged AS (
                 SELECT COALESCE(fts.id, sem.id) AS id,
                        COALESCE(fts.score, 0)::float8 AS fts_score,
-                       COALESCE(sem.score, 0)::float8 AS semantic_score
+                       sem.score AS semantic_score
                 FROM fts FULL OUTER JOIN sem ON fts.id = sem.id
               )
               SELECT s.id, s.video_id, s.stream_id, s.source_kind, s.language, s.start_seconds,
-                     s.end_seconds, s.text, v.source_url, v.title, m.fts_score, m.semantic_score,
-                     (0.35 * m.fts_score + 0.65 * m.semantic_score)::float8 AS score
+                     s.end_seconds, s.text, v.source_url, v.title, m.fts_score,
+                     scored.semantic_score,
+                     (0.35 * m.fts_score + 0.65 * scored.semantic_score)::float8 AS score
               FROM merged m
               JOIN corpus_search_segments s ON s.id = m.id
               JOIN videos v ON v.id = s.video_id
+              -- A lexical hit outside the semantic top-k keeps its real cosine similarity: e5
+              -- cosines of unrelated texts sit around 0.75-0.85, so scoring it 0 would bury
+              -- every lexical-only hit. Only a row without a current-model vector scores 0.
+              CROSS JOIN LATERAL (
+                SELECT COALESCE(
+                  m.semantic_score,
+                  CASE WHEN s.embedding_model = $24 THEN 1 - (s.embedding <=> $2::vector) END,
+                  0
+                )::float8 AS semantic_score
+              ) scored
               ORDER BY score DESC
               LIMIT $3",
-        )
-        .bind(&request.query)
-        .bind(query_vector)
-        .bind(request.top_k)
-        .bind_search_filters(&filters)
-        .fetch_all(pool)
-        .await?,
+    );
+    rows_to_results(
+        sqlx::query(sqlx::AssertSqlSafe(sql))
+            .bind(&request.query)
+            .bind(query_vector)
+            .bind(request.top_k)
+            .bind_search_filters(&filters)
+            .bind(model)
+            .fetch_all(pool)
+            .await?,
     )
+}
+
+/// Matches rows whose tsvector contains the query parsed with the row's own text search
+/// configuration. One branch per configuration keeps each `@@` against a constant query, so
+/// the GIN indexes stay usable; `corpus_text_search_config` (migration 0033) only returns
+/// these four.
+const FTS_MATCH: &str = "(
+    (s.search_config = 'pg_catalog.german'::regconfig
+     AND s.search_vector @@ plainto_tsquery('pg_catalog.german', $1))
+    OR (s.search_config = 'pg_catalog.english'::regconfig
+     AND s.search_vector @@ plainto_tsquery('pg_catalog.english', $1))
+    OR (s.search_config = 'pg_catalog.spanish'::regconfig
+     AND s.search_vector @@ plainto_tsquery('pg_catalog.spanish', $1))
+    OR (s.search_config = 'pg_catalog.simple'::regconfig
+     AND s.search_vector @@ plainto_tsquery('pg_catalog.simple', $1)))";
+/// Rank of a matched row, with the query parsed by the row's configuration.
+const FTS_RANK: &str = "ts_rank(s.search_vector, plainto_tsquery(s.search_config, $1))";
+
+/// Fills the `{fts_match}` / `{fts_rank}` placeholders with the constant fragments above; the
+/// result contains no request data.
+fn with_fts(sql: &str) -> String {
+    sql.replace("{fts_match}", FTS_MATCH)
+        .replace("{fts_rank}", FTS_RANK)
 }
 
 trait BindSearchFilters<'q> {
@@ -676,11 +712,12 @@ pub(crate) async fn attach_ocr_evidence(
     Ok(())
 }
 
-fn query_vector(query: &str) -> anyhow::Result<String> {
-    let embedder =
-        HashedTextEmbedder::new(TextEmbeddingConfig::default(), CorpusOptions::default())?;
-    let vector = embedder.embed_text(query)?;
-    Ok(vector_literal(vector.as_slice()))
+/// The query embedded with the shared model, and that model's `embedding_models` row; only
+/// vectors of the same model are compared.
+async fn query_vector(pool: &PgPool, query: &str) -> anyhow::Result<(String, i32)> {
+    let (embedder, vector) = crate::embeddings::embed_query(query.to_string()).await?;
+    let model = crate::embeddings::model_row_id(pool, embedder.identity()).await?;
+    Ok((vector_literal(&vector), model))
 }
 
 struct SearchFilterParams {

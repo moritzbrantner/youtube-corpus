@@ -3,6 +3,8 @@
 //! the OCR tracks with producer provenance, plus whether OCR ran at all. Deep-linked moments
 //! resolve by stable evidence id through `/api/transcript-context` for speech and OCR alike.
 
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{header, Method, Request, StatusCode};
 use serde_json::{json, Value};
@@ -42,6 +44,7 @@ fn context(segment_id: Uuid) -> Request<Body> {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn video_page_lists_separate_speech_and_ocr_evidence_and_resolves_moments() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         return;
     };

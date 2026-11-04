@@ -3,6 +3,8 @@
 //! Listing a source needs yt-dlp and the network, so sources are listed by a fixture lister
 //! through the same seam the server uses, and the scheduler runs against an injected clock.
 
+mod fixture_embedder;
+
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
@@ -231,6 +233,7 @@ async fn item_count(pool: &PgPool, source: &Source) -> i64 {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn sources_are_checked_on_their_own_schedules() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         return;
     };

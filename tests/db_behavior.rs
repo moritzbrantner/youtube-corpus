@@ -1,11 +1,10 @@
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{header, Method, Request, StatusCode};
-use text_embeddings::{HashedTextEmbedder, TextEmbeddingConfig};
-use text_lexical::CorpusOptions;
 use tower::ServiceExt;
 use uuid::Uuid;
 use youtube_corpus::config::{CaptionConfig, SearchMode, SourceKind, YtDlpConfig};
-use youtube_corpus::ingest::vector_literal;
 use youtube_corpus::search::{search_corpus, SearchRequest};
 use youtube_corpus::subscriptions::{
     add_subscription, AddSubscriptionRequest, SubscriptionSourceKind,
@@ -279,6 +278,7 @@ fn subscription_request(database_url: &str) -> AddSubscriptionRequest {
 }
 
 async fn seed(pool: &sqlx::PgPool) {
+    fixture_embedder::install_fixture_embedder();
     sqlx::query(
         "TRUNCATE corpus_subscription_items, corpus_subscriptions, transcript_segments,
                   transcript_streams, videos, ingest_runs CASCADE",
@@ -430,13 +430,12 @@ async fn insert_segment(
     text: &str,
     language: &str,
 ) {
-    let embedder =
-        HashedTextEmbedder::new(TextEmbeddingConfig::default(), CorpusOptions::default()).unwrap();
-    let embedding = vector_literal(embedder.embed_text(text).unwrap().as_slice());
+    let embedding = fixture_embedder::fixture_vector_literal(text);
+    let model = fixture_embedder::fixture_model_row(pool).await;
     sqlx::query(
         "INSERT INTO transcript_segments
-         (id, stream_id, video_id, segment_index, start_seconds, end_seconds, text, language, metadata, embedding)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '{}'::jsonb, $9::vector)",
+         (id, stream_id, video_id, segment_index, start_seconds, end_seconds, text, language, metadata, embedding, embedding_model)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '{}'::jsonb, $9::vector, $10)",
     )
     .bind(id)
     .bind(stream_id)
@@ -447,6 +446,7 @@ async fn insert_segment(
     .bind(text)
     .bind(language)
     .bind(embedding)
+    .bind(model)
     .execute(pool)
     .await
     .unwrap();

@@ -5,6 +5,8 @@
 //! the same seam the discovery worker uses and processes queued videos with a deterministic
 //! processor through the real dispatcher.
 
+mod fixture_embedder;
+
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Mutex;
@@ -203,6 +205,7 @@ async fn drain(
 #[tokio::test]
 #[ignore = "requires DATABASE_URL and a pgvector-enabled Postgres database"]
 async fn initial_history_backfill() {
+    fixture_embedder::install_fixture_embedder();
     let Ok(database_url) = std::env::var("DATABASE_URL") else {
         return;
     };

@@ -3,8 +3,6 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
 use text_core::{TextSegmentContract, TextSourceRef, TimebaseContract, TimestampContract};
-use text_embeddings::{HashedTextEmbedder, TextEmbeddingConfig};
-use text_lexical::CorpusOptions;
 use uuid::Uuid;
 
 use crate::captions::TranscriptStream;
@@ -284,11 +282,14 @@ async fn ingest_item(
     }
 
     let video_id = stable_video_id(&item.source_url);
+    // Embed before the transaction opens: the model takes seconds per transcript.
+    let mut stream_vectors = Vec::with_capacity(streams.len());
+    for stream in &streams {
+        stream_vectors.push(embed_stream_segments(stream).await?);
+    }
     let mut tx = pool.begin().await?;
     upsert_video(&mut tx, video_id, &item, video_path.as_deref()).await?;
 
-    let embedder =
-        HashedTextEmbedder::new(TextEmbeddingConfig::default(), CorpusOptions::default())?;
     let mut streams_indexed = 0;
     let mut segments_indexed = 0;
     let stage_messages = streams
@@ -297,7 +298,7 @@ async fn ingest_item(
         .filter(|message| !message.trim().is_empty())
         .map(str::to_string)
         .collect::<Vec<_>>();
-    for stream in streams {
+    for (stream, vectors) in streams.into_iter().zip(stream_vectors) {
         if stream.segments.is_empty() {
             continue;
         }
@@ -321,7 +322,7 @@ async fn ingest_item(
             video_id,
             &item.source_url,
             &stream,
-            &embedder,
+            &vectors,
             &processing_config,
         )
         .await?;
@@ -468,7 +469,7 @@ async fn upsert_stream(
     video_id: Uuid,
     source_url: &str,
     stream: &TranscriptStream,
-    embedder: &HashedTextEmbedder,
+    vectors: &crate::embeddings::PassageVectors,
     processing_config: &serde_json::Value,
 ) -> anyhow::Result<u64> {
     let language = stream.language.clone().or_else(|| {
@@ -520,16 +521,14 @@ async fn upsert_stream(
         .await?;
     write_source_cues(tx, stream_id, stream).await?;
 
+    let model = vectors.model_row(&mut **tx).await?;
     let mut indexed = 0;
-    for segment in &stream.segments {
+    for (position, segment) in stream.segments.iter().enumerate() {
         let text = segment.text.trim();
         if text.is_empty() {
             continue;
         }
-        let embedding = match embedder.embed_text(text) {
-            Ok(vector) => Some(vector_literal(vector.as_slice())),
-            Err(_) => None,
-        };
+        let embedding = vectors.literals.get(position).cloned().flatten();
         let segment_id = stream_segment_id(stream_id, stream, segment.index);
         let contract = transcript_segment_contract(TranscriptSegmentContractInput {
             stream_id,
@@ -552,8 +551,8 @@ async fn upsert_stream(
         add_passage_metadata(&mut metadata, segment);
         sqlx::query(
             "INSERT INTO transcript_segments
-             (id, stream_id, video_id, segment_index, start_seconds, end_seconds, text, language, metadata, embedding)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::vector)",
+             (id, stream_id, video_id, segment_index, start_seconds, end_seconds, text, language, metadata, embedding, embedding_model)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::vector, $11)",
         )
         .bind(segment_id)
         .bind(stream_id)
@@ -564,12 +563,27 @@ async fn upsert_stream(
         .bind(text)
         .bind(segment.language.clone().or_else(|| language.clone()))
         .bind(metadata)
-        .bind(embedding)
+        .bind(&embedding)
+        .bind(embedding.as_ref().and(model))
         .execute(&mut **tx)
         .await?;
         indexed += 1;
     }
     Ok(indexed)
+}
+
+/// Passage vectors of a stream's segments, aligned with `stream.segments`.
+pub async fn embed_stream_segments(
+    stream: &TranscriptStream,
+) -> anyhow::Result<crate::embeddings::PassageVectors> {
+    crate::embeddings::embed_passage_literals(
+        stream
+            .segments
+            .iter()
+            .map(|segment| segment.text.clone())
+            .collect(),
+    )
+    .await
 }
 
 /// Records the passage representation in a passage stream's processing config, so its stream

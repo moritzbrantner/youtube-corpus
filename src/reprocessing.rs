@@ -3,15 +3,13 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Row, Transaction};
-use text_embeddings::{HashedTextEmbedder, TextEmbeddingConfig};
-use text_lexical::CorpusOptions;
 use uuid::Uuid;
 
 use crate::captions::TranscriptStream;
 use crate::config::{CaptionConfig, CorpusSource, YtDlpConfig};
 use crate::ingest::{
-    add_passage_metadata, ingest_corpus, stream_segment_id, transcript_segment_contract,
-    transcript_segment_metadata, vector_literal, with_segmentation, write_source_cues,
+    add_passage_metadata, embed_stream_segments, ingest_corpus, stream_segment_id,
+    transcript_segment_contract, transcript_segment_metadata, with_segmentation, write_source_cues,
     IngestReport, IngestRequest, TranscriptSegmentContractInput,
 };
 
@@ -150,10 +148,7 @@ pub async fn reprocess_video(request: ReprocessRequest) -> anyhow::Result<Reproc
             "source": "stored-caption-files",
             "parser": "moenarch-text-transcripts",
             "rollingCaptions": "moenarch-media-core",
-            "embedding": {
-                "provider": "hashed-text-embedder",
-                "dimensions": 128,
-            },
+            "embedding": crate::embeddings::EmbeddingIdentity::preset(),
         });
         resegment_video(&pool, request.video_id, &source_url, &config).await?
     } else {
@@ -260,17 +255,19 @@ async fn resegment_video(
         anyhow::bail!("stored caption files did not produce transcript streams");
     }
 
-    let embedder =
-        HashedTextEmbedder::new(TextEmbeddingConfig::default(), CorpusOptions::default())?;
+    let mut stream_vectors = Vec::with_capacity(streams.len());
+    for stream in &streams {
+        stream_vectors.push(embed_stream_segments(stream).await?);
+    }
     let mut tx = pool.begin().await?;
     let mut indexed = 0_u64;
-    for stream in streams {
+    for (stream, vectors) in streams.iter().zip(&stream_vectors) {
         indexed += resegment_stream(
             &mut tx,
             video_id,
             source_url,
-            &stream,
-            &embedder,
+            stream,
+            vectors,
             processing_config,
         )
         .await?;
@@ -284,7 +281,7 @@ async fn resegment_stream(
     video_id: Uuid,
     source_url: &str,
     stream: &TranscriptStream,
-    embedder: &HashedTextEmbedder,
+    vectors: &crate::embeddings::PassageVectors,
     processing_config: &serde_json::Value,
 ) -> anyhow::Result<u64> {
     let language = stream.language.clone().or_else(|| {
@@ -346,16 +343,14 @@ async fn resegment_stream(
         .await?;
     write_source_cues(tx, stream_id, stream).await?;
 
+    let model = vectors.model_row(&mut **tx).await?;
     let mut indexed = 0_u64;
-    for segment in &stream.segments {
+    for (position, segment) in stream.segments.iter().enumerate() {
         let text = segment.text.trim();
         if text.is_empty() {
             continue;
         }
-        let embedding = embedder
-            .embed_text(text)
-            .ok()
-            .map(|vector| vector_literal(vector.as_slice()));
+        let embedding = vectors.literals.get(position).cloned().flatten();
         let segment_id = stream_segment_id(stream_id, stream, segment.index);
         let contract = transcript_segment_contract(TranscriptSegmentContractInput {
             stream_id,
@@ -378,8 +373,8 @@ async fn resegment_stream(
         add_passage_metadata(&mut metadata, segment);
         sqlx::query(
             "INSERT INTO transcript_segments
-             (id, stream_id, video_id, segment_index, start_seconds, end_seconds, text, language, metadata, embedding)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::vector)",
+             (id, stream_id, video_id, segment_index, start_seconds, end_seconds, text, language, metadata, embedding, embedding_model)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::vector, $11)",
         )
         .bind(segment_id)
         .bind(stream_id)
@@ -390,7 +385,8 @@ async fn resegment_stream(
         .bind(text)
         .bind(segment.language.clone().or_else(|| language.clone()))
         .bind(metadata)
-        .bind(embedding)
+        .bind(&embedding)
+        .bind(embedding.as_ref().and(model))
         .execute(&mut **tx)
         .await?;
         indexed += 1;
@@ -398,6 +394,7 @@ async fn resegment_stream(
     Ok(indexed)
 }
 
+/// Re-embeds every segment of one video with the current model.
 async fn reembed_video(pool: &sqlx::PgPool, video_id: Uuid) -> anyhow::Result<u64> {
     let rows = sqlx::query(
         "SELECT id, text
@@ -408,21 +405,30 @@ async fn reembed_video(pool: &sqlx::PgPool, video_id: Uuid) -> anyhow::Result<u6
     .bind(video_id)
     .fetch_all(pool)
     .await?;
-    let embedder =
-        HashedTextEmbedder::new(TextEmbeddingConfig::default(), CorpusOptions::default())?;
-    let mut updated = 0_u64;
-
+    let mut ids = Vec::with_capacity(rows.len());
+    let mut texts = Vec::with_capacity(rows.len());
     for row in rows {
-        let segment_id: Uuid = row.try_get("id")?;
-        let text: String = row.try_get("text")?;
-        let vector = embedder.embed_text(&text)?;
-        sqlx::query("UPDATE transcript_segments SET embedding = $2::vector WHERE id = $1")
-            .bind(segment_id)
-            .bind(vector_literal(vector.as_slice()))
-            .execute(pool)
-            .await?;
-        updated += 1;
+        ids.push(row.try_get::<Uuid, _>("id")?);
+        texts.push(row.try_get::<String, _>("text")?);
     }
+    let vectors = crate::embeddings::embed_passage_literals(texts).await?;
+    let mut tx = pool.begin().await?;
+    let model = vectors.model_row(&mut *tx).await?;
+    let mut updated = 0_u64;
+    for (segment_id, literal) in ids.into_iter().zip(&vectors.literals) {
+        sqlx::query(
+            "UPDATE transcript_segments
+             SET embedding = $2::vector, embedding_model = $3
+             WHERE id = $1",
+        )
+        .bind(segment_id)
+        .bind(literal)
+        .bind(literal.as_ref().and(model))
+        .execute(&mut *tx)
+        .await?;
+        updated += u64::from(literal.is_some());
+    }
+    tx.commit().await?;
     Ok(updated)
 }
 

@@ -7,6 +7,8 @@
 //! the entity mention is seeded in the shape the nlp-stack NER producer persists.
 //! Requires `DATABASE_URL`; skipped otherwise (run through `bun run verify:postgres`).
 
+mod fixture_embedder;
+
 use axum::body::{to_bytes, Body};
 use axum::http::{Method, Request, StatusCode};
 use serde_json::{json, Value};
@@ -214,6 +216,7 @@ fn letters(seed: Uuid) -> String {
 #[tokio::test]
 #[ignore = "requires DATABASE_URL"]
 async fn suggested_claims_are_source_linked_unverified_and_survive_review_on_rerun() {
+    fixture_embedder::install_fixture_embedder();
     let Some(database_url) = std::env::var("DATABASE_URL").ok() else {
         return;
     };
