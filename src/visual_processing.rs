@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
-use video_analysis_ffmpeg::FfmpegVideoSource;
+use video_analysis_core::{FramePosition, Timestamp};
+use video_analysis_ffmpeg::{FfmpegSourceOptions, FfmpegVideoSource};
 
 use crate::multimodal::ProcessingProvenance;
 use crate::visual_timeline::{
@@ -15,7 +16,7 @@ use crate::visual_timeline::{
 };
 
 /// Exact visual-analysis revision consumed by this source-first integration.
-pub const VISUAL_ANALYSIS_SCENE_REVISION: &str = "be782cee52506785b46e2c471a003f879508275b";
+pub const VISUAL_ANALYSIS_SCENE_REVISION: &str = "ef820b3c0f0b0c5306274f484c1d26582bd655c4";
 pub(crate) const SCENE_MODEL: &str = "scenedetect-core:content";
 const SCENE_MODEL_VERSION: &str = "0.1.0";
 pub(crate) const DEFAULT_CONTENT_THRESHOLD: f32 = 27.0;
@@ -58,6 +59,25 @@ pub async fn analyze_and_persist_scenes(
     pool: &PgPool,
     request: SceneAnalysisRequest,
 ) -> anyhow::Result<SceneAnalysisReport> {
+    analyze_and_persist_scenes_with_mode(pool, request, false).await
+}
+
+/// Opt-in exact scene analysis. Retains the original integer FFprobe PTS and
+/// timebase in v1 scene metadata, for a separately versioned exact sidecar.
+/// Only sources whose first original video PTS is zero can currently claim the
+/// required media-relative clock; others fail before persisting any rows.
+pub async fn analyze_and_persist_scenes_exact(
+    pool: &PgPool,
+    request: SceneAnalysisRequest,
+) -> anyhow::Result<SceneAnalysisReport> {
+    analyze_and_persist_scenes_with_mode(pool, request, true).await
+}
+
+async fn analyze_and_persist_scenes_with_mode(
+    pool: &PgPool,
+    request: SceneAnalysisRequest,
+    exact_timing: bool,
+) -> anyhow::Result<SceneAnalysisReport> {
     validate_scene_config(request.threshold, request.min_scene_len)?;
     if !request.media_path.is_file() {
         anyhow::bail!(
@@ -67,21 +87,37 @@ pub async fn analyze_and_persist_scenes(
     }
 
     let input_hash = fingerprint_file(&request.media_path)?;
-    let config_identity = format!(
-        "content-threshold={:08x};min-scene-len={}",
-        request.threshold.to_bits(),
-        request.min_scene_len
-    );
+    let config_identity = scene_config_identity(request.threshold, request.min_scene_len, exact_timing);
     let config_hash = fingerprint_bytes(config_identity.as_bytes());
 
     // Decode before touching the database so no transaction stays open during analysis.
-    let mut source = FfmpegVideoSource::open(&request.media_path)?;
+    let mut source = if exact_timing {
+        FfmpegVideoSource::open_path_with_exact_frame_pts(
+            &request.media_path,
+            FfmpegSourceOptions::recorded(),
+        )?
+    } else {
+        FfmpegVideoSource::open(&request.media_path)?
+    };
     let result = video_analysis_ingest::surface::detect_content_scenes(
         &mut source,
         request.threshold,
         request.min_scene_len,
     )?;
     drop(source);
+    // The exact sidecar contract is media-relative. FFprobe returns *stream*
+    // PTS; a nonzero origin needs an explicit exact clock mapping, not a
+    // floating-point subtraction or a relabeling of unaligned timestamps.
+    if exact_timing
+        && !result
+            .scenes
+            .first()
+            .is_some_and(|scene| scene.start.frame_index == 0 && scene.start.timestamp.pts == 0)
+    {
+        anyhow::bail!(
+            "exact scene timing requires first stream video PTS=0; an explicit stream-to-media clock mapping is needed for this file"
+        );
+    }
     // Detection reopens the path, so make sure the recorded hash still describes the bytes
     // that were analyzed (for example if retained media was replaced concurrently).
     if fingerprint_file(&request.media_path)? != input_hash {
@@ -93,6 +129,15 @@ pub async fn analyze_and_persist_scenes(
 
     // The run and its full scene list commit together; a failed scene write never leaves a
     // partial timeline that evidence readers would treat as complete.
+    let mut processing_config = json!({
+        "adapter": "video-analysis-ingest.detect_content_scenes",
+        "threshold": request.threshold,
+        "minSceneLen": request.min_scene_len,
+        "visualAnalysisRevision": VISUAL_ANALYSIS_SCENE_REVISION,
+    });
+    if exact_timing {
+        processing_config["exactTiming"] = json!("ffprobe:frame-pts");
+    }
     let mut transaction = pool.begin().await?;
     let run_id = begin_visual_processing_run_with(
         &mut transaction,
@@ -106,12 +151,7 @@ pub async fn analyze_and_persist_scenes(
                 model_version: SCENE_MODEL_VERSION.to_string(),
                 input_hash: input_hash.clone(),
                 config_hash: config_hash.clone(),
-                processing_config: json!({
-                    "adapter": "video-analysis-ingest.detect_content_scenes",
-                    "threshold": request.threshold,
-                    "minSceneLen": request.min_scene_len,
-                    "visualAnalysisRevision": VISUAL_ANALYSIS_SCENE_REVISION,
-                }),
+                processing_config,
             },
         },
     )
@@ -132,11 +172,13 @@ pub async fn analyze_and_persist_scenes(
                     end_frame: scene.end.frame_index,
                     start_seconds: scene.start.timestamp.seconds(),
                     end_seconds: scene.end.timestamp.seconds(),
-                    metadata: json!({
-                        "detector": "content",
-                        "threshold": request.threshold,
-                        "minSceneLen": request.min_scene_len,
-                    }),
+                    metadata: scene_metadata(
+                        request.threshold,
+                        request.min_scene_len,
+                        scene.start,
+                        scene.end,
+                        exact_timing,
+                    ),
                 },
             )
             .await?,
@@ -155,6 +197,50 @@ pub async fn analyze_and_persist_scenes(
     })
 }
 
+fn scene_metadata(
+    threshold: f32,
+    min_scene_len: u64,
+    start: FramePosition,
+    end: FramePosition,
+    exact_timing: bool,
+) -> serde_json::Value {
+    let mut metadata = json!({
+        "detector": "content",
+        "threshold": threshold,
+        "minSceneLen": min_scene_len,
+    });
+    if exact_timing {
+        metadata["exactTiming"] = json!({
+            "schemaVersion": 1,
+            "clock": "media_relative",
+            "source": "ffprobe:frame-pts",
+            "start": canonical_timestamp_json(start.timestamp),
+            "end": canonical_timestamp_json(end.timestamp),
+        });
+    }
+    metadata
+}
+
+/// Foundation owns the timestamp model. This is only its JSON presentation:
+/// decimal PTS strings survive JavaScript and Postgres JSONB without rounding.
+fn canonical_timestamp_json(timestamp: Timestamp) -> serde_json::Value {
+    json!({
+        "pts": timestamp.pts.to_string(),
+        "timebase": { "num": timestamp.timebase.num, "den": timestamp.timebase.den },
+    })
+}
+
+fn scene_config_identity(threshold: f32, min_scene_len: u64, exact_timing: bool) -> String {
+    let mut identity = format!(
+        "content-threshold={:08x};min-scene-len={min_scene_len}",
+        threshold.to_bits(),
+    );
+    if exact_timing {
+        identity.push_str(";timing=ffprobe-recorded-pts-v1");
+    }
+    identity
+}
+
 /// Runs scene analysis for the media path already retained by the corpus.
 ///
 /// This intentionally does not download missing media. Transcript-only corpora therefore
@@ -163,6 +249,21 @@ pub async fn analyze_stored_video_scenes(
     pool: &PgPool,
     video_id: Uuid,
 ) -> anyhow::Result<SceneAnalysisReport> {
+    let path = stored_media_path(pool, video_id).await?;
+    analyze_and_persist_scenes(pool, SceneAnalysisRequest::new(video_id, path)).await
+}
+
+/// Opt-in equivalent for already-retained media. Preserves legacy processing
+/// runs and export schema; its separate config identity keeps reruns idempotent.
+pub async fn analyze_stored_video_scenes_exact(
+    pool: &PgPool,
+    video_id: Uuid,
+) -> anyhow::Result<SceneAnalysisReport> {
+    let path = stored_media_path(pool, video_id).await?;
+    analyze_and_persist_scenes_exact(pool, SceneAnalysisRequest::new(video_id, path)).await
+}
+
+async fn stored_media_path(pool: &PgPool, video_id: Uuid) -> anyhow::Result<PathBuf> {
     let row = sqlx::query("SELECT local_video_path FROM videos WHERE id = $1")
         .bind(video_id)
         .fetch_optional(pool)
@@ -177,7 +278,7 @@ pub async fn analyze_stored_video_scenes(
                 "video {video_id} has no retained local media; download or ingest media before scene analysis"
             )
         })?;
-    analyze_and_persist_scenes(pool, SceneAnalysisRequest::new(video_id, path)).await
+    Ok(path)
 }
 
 fn validate_scene_config(threshold: f32, min_scene_len: u64) -> anyhow::Result<()> {
@@ -212,12 +313,7 @@ fn fingerprint_bytes(bytes: &[u8]) -> String {
 /// The default content-scene settings' identity, shared by scene reuse and OCR links.
 pub(crate) fn default_scene_config_hash() -> String {
     fingerprint_bytes(
-        format!(
-            "content-threshold={:08x};min-scene-len={}",
-            DEFAULT_CONTENT_THRESHOLD.to_bits(),
-            DEFAULT_MIN_SCENE_LEN
-        )
-        .as_bytes(),
+        scene_config_identity(DEFAULT_CONTENT_THRESHOLD, DEFAULT_MIN_SCENE_LEN, false).as_bytes(),
     )
 }
 
@@ -304,5 +400,36 @@ mod tests {
         let first = fingerprint_bytes(b"content-threshold=41d80000;min-scene-len=15");
         let second = fingerprint_bytes(b"content-threshold=41d80000;min-scene-len=15");
         assert_eq!(first, second);
+        assert_eq!(
+            scene_config_identity(27.0, 15, false),
+            "content-threshold=41d80000;min-scene-len=15"
+        );
+        assert_eq!(default_scene_config_hash(), first);
+        assert_ne!(
+            fingerprint_bytes(scene_config_identity(27.0, 15, true).as_bytes()),
+            first,
+        );
+    }
+
+    #[test]
+    fn exact_scene_metadata_preserves_90khz_pts_as_decimal_strings() {
+        let timebase = video_analysis_core::Timebase::new(1, 90_000);
+        let start = FramePosition {
+            frame_index: 4,
+            timestamp: Timestamp::new(18_000, timebase),
+        };
+        let end = FramePosition {
+            frame_index: 7,
+            timestamp: Timestamp::new(36_000, timebase),
+        };
+        let exact = scene_metadata(27.0, 15, start, end, true);
+        assert_eq!(exact["exactTiming"]["start"]["pts"], "18000");
+        assert_eq!(exact["exactTiming"]["start"]["timebase"]["den"], 90_000);
+        assert_eq!(exact["exactTiming"]["end"]["pts"], "36000");
+        assert_eq!(exact["exactTiming"]["clock"], "media_relative");
+        assert_eq!(exact["exactTiming"]["source"], "ffprobe:frame-pts");
+        assert!(scene_metadata(27.0, 15, start, end, false)
+            .get("exactTiming")
+            .is_none());
     }
 }

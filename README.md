@@ -377,6 +377,33 @@ download failure leaves earlier evidence intact and is reported as failed.
 OCR media is managed by the same acquire-on-demand, release-after-processing
 policy as the other media detectors.
 
+### Exact scene timestamps (opt in)
+
+The existing scene detector and `MediaEvidenceBatchV1` export remain seconds-only
+by default. For retained local files, Rust callers can opt in with
+`analyze_stored_video_scenes_exact(&pool, video_id)` or
+`analyze_and_persist_scenes_exact(&pool, SceneAnalysisRequest::new(video_id, path))`.
+This uses Visual Analysis's FFprobe-backed original integer frame PTS/timebase,
+not an estimate from average FPS. Scene `metadata.exactTiming` contains a
+versioned pair of Foundation-compatible `Timestamp` JSON objects (decimal
+string `pts` and rational `timebase`) and the run's `processingConfig.exactTiming`
+records the actual `ffprobe:frame-pts` source. It does not change the database
+schema or old scene-processing identity; exact runs use a distinct config hash.
+
+The caller can then use
+`export_media_evidence_batch_for_scene_run(&pool, video_id, producer_revision, report.run_id)`
+to export that single exact scene run, even when earlier seconds-only runs remain
+stored. OCR and speech evidence remain seconds-only unless their own producers
+separately retain original exact PTS. Media Intelligence's
+`compat::youtube_corpus::exact_timing_from_batch` validates and extracts the
+scene sidecar from the unchanged v1 export. An all-runs export containing both
+old and exact scene runs cannot claim full exact coverage.
+
+Exact mode requires the *original first video stream PTS to be zero*; inputs
+with unaligned/nonzero stream origins fail before database writes, pending a
+separate exact stream-to-media clock mapping. The feature is deliberately not
+activated by normal detector profiles or background ingest.
+
 ## Translated text
 
 Translation is opt-in per detector profile, separately for **spoken transcripts**
