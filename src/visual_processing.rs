@@ -87,7 +87,8 @@ async fn analyze_and_persist_scenes_with_mode(
     }
 
     let input_hash = fingerprint_file(&request.media_path)?;
-    let config_identity = scene_config_identity(request.threshold, request.min_scene_len, exact_timing);
+    let config_identity =
+        scene_config_identity(request.threshold, request.min_scene_len, exact_timing);
     let config_hash = fingerprint_bytes(config_identity.as_bytes());
 
     // Decode before touching the database so no transaction stays open during analysis.

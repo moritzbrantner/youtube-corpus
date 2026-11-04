@@ -522,7 +522,9 @@ mod tests {
         assert_eq!(selected.schema_version, batch.schema_version);
         assert_ne!(selected.revision, batch.revision);
         assert_eq!(
-            select_scene_run(selected.clone(), exact_run).unwrap().revision,
+            select_scene_run(selected.clone(), exact_run)
+                .unwrap()
+                .revision,
             selected.revision,
         );
         assert!(select_scene_run(batch, Uuid::new_v4()).is_err());

@@ -5,12 +5,11 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 use youtube_corpus::{
     begin_visual_processing_run, export_media_evidence_batch,
-    export_media_evidence_batch_for_scene_run, export_source_span_batch,
-    parse_hash_response, persist_sponsorblock_snapshot, upsert_video_scene,
-    upsert_visual_text_observation, upsert_visual_text_track, BeginVisualProcessingRunRequest,
-    ProcessingProvenance, UpsertVideoSceneRequest, UpsertVisualTextObservationRequest,
-    UpsertVisualTextTrackRequest, VisualBoundingBox, VisualProcessingKind, VisualTextRole,
-    SPONSORBLOCK_DATA_LICENSE,
+    export_media_evidence_batch_for_scene_run, export_source_span_batch, parse_hash_response,
+    persist_sponsorblock_snapshot, upsert_video_scene, upsert_visual_text_observation,
+    upsert_visual_text_track, BeginVisualProcessingRunRequest, ProcessingProvenance,
+    UpsertVideoSceneRequest, UpsertVisualTextObservationRequest, UpsertVisualTextTrackRequest,
+    VisualBoundingBox, VisualProcessingKind, VisualTextRole, SPONSORBLOCK_DATA_LICENSE,
 };
 
 #[tokio::test]
@@ -169,23 +168,16 @@ async fn multimodal_evidence_preserves_separate_but_aligned_channels() {
     assert_eq!(evidence.ocr_tracks.len(), 1);
     assert_eq!(evidence.ocr_tracks[0].id, track.id.to_string());
     assert_eq!(evidence.ocr_tracks[0].scene_ids, vec![scene.id.to_string()]);
-    let selected = export_media_evidence_batch_for_scene_run(
-        &pool,
-        video_id,
-        "git:test",
-        scene_run,
-    )
-    .await
-    .unwrap();
+    let selected =
+        export_media_evidence_batch_for_scene_run(&pool, video_id, "git:test", scene_run)
+            .await
+            .unwrap();
     assert_eq!(selected, evidence);
-    assert!(export_media_evidence_batch_for_scene_run(
-        &pool,
-        video_id,
-        "git:test",
-        Uuid::new_v4(),
-    )
-    .await
-    .is_err());
+    assert!(
+        export_media_evidence_batch_for_scene_run(&pool, video_id, "git:test", Uuid::new_v4(),)
+            .await
+            .is_err()
+    );
     assert_eq!(
         evidence.sponsorblock.as_ref().unwrap().data_license,
         SPONSORBLOCK_DATA_LICENSE
