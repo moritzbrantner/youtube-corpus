@@ -11,6 +11,9 @@ async fn main() -> anyhow::Result<()> {
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "youtube_corpus=info".into()),
         )
+        // Logs go to stderr: commands print their JSON reports on stdout (#192: the embedding
+        // model's load message must not corrupt them).
+        .with_writer(std::io::stderr)
         .init();
 
     let cli = Cli::parse_with_config_file()?;
