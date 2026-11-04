@@ -93,7 +93,49 @@ async fn stats_attribute_rows_files_and_sponsorblock_savings_per_video() {
         .await
         .unwrap();
 
+    // A local-file ingest (output under the file stem) and an undated video with skips.
+    let local_id = Uuid::new_v4();
+    let stem = format!("talk-{}", &local_id.simple().to_string()[..8]);
+    sqlx::query("INSERT INTO videos (id, source_url, title) VALUES ($1, $2, 'Local fixture')")
+        .bind(local_id)
+        .bind(format!("/videos/{stem}.mp4"))
+        .execute(&pool)
+        .await
+        .unwrap();
+    let undated_id = Uuid::new_v4();
+    let undated_youtube_id = format!("un{}", &undated_id.simple().to_string()[..9]);
+    sqlx::query(
+        "INSERT INTO videos (id, youtube_id, source_url, title) VALUES ($1, $2, $3, 'Undated')",
+    )
+    .bind(undated_id)
+    .bind(&undated_youtube_id)
+    .bind(format!(
+        "https://www.youtube.com/watch?v={undated_youtube_id}"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let undated_response = serde_json::json!([{
+        "videoID": undated_youtube_id,
+        "segments": [{"category": "sponsor", "actionType": "skip", "segment": [0.0, 5000.0], "UUID": "u"}]
+    }]);
+    let undated_snapshot = parse_hash_response(
+        &undated_youtube_id,
+        &["sponsor".to_string()],
+        &serde_json::to_vec(&undated_response).unwrap(),
+    )
+    .unwrap();
+    persist_sponsorblock_snapshot(&pool, undated_id, &undated_snapshot)
+        .await
+        .unwrap();
+
     let work_dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(work_dir.path().join(&stem).join("media")).unwrap();
+    std::fs::write(
+        work_dir.path().join(&stem).join("media/talk.mp4"),
+        vec![b'c'; 500],
+    )
+    .unwrap();
     let item = work_dir
         .path()
         .join(format!("https-www-youtube-com-watch-v-{youtube_id}"));
@@ -165,6 +207,25 @@ async fn stats_attribute_rows_files_and_sponsorblock_savings_per_video() {
         .embeddings
         .iter()
         .any(|e| e.table == "transcript_segments" && e.column == "embedding"));
+
+    let local = report
+        .videos
+        .iter()
+        .find(|v| v.video_id == local_id)
+        .unwrap();
+    assert_eq!(local.disk_bytes_by_kind["video"], 500);
+    assert!(!report.disk.unattributed_items.contains(&stem));
+    let undated = report
+        .videos
+        .iter()
+        .find(|v| v.video_id == undated_id)
+        .unwrap();
+    assert_eq!(
+        undated.sponsorblock.as_ref().unwrap().skippable_seconds,
+        0.0
+    );
+    assert!(report.sponsorblock.skippable_share.unwrap() <= 1.0);
+    assert!(report.notes.iter().any(|n| n.contains("no known duration")));
 
     let markdown = render_markdown(&report);
     assert!(markdown.contains("## SponsorBlock savings"));

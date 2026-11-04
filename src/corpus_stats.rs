@@ -852,12 +852,20 @@ pub async fn collect_corpus_stats(
     let mut item_to_video: HashMap<String, Uuid> = HashMap::new();
     for video in &video_rows {
         item_to_video.insert(crate::youtube::sanitize_id(&video.source_url), video.id);
-        if let Some(youtube_id) = video
+        match video
             .youtube_id
             .as_deref()
             .filter(|id| !id.trim().is_empty())
         {
-            item_to_video.insert(crate::youtube::sanitize_id(youtube_id), video.id);
+            Some(youtube_id) => {
+                item_to_video.insert(crate::youtube::sanitize_id(youtube_id), video.id);
+            }
+            // Local-file ingests write under the sanitized file stem (`local_file_item`).
+            None => {
+                let item_id =
+                    crate::youtube::local_file_item(PathBuf::from(&video.source_url)).item_id;
+                item_to_video.entry(item_id).or_insert(video.id);
+            }
         }
     }
     let mut disk = DiskStats {
@@ -918,6 +926,11 @@ pub async fn collect_corpus_stats(
         let Some(snapshot) = snapshots.get(&video.id) else {
             continue;
         };
+        // Without a duration the ranges cannot be clipped or put in proportion; such videos
+        // stay out of every SponsorBlock numerator and denominator.
+        if video.duration_seconds.is_none() {
+            continue;
+        }
         let skips = snapshot
             .segments
             .iter()
@@ -1247,8 +1260,12 @@ pub async fn collect_corpus_stats(
     // SponsorBlock totals.
     let snapshot_videos = videos
         .iter()
-        .filter(|v| v.sponsorblock.is_some())
+        .filter(|v| v.sponsorblock.is_some() && v.duration_seconds.is_some())
         .collect::<Vec<_>>();
+    let undated_snapshots = videos
+        .iter()
+        .filter(|v| v.sponsorblock.is_some() && v.duration_seconds.is_none())
+        .count();
     let snapshot_seconds = snapshot_videos
         .iter()
         .filter_map(|v| v.duration_seconds)
@@ -1316,6 +1333,11 @@ pub async fn collect_corpus_stats(
     sponsorblock.savings = savings;
 
     let mut notes = Vec::new();
+    if undated_snapshots > 0 {
+        notes.push(format!(
+            "{undated_snapshots} videos with a SponsorBlock snapshot have no known duration and are left out of the SponsorBlock shares and savings."
+        ));
+    }
     if sample.videos < 30 {
         notes.push(format!(
             "Small sample: {} videos ({:.1} h). Per-minute averages and bucket figures are indicative only; buckets with one or two videos describe those videos, not the bucket.",
@@ -1578,7 +1600,7 @@ pub fn render_markdown(report: &CorpusStatsReport) -> String {
     let _ = writeln!(md, "\n### Disk\n");
     let _ = writeln!(
         md,
-        "Work directory `{}`: {} in {} files.",
+        "Work directory `{}`: {} in {} files.\n",
         report.disk.work_dir,
         human_bytes(report.disk.bytes as f64),
         report.disk.files
@@ -1765,7 +1787,87 @@ pub fn render_markdown(report: &CorpusStatsReport) -> String {
         "youtube-corpus stats --sponsorblock missing --markdown-out docs/corpus-stats.md"
     );
     let _ = writeln!(md, "```");
-    md
+    align_tables(&md)
+}
+
+/// Collapses blank-line runs and pads markdown table columns the way the repository formatter (oxfmt) lays them out, so
+/// a regenerated report passes `bun run format:check` unchanged.
+pub fn align_tables(markdown: &str) -> String {
+    fn cells(line: &str) -> Vec<String> {
+        let inner = line.trim().trim_start_matches('|').trim_end_matches('|');
+        inner.split('|').map(|c| c.trim().to_string()).collect()
+    }
+    fn width(cell: &str) -> usize {
+        cell.chars().count()
+    }
+    let lines = markdown.lines().collect::<Vec<_>>();
+    let mut out = Vec::with_capacity(lines.len());
+    let mut i = 0;
+    while i < lines.len() {
+        if !lines[i].starts_with('|') {
+            // The formatter collapses runs of blank lines.
+            if !(lines[i].is_empty() && out.last().is_some_and(|l: &String| l.is_empty())) {
+                out.push(lines[i].to_string());
+            }
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < lines.len() && lines[i].starts_with('|') {
+            i += 1;
+        }
+        let mut rows = lines[start..i].iter().map(|l| cells(l)).collect::<Vec<_>>();
+        if rows.len() < 2 {
+            out.extend(lines[start..i].iter().map(|l| l.to_string()));
+            continue;
+        }
+        let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+        for row in &mut rows {
+            row.resize(columns, String::new());
+        }
+        let right = rows[1]
+            .iter()
+            .map(|c| c.ends_with(':') && !c.starts_with(':'))
+            .collect::<Vec<_>>();
+        let widths = (0..columns)
+            .map(|c| {
+                rows.iter()
+                    .enumerate()
+                    .filter(|(r, _)| *r != 1)
+                    .map(|(_, row)| width(&row[c]))
+                    .max()
+                    .unwrap_or(0)
+                    .max(3)
+            })
+            .collect::<Vec<_>>();
+        for (r, row) in rows.iter().enumerate() {
+            let rendered = (0..columns)
+                .map(|c| {
+                    let w = widths[c];
+                    if r == 1 {
+                        if right[c] {
+                            format!("{}:", "-".repeat(w - 1))
+                        } else {
+                            "-".repeat(w)
+                        }
+                    } else {
+                        let pad = " ".repeat(w - width(&row[c]));
+                        if right[c] {
+                            format!("{pad}{}", row[c])
+                        } else {
+                            format!("{}{pad}", row[c])
+                        }
+                    }
+                })
+                .collect::<Vec<_>>();
+            out.push(format!("| {} |", rendered.join(" | ")));
+        }
+    }
+    let mut joined = out.join("\n");
+    if markdown.ends_with('\n') {
+        joined.push('\n');
+    }
+    joined
 }
 
 #[cfg(test)]
@@ -1849,6 +1951,15 @@ mod tests {
         assert_eq!(disk_kind(Path::new("notes.txt")), "other");
         assert_eq!(disk_artifact("audio"), MEDIA);
         assert_eq!(disk_artifact("captions"), TRANSCRIPTS);
+    }
+
+    #[test]
+    fn tables_are_padded_like_the_formatter() {
+        let md = "x\n| A | Bee |\n|---|---:|\n| long cell | 1 |\n| – | |\ny\n";
+        assert_eq!(
+            align_tables(md),
+            "x\n| A         | Bee |\n| --------- | --: |\n| long cell |   1 |\n| –         |     |\ny\n"
+        );
     }
 
     #[test]
