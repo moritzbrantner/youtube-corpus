@@ -17,8 +17,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
-use text_embeddings::{HashedTextEmbedder, TextEmbeddingConfig};
-use text_lexical::CorpusOptions;
 use uuid::Uuid;
 
 /// Exact native-whisperx revision pinned in `Cargo.toml`.
@@ -267,8 +265,6 @@ pub async fn translate_video_modality(
             (row.try_get("source_text_hash")?, row.try_get("config_hash")?),
         );
     }
-    let embedder =
-        HashedTextEmbedder::new(TextEmbeddingConfig::default(), CorpusOptions::default())?;
 
     let mut by_language: BTreeMap<Option<&'static str>, Vec<&SourceUnit>> = BTreeMap::new();
     let mut unknown_languages = BTreeSet::new();
@@ -363,13 +359,16 @@ pub async fn translate_video_modality(
                 segments.len(),
                 missing.len()
             );
+            let vectors = crate::embeddings::embed_passage_literals(
+                segments.iter().map(|segment| segment.text.clone()).collect(),
+            )
+            .await?;
             let mut tx = pool.begin().await?;
-            for (unit, segment) in missing.iter().zip(segments) {
+            let model = vectors.model_row(&mut *tx).await?;
+            for ((unit, segment), embedding) in
+                missing.iter().zip(segments).zip(vectors.literals.iter())
+            {
                 let text = segment.text.trim();
-                let embedding = embedder
-                    .embed_text(text)
-                    .ok()
-                    .map(|vector| crate::ingest::vector_literal(vector.as_slice()));
                 let (spoken, visible) = match modality {
                     TranslationModality::Spoken => (Some(unit.id), None),
                     TranslationModality::VisibleText => (None, Some(unit.id)),
@@ -378,8 +377,8 @@ pub async fn translate_video_modality(
                     "INSERT INTO translated_segments (id, video_id, modality, transcript_segment_id,
                         visual_text_track_id, source_text_hash, source_language, target_language,
                         start_seconds, end_seconds, text, provider, producer_revision, plan, config,
-                        config_hash, embedding)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::vector)
+                        config_hash, embedding, embedding_model)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::vector, $18)
                      ON CONFLICT ((coalesce(transcript_segment_id, visual_text_track_id)), target_language)
                      DO UPDATE SET id = EXCLUDED.id, source_text_hash = EXCLUDED.source_text_hash,
                         source_language = EXCLUDED.source_language, start_seconds = EXCLUDED.start_seconds,
@@ -387,6 +386,7 @@ pub async fn translate_video_modality(
                         provider = EXCLUDED.provider, producer_revision = EXCLUDED.producer_revision,
                         plan = EXCLUDED.plan, config = EXCLUDED.config,
                         config_hash = EXCLUDED.config_hash, embedding = EXCLUDED.embedding,
+                        embedding_model = EXCLUDED.embedding_model,
                         created_at = now()",
                 )
                 .bind(Uuid::new_v4())
@@ -406,6 +406,7 @@ pub async fn translate_video_modality(
                 .bind(&config)
                 .bind(&config_hash)
                 .bind(embedding)
+                .bind(embedding.as_ref().and(model))
                 .execute(&mut *tx)
                 .await?;
             }

@@ -82,7 +82,11 @@ metadata.
 5. When enabled, ASR runs through the pinned native-whisperx library (one model-reusing
    session, GPU with CPU fallback in `cuda` builds), or an explicitly configured command.
 6. Transcript streams and segments are written to Postgres.
-7. Deterministic text embeddings are generated for semantic search.
+7. Segment texts are embedded as passages with the pinned nlp-stack
+   `intfloat/multilingual-e5-base` preset (768 dimensions, mean pooling) through
+   `src/embeddings.rs`; each vector references its `embedding_models` row (model id,
+   revision, pooling). A missing model bundle fails the stage; there is no fallback
+   embedder.
 
 The web API can run ingest synchronously or as a background job. For async
 requests, `/api/sources` inserts a running row in `ingest_runs`, returns the
@@ -136,9 +140,14 @@ repository history, or generated documentation.
 1. CLI or `/api/search` builds a `SearchRequest`.
 2. `src/search.rs` applies source, language, timestamp, metadata, and count
    filters.
-3. FTS mode uses Postgres `tsvector` ranking.
-4. Semantic mode embeds the query deterministically and uses `pgvector`.
-5. Hybrid mode combines FTS and semantic scores.
+3. FTS mode uses Postgres `tsvector` ranking. Each row's tsvector uses the text search
+   configuration of its language (`german`, `english`, `spanish`; `simple` for other or
+   unknown languages, `corpus_text_search_config` in migration 0033), and the query is
+   parsed with the configuration of the row it is matched against.
+4. Semantic mode embeds the query with the e5 model (as a `query: `) and compares it with
+   `pgvector` cosine distance against vectors of the same model only.
+5. Hybrid mode combines `0.35 * ts_rank + 0.65 * cosine`; a lexical hit outside the
+   semantic top-k keeps its real cosine instead of 0.
 6. Results are returned with segment ids, timestamps, source URLs, text, and
    score components.
 

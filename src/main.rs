@@ -178,6 +178,37 @@ async fn run_command(
             }
         }
         Command::Span(args) => run_span(args, database_url).await?,
+        Command::Reembed(args) => {
+            let config = AppConfig::from_env_and_cli(database_url)?;
+            let pool = youtube_corpus::db::connect(&config.database_url).await?;
+            if args.migrate {
+                youtube_corpus::db::migrate(&pool).await?;
+            }
+            let mut embedder_config = youtube_corpus::embeddings::EmbedderConfig::from_env();
+            if let Some(dir) = args.model_dir {
+                embedder_config.model_dir = dir;
+            }
+            embedder_config.allow_download = !args.no_download;
+            youtube_corpus::embeddings::configure(embedder_config);
+            let embedder = youtube_corpus::embeddings::shared_async().await?;
+            let targets = if args.table.is_empty() {
+                youtube_corpus::reembed::ReembedTarget::ALL.to_vec()
+            } else {
+                args.table
+            };
+            let request = youtube_corpus::reembed::ReembedRequest {
+                targets,
+                batch_size: args.batch_size,
+                limit: args.limit,
+            };
+            let report =
+                youtube_corpus::reembed::reembed_corpus(&pool, embedder, &request, |line| {
+                    eprintln!("{line}")
+                })
+                .await
+                .context("re-embedding failed")?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
         Command::SearchIndex(args) => {
             use youtube_corpus::cli::SearchIndexCommand;
             use youtube_corpus::search_index::{compare, TantivySearch};

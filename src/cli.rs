@@ -142,6 +142,33 @@ pub enum Command {
     /// Cuts a verifiable scene clip, audio-only excerpt and keyframes of a span (or of stored
     /// scenes) with a SHA-256 manifest (#116).
     Extract(ExtractArgs),
+    /// Fills missing or stale text embeddings with the pinned multilingual-e5-base model, in
+    /// resumable batches (#192).
+    Reembed(ReembedArgs),
+}
+
+#[derive(Debug, Parser)]
+#[command(args_override_self = true)]
+pub struct ReembedArgs {
+    /// Tables to embed (repeatable; default: all).
+    #[arg(long, value_enum, value_delimiter = ',')]
+    pub table: Vec<crate::reembed::ReembedTarget>,
+    /// Rows per embedding call and transaction.
+    #[arg(long, default_value_t = 64)]
+    pub batch_size: usize,
+    /// Stop after this many rows per table (trial runs and measurements).
+    #[arg(long)]
+    pub limit: Option<u64>,
+    /// Directory holding (or receiving) the embedding model bundle; defaults to
+    /// `TEXT_EMBEDDINGS_MODEL_DIR`, else `use-case-output/models`.
+    #[arg(long)]
+    pub model_dir: Option<PathBuf>,
+    /// Fail instead of downloading a missing model bundle.
+    #[arg(long)]
+    pub no_download: bool,
+    /// Apply pending migrations first.
+    #[arg(long)]
+    pub migrate: bool,
 }
 
 #[derive(Debug, Parser)]

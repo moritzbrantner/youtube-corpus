@@ -471,10 +471,7 @@ async fn resegmentation_records_actual_processor_without_restamping_other_stream
         transcriber_command: None,
         transcriber_args: vec![],
         transcriber_timeout_seconds: None,
-        embedding: youtube_corpus::provenance::EmbeddingProvenance {
-            provider: "hashed-text-embedder".into(),
-            dimensions: 128,
-        },
+        embedding: youtube_corpus::provenance::EmbeddingProvenance::current(),
     };
     youtube_corpus::provenance::record_ingest_report(&database_url, &report, &provenance)
         .await

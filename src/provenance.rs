@@ -26,6 +26,22 @@ pub struct IngestProvenance {
 pub struct EmbeddingProvenance {
     pub provider: String,
     pub dimensions: u64,
+    /// Model id, revision and pooling of the stored vectors (#192). Absent in provenance
+    /// recorded before real embeddings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<crate::embeddings::EmbeddingIdentity>,
+}
+
+impl EmbeddingProvenance {
+    /// The pinned embedding preset this build writes.
+    pub fn current() -> Self {
+        let identity = crate::embeddings::EmbeddingIdentity::preset();
+        Self {
+            provider: "nlp-stack/text-embeddings".to_string(),
+            dimensions: identity.dimensions as u64,
+            model: Some(identity),
+        }
+    }
 }
 
 impl IngestProvenance {
@@ -42,10 +58,7 @@ impl IngestProvenance {
                 .map(|path| path.to_string_lossy().into_owned()),
             transcriber_args: request.transcriber_args.clone(),
             transcriber_timeout_seconds: request.transcriber_timeout_seconds,
-            embedding: EmbeddingProvenance {
-                provider: "hashed-text-embedder".to_string(),
-                dimensions: 128,
-            },
+            embedding: EmbeddingProvenance::current(),
         }
     }
 }
@@ -131,7 +144,11 @@ mod tests {
         };
         let provenance = IngestProvenance::from_request(&request);
         assert_eq!(provenance.source_url, "https://youtu.be/example");
-        assert_eq!(provenance.embedding.provider, "hashed-text-embedder");
-        assert_eq!(provenance.embedding.dimensions, 128);
+        assert_eq!(provenance.embedding.provider, "nlp-stack/text-embeddings");
+        assert_eq!(provenance.embedding.dimensions, 768);
+        assert_eq!(
+            provenance.embedding.model.as_ref().unwrap().model_id,
+            "intfloat/multilingual-e5-base"
+        );
     }
 }
