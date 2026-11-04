@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
+use std::collections::BTreeSet;
 use uuid::Uuid;
 
 use crate::sponsorblock::{
@@ -181,17 +182,13 @@ pub async fn export_media_evidence_batch(
                     .collect(),
             });
 
-    let revision_material = serde_json::json!({
-        "video": &video,
-        "scenes": &scenes,
-        "ocrObservations": &ocr_observations,
-        "ocrTracks": &ocr_tracks,
-        "sponsorBlock": &sponsorblock,
-    });
-    let revision = format!(
-        "sha256:{}",
-        sha256_hex(&serde_json::to_vec(&revision_material)?)
-    );
+    let revision = media_evidence_revision(
+        &video,
+        &scenes,
+        &ocr_observations,
+        &ocr_tracks,
+        &sponsorblock,
+    )?;
 
     Ok(MediaEvidenceBatchV1 {
         schema: MEDIA_EVIDENCE_SCHEMA.to_string(),
@@ -207,6 +204,66 @@ pub async fn export_media_evidence_batch(
         ocr_tracks,
         sponsorblock,
     })
+}
+
+/// Explicitly export one scene producer run while retaining ordinary v1 OCR
+/// and SponsorBlock evidence. Useful when older seconds-only scene runs coexist
+/// with an opt-in exact run: an exact sidecar may claim the selected scene
+/// modality without pretending the earlier runs acquired original PTS.
+/// The existing all-runs exporter and v1 schema remain unchanged.
+pub async fn export_media_evidence_batch_for_scene_run(
+    pool: &PgPool,
+    video_id: Uuid,
+    producer_revision: &str,
+    scene_run_id: Uuid,
+) -> anyhow::Result<MediaEvidenceBatchV1> {
+    let batch = export_media_evidence_batch(pool, video_id, producer_revision).await?;
+    select_scene_run(batch, scene_run_id)
+}
+
+fn select_scene_run(
+    mut batch: MediaEvidenceBatchV1,
+    scene_run_id: Uuid,
+) -> anyhow::Result<MediaEvidenceBatchV1> {
+    let run_id = scene_run_id.to_string();
+    batch
+        .scenes
+        .retain(|scene| scene.provenance.run_id == run_id);
+    if batch.scenes.is_empty() {
+        anyhow::bail!("scene run {scene_run_id} has no exported scene evidence");
+    }
+    let selected: BTreeSet<_> = batch.scenes.iter().map(|scene| scene.id.as_str()).collect();
+    for track in &mut batch.ocr_tracks {
+        track.scene_ids.retain(|id| selected.contains(id.as_str()));
+    }
+    batch.revision = media_evidence_revision(
+        &batch.video,
+        &batch.scenes,
+        &batch.ocr_observations,
+        &batch.ocr_tracks,
+        &batch.sponsorblock,
+    )?;
+    Ok(batch)
+}
+
+fn media_evidence_revision(
+    video: &EvidenceVideoV1,
+    scenes: &[SceneEvidenceV1],
+    ocr_observations: &[OcrObservationEvidenceV1],
+    ocr_tracks: &[OcrTrackEvidenceV1],
+    sponsorblock: &Option<SponsorBlockEvidenceV1>,
+) -> anyhow::Result<String> {
+    let material = serde_json::json!({
+        "video": video,
+        "scenes": scenes,
+        "ocrObservations": ocr_observations,
+        "ocrTracks": ocr_tracks,
+        "sponsorBlock": sponsorblock,
+    });
+    Ok(format!(
+        "sha256:{}",
+        sha256_hex(&serde_json::to_vec(&material)?)
+    ))
 }
 
 async fn scene_evidence(pool: &PgPool, video_id: Uuid) -> anyhow::Result<Vec<SceneEvidenceV1>> {
@@ -398,5 +455,78 @@ mod tests {
     #[test]
     fn revisions_are_sha256_addressed() {
         assert_eq!(sha256_hex(b"evidence").len(), 64);
+    }
+
+    #[test]
+    fn selecting_exact_scene_run_preserves_v1_and_rehashes_its_actual_contents() {
+        let legacy_run = Uuid::new_v4();
+        let exact_run = Uuid::new_v4();
+        let provenance = |run_id: Uuid| ProcessingEvidenceV1 {
+            run_id: run_id.to_string(),
+            processor: "visual-analysis".into(),
+            processor_version: "revision".into(),
+            model: "scene".into(),
+            model_version: "1".into(),
+            input_hash: "sha256:source".into(),
+            config_hash: run_id.to_string(),
+            processing_config: serde_json::json!({}),
+        };
+        let scene = |id: &str, run_id: Uuid| SceneEvidenceV1 {
+            id: id.into(),
+            scene_index: 0,
+            start_frame: 0,
+            end_frame: 7,
+            start_seconds: 0.0,
+            end_seconds: 0.4,
+            metadata: serde_json::json!({}),
+            provenance: provenance(run_id),
+        };
+        let batch = MediaEvidenceBatchV1 {
+            schema: MEDIA_EVIDENCE_SCHEMA.into(),
+            schema_version: MEDIA_EVIDENCE_VERSION_V1,
+            producer: EvidenceProducerV1 {
+                name: "youtube-corpus".into(),
+                revision: "git:revision".into(),
+            },
+            video: EvidenceVideoV1 {
+                id: Uuid::new_v4().to_string(),
+                youtube_id: None,
+                source_url: "https://example.invalid/test".into(),
+                title: None,
+            },
+            revision: "sha256:old".into(),
+            scenes: vec![scene("legacy", legacy_run), scene("exact", exact_run)],
+            ocr_observations: vec![],
+            ocr_tracks: vec![OcrTrackEvidenceV1 {
+                id: "track".into(),
+                text: "text".into(),
+                role: "presentation_slide".into(),
+                language: None,
+                sample_count: 1,
+                start_frame: None,
+                end_frame: None,
+                start_seconds: None,
+                end_seconds: None,
+                region: None,
+                metadata: serde_json::json!({}),
+                observation_ids: vec![],
+                scene_ids: vec!["legacy".into(), "exact".into()],
+                provenance: provenance(Uuid::new_v4()),
+            }],
+            sponsorblock: None,
+        };
+        let selected = select_scene_run(batch.clone(), exact_run).unwrap();
+        assert_eq!(selected.scenes.len(), 1);
+        assert_eq!(selected.scenes[0].id, "exact");
+        assert_eq!(selected.ocr_tracks[0].scene_ids, vec!["exact"]);
+        assert_eq!(selected.schema_version, batch.schema_version);
+        assert_ne!(selected.revision, batch.revision);
+        assert_eq!(
+            select_scene_run(selected.clone(), exact_run)
+                .unwrap()
+                .revision,
+            selected.revision,
+        );
+        assert!(select_scene_run(batch, Uuid::new_v4()).is_err());
     }
 }

@@ -105,8 +105,9 @@ pub use transcript_quality::{
     TranscriptQualitySummary,
 };
 pub use visual_processing::{
-    analyze_and_persist_scenes, analyze_stored_video_scenes, SceneAnalysisReport,
-    SceneAnalysisRequest, VISUAL_ANALYSIS_SCENE_REVISION,
+    analyze_and_persist_scenes, analyze_and_persist_scenes_exact, analyze_stored_video_scenes,
+    analyze_stored_video_scenes_exact, SceneAnalysisReport, SceneAnalysisRequest,
+    VISUAL_ANALYSIS_SCENE_REVISION,
 };
 pub use visual_timeline::{
     begin_visual_processing_run, list_video_scenes, list_visual_text_tracks, upsert_video_scene,
@@ -117,10 +118,10 @@ pub use visual_timeline::{
 };
 
 pub use media_evidence::{
-    export_media_evidence_batch, BoundingBoxV1, EvidenceProducerV1, EvidenceVideoV1,
-    MediaEvidenceBatchV1, OcrObservationEvidenceV1, OcrTrackEvidenceV1, ProcessingEvidenceV1,
-    SceneEvidenceV1, SponsorBlockEvidenceV1, SponsorBlockSegmentEvidenceV1, MEDIA_EVIDENCE_SCHEMA,
-    MEDIA_EVIDENCE_VERSION_V1,
+    export_media_evidence_batch, export_media_evidence_batch_for_scene_run, BoundingBoxV1,
+    EvidenceProducerV1, EvidenceVideoV1, MediaEvidenceBatchV1, OcrObservationEvidenceV1,
+    OcrTrackEvidenceV1, ProcessingEvidenceV1, SceneEvidenceV1, SponsorBlockEvidenceV1,
+    SponsorBlockSegmentEvidenceV1, MEDIA_EVIDENCE_SCHEMA, MEDIA_EVIDENCE_VERSION_V1,
 };
 pub use sponsorblock::{
     fetch_sponsorblock_snapshot, latest_sponsorblock_snapshot, parse_hash_response,
