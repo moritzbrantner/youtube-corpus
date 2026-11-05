@@ -318,6 +318,7 @@ mod tests {
     /// Fails on anything but the CPU when `gpu_fails`, and records every requested device.
     struct FakeBackend {
         gpu_fails: bool,
+        empty_transcript: bool,
         devices: Vec<DevicePreference>,
     }
 
@@ -340,8 +341,10 @@ mod tests {
             } else {
                 "cuda:0"
             };
-            Ok(serde_json::from_value(serde_json::json!({
-                "transcript": {
+            let transcript = if self.empty_transcript {
+                serde_json::json!({ "language": "en", "text": "", "segments": [] })
+            } else {
+                serde_json::json!({
                     "language": "en",
                     "text": "Hello corpus. Music under speech.",
                     "segments": [
@@ -350,7 +353,10 @@ mod tests {
                         {"index": 1, "startSeconds": 1.5, "endSeconds": 3.0,
                          "text": "Music under speech.", "isFinal": true}
                     ]
-                },
+                })
+            };
+            Ok(serde_json::from_value(serde_json::json!({
+                "transcript": transcript,
                 "provenance": {"provider": "candle-whisper", "modelId": "small", "device": device}
             }))
             .expect("fake native report"))
@@ -362,6 +368,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut backend = FakeBackend {
             gpu_fails: false,
+            empty_transcript: false,
             devices: Vec::new(),
         };
         let output = transcribe_native(
@@ -386,6 +393,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut backend = FakeBackend {
             gpu_fails: true,
+            empty_transcript: false,
             devices: Vec::new(),
         };
         let output = transcribe_native(
@@ -416,6 +424,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut backend = FakeBackend {
             gpu_fails: true,
+            empty_transcript: false,
             devices: Vec::new(),
         };
         transcribe_native(
@@ -426,6 +435,37 @@ mod tests {
         )
         .unwrap();
         assert_eq!(backend.devices, [DevicePreference::Cpu]);
+    }
+
+    #[test]
+    fn native_rejected_words_do_not_become_corpus_passages() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut backend = FakeBackend {
+            gpu_fails: false,
+            empty_transcript: true,
+            devices: Vec::new(),
+        };
+        let output = transcribe_native(
+            &mut backend,
+            Path::new("/media/music-only.webm"),
+            dir.path(),
+            false,
+        )
+        .unwrap();
+
+        assert!(output
+            .stream
+            .text
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .is_empty());
+        assert!(output.stream.segments.is_empty());
+        let persisted: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(dir.path().join("music-only.json")).unwrap())
+                .unwrap();
+        assert_eq!(persisted["segments"], serde_json::json!([]));
+        assert_eq!(output.run["provider"], "native-whisperx");
     }
 
     #[test]
