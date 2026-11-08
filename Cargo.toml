@@ -84,19 +84,22 @@ runtime-onnx = { package = "moenarch-runtime-onnx", git = "https://github.com/mo
 ] }
 vector-analysis-core = { package = "moenarch-vector-analysis-core", git = "https://github.com/moritzbrantner/moenarch-foundation", rev = "cf8d6f1052ad1d5c567e797a56d3bb8910828920" }
 
-audio-analysis-speakers = { package = "moenarch-audio-analysis-speakers", git = "https://github.com/moritzbrantner/audio-analysis", rev = "d7c78028a1e84d0ebde8f6a93a19c4565534b0bc", features = [
+audio-analysis-speakers = { package = "moenarch-audio-analysis-speakers", git = "https://github.com/moritzbrantner/audio-analysis", rev = "e37b10574aaef701fda448c3cce50ca125f5cea9", features = [
   "onnx",
   "model-bundles",
 ] }
-audio-analysis-core = { package = "moenarch-audio-analysis-core", git = "https://github.com/moritzbrantner/audio-analysis", rev = "d7c78028a1e84d0ebde8f6a93a19c4565534b0bc" }
-audio-analysis-io = { package = "moenarch-audio-analysis-io", git = "https://github.com/moritzbrantner/audio-analysis", rev = "d7c78028a1e84d0ebde8f6a93a19c4565534b0bc" }
-audio-analysis-processing = { package = "moenarch-audio-analysis-processing", git = "https://github.com/moritzbrantner/audio-analysis", rev = "d7c78028a1e84d0ebde8f6a93a19c4565534b0bc" }
+audio-analysis-core = { package = "moenarch-audio-analysis-core", git = "https://github.com/moritzbrantner/audio-analysis", rev = "e37b10574aaef701fda448c3cce50ca125f5cea9" }
+audio-analysis-io = { package = "moenarch-audio-analysis-io", git = "https://github.com/moritzbrantner/audio-analysis", rev = "e37b10574aaef701fda448c3cce50ca125f5cea9" }
+audio-analysis-processing = { package = "moenarch-audio-analysis-processing", git = "https://github.com/moritzbrantner/audio-analysis", rev = "e37b10574aaef701fda448c3cce50ca125f5cea9" }
 
 # Default ASR through one reused `TranscriptionSession` (#73), plus the translation
-# planner/executor and native OPUS-MT provider (#69, native-whisperx #373).
-native-whisperx = { git = "https://github.com/moritzbrantner/native-whisperx", rev = "3b9a5a6be8472144aba8d49f018fef0f67bdddb0", default-features = false, features = [
+# planner/executor and native OPUS-MT provider (#69, native-whisperx #373). `silero-vad` lets
+# automatic VAD selection use a cached Silero model, so music-only audio yields no fabricated
+# words (native-whisperx #447/#456, audio-analysis #233).
+native-whisperx = { git = "https://github.com/moritzbrantner/native-whisperx", rev = "999451e294485cf44cfa0e5ec87386b93ab51099", default-features = false, features = [
   "native",
   "media-decode",
+  "silero-vad",
   "translation",
 ] }
 
@@ -143,11 +146,12 @@ moenarch-text-core = { git = "https://github.com/moritzbrantner/nlp-stack", rev 
 # native-whisperx (#69) declares registry requirements on audio-analysis, nlp-stack and
 # visual-analysis crates; resolve them to the revisions pinned above so the graph keeps one copy.
 # native-whisperx needs audio-analysis APIs newer than the published releases. audio-analysis
-# d7c7802 is native-whisperx's pin: VAD chunk-stub repair (native-whisperx#417), faster-whisper
-# temperature fallback (#419) and per-stage device diagnostics (#422).
-moenarch-audio-analysis-speakers = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "d7c78028a1e84d0ebde8f6a93a19c4565534b0bc" }
-moenarch-audio-analysis-transcription = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "d7c78028a1e84d0ebde8f6a93a19c4565534b0bc" }
-moenarch-audio-analysis-io = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "d7c78028a1e84d0ebde8f6a93a19c4565534b0bc" }
+# e37b105 is native-whisperx's pin: the music-only no-speech gate, compression-loop rejection
+# and per-window decode evidence (audio-analysis #234), on top of the VAD chunk-stub repair
+# (native-whisperx#417), temperature fallback (#419) and per-stage device diagnostics (#422).
+moenarch-audio-analysis-speakers = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "e37b10574aaef701fda448c3cce50ca125f5cea9" }
+moenarch-audio-analysis-transcription = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "e37b10574aaef701fda448c3cce50ca125f5cea9" }
+moenarch-audio-analysis-io = { git = "https://github.com/moritzbrantner/audio-analysis", rev = "e37b10574aaef701fda448c3cce50ca125f5cea9" }
 moenarch-text-transcripts = { git = "https://github.com/moritzbrantner/nlp-stack", rev = "815d9ddd3858958438bb9d28d3797c41ea4c6757" }
 moenarch-video-analysis-core = { git = "https://github.com/moritzbrantner/visual-analysis", rev = "ef820b3c0f0b0c5306274f484c1d26582bd655c4" }
 # Foundation c2c1ab1 depends on the registry name `search-kernels` and resolves it to this exact

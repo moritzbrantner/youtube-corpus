@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use native_whisperx::{
-    AlignmentConfig, AsrConfig, DevicePreference, DiarizationConfig, InputSource,
+    AlignmentConfig, AsrConfig, ConfigSelection, DevicePreference, DiarizationConfig, InputSource,
     NativeWhisperxConfig, NativeWhisperxError, NativeWhisperxReport, OutputConfig,
     TranscriptionSession, TranslationConfig, VadConfig,
 };
@@ -50,10 +50,12 @@ pub fn producer_identity(command: Option<&Path>) -> anyhow::Result<Value> {
     })
 }
 
-/// Native ASR detects the spoken language itself (Whisper language ID on the first 30 s).
+/// Native ASR detects the spoken language itself (Whisper language ID on the first 30 s). VAD
+/// is selected automatically: a cached Silero model that loads with the available ONNX Runtime,
+/// else energy VAD. The run records which one was used.
 fn native_config_identity() -> Value {
     json!({ "modelId": NATIVE_ASR_MODEL, "language": "detect", "alignment": false,
-        "vad": "energy", "diarization": false })
+        "vad": "auto", "diarization": false })
 }
 
 /// Transcribes `media_path` with the explicitly configured command, else the native provider.
@@ -175,6 +177,11 @@ pub fn transcribe_native(
             "device": device,
             "cpuFallback": gpu_error,
             "config": native_config_identity(),
+            // Which VAD ran and the speech evidence behind the transcript. Without a model VAD,
+            // music-only audio can still yield words; with Silero it yields none (audio-analysis
+            // #233). Neither value labels the audio as music or silence.
+            "selectedVad": report.workflow_selection.selected_vad,
+            "speechEvidence": report.speech_evidence,
         }),
     })
 }
@@ -195,7 +202,12 @@ fn native_config(
             ..AsrConfig::default()
         },
         translation: TranslationConfig::default(),
-        vad: VadConfig::default(),
+        // A cached Silero VAD gives the decoder speech evidence, so music-only windows are
+        // withheld instead of transcribed; energy VAD remains the fallback (native-whisperx #447).
+        vad: VadConfig {
+            selection: ConfigSelection::Automatic,
+            ..VadConfig::default()
+        },
         // Corpus segments are retrieval passages; word alignment is not used.
         alignment: AlignmentConfig {
             enabled: false,
@@ -330,6 +342,11 @@ mod tests {
             assert_eq!(config.asr.model_id, "small");
             assert!(!config.alignment.enabled);
             assert_eq!(config.asr.language, None, "native ASR detects the language");
+            assert_eq!(
+                config.vad.selection,
+                native_whisperx::ConfigSelection::Automatic,
+                "a cached Silero VAD is preferred over energy VAD"
+            );
             if self.gpu_fails && config.asr.device != DevicePreference::Cpu {
                 return Err(NativeWhisperxError::Transcription(
                     "CUDA out of memory".to_string(),
@@ -435,6 +452,7 @@ mod tests {
         assert_eq!(identity["revision"], super::NATIVE_WHISPERX_REVISION);
         assert_eq!(identity["config"]["modelId"], "small");
         assert_eq!(identity["config"]["language"], "detect");
+        assert_eq!(identity["config"]["vad"], "auto");
     }
 
     #[test]

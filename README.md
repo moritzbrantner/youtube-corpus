@@ -159,6 +159,15 @@ failed GPU run is retried on the CPU. Every ASR stream records the producer
 (`asrProducer`: provider, revision, model config) and the run (`asrRun`: model,
 device, CPU fallback) in its `processing_config`.
 
+VAD is selected automatically. A cached Silero VAD model that loads with ONNX
+Runtime 1.24 or newer (the Torch Hub copy under `$TORCH_HOME`, with
+`ORT_DYLIB_PATH` pointing at the runtime library) is preferred; then
+music-only audio stores no ASR text. Without it, energy VAD runs and can still
+store words decoded from music. `asrRun.selectedVad` and
+`asrRun.speechEvidence` record which VAD ran and the speech evidence behind the
+text. Nothing is downloaded for this. The opt-in
+`tests/asr_music_only_db.rs` checks the behavior on real audio.
+
 `--transcriber-command` selects an explicit Whisper-CLI-compatible command
 instead (called as `<command> <media> <args…> --output_dir <dir> --output_format json`).
 Nothing is looked up on `PATH`. `--transcriber-timeout-seconds` applies to that
