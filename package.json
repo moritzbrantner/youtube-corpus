@@ -29,10 +29,10 @@
     "verify:startup": "bun test tests/startup.test.ts --timeout 300000"
   },
   "dependencies": {
-    "@moenarch/editor-core": "git+https://github.com/moritzbrantner/editor-core.git#05ae0d0ef9f782ff70d65e8db0675e6aa2dd6870",
-    "@moritzbrantner/graph-editor": "git+https://github.com/moritzbrantner/graph-editor.git#56af1b4c027900aa71c4dc1149a385edf1231505",
+    "@moenarch/editor-core": "git+https://github.com/moritzbrantner/editor-core.git#4e4988c52b6e21b535494add35edd02b84e42aa0",
+    "@moritzbrantner/graph-editor": "git+https://github.com/moritzbrantner/graph-editor.git#9f0fbf3924da00c86902eef91aa8876f233a4035",
     "@moritzbrantner/ui": "1.1.0",
-    "@moritzbrantner/workflow-editor": "git+https://github.com/moritzbrantner/workflow-editor.git#706056f483ab55e251ecef86a1d3f9b35f148c8c",
+    "@moritzbrantner/workflow-editor": "git+https://github.com/moritzbrantner/workflow-editor.git#60a211869980e32c4877ed9bf710adab3b691f24",
     "@tanstack/react-query": "^5.100.6",
     "lucide-react": "^1.7.0",
     "react": "^19.2.5",
