@@ -1,0 +1,8 @@
+{
+  "corpus": "terminology-ux-ocr-acceptance",
+  "corpusName": "Terminology UX OCR acceptance",
+  "videos": ["https://www.youtube.com/watch?v=xgd_jVhJzEc"],
+  "detectors": ["ocr"],
+  "requireLicense": "Creative Commons",
+  "keepMedia": false
+}
